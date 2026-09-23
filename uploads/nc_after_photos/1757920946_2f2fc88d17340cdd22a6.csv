@@ -1,0 +1,64 @@
+Parameters ,Particulars ,Instructions for audit,Rating ,Weight ,Audit % 
+QHSE and Sustainability ,Safety Audit open points ,"Target: Zero beyond 30 days - 
+",1,5%,5%
+QHSE and Sustainability ,Near miss/ Unsafe acts & conditions reporting & Communication to Blue color staff,"Target: Min Five per Functional Team /Month (IB,OB, Inventory)- 
+No of near miss captured : 
+No of open near-miss (Not more than 15 days): ",1,2%,2%
+QHSE and Sustainability ,Incident / Property damage cases,"Target: Zero 
+No Incidents happen in last 6 months
+Availability RCA report of incident , Closure of Actions
+No. of Repeated incidences due to same root cause ",1,4%,4%
+QHSE and Sustainability ,LTI,"Target: Zero
+No. of LTI happen in last 6 months :
+Availability RCA report of LTI, Closure of Actions",1,3%,3%
+QHSE and Sustainability ,Sustainability project,Target: Atleast one project per account per  year,1,2%,2%
+QHSE and Sustainability ,MHE Inspection & maintenance,"Target: 100% compliance
+Records to be produced during audit (AMC, PPM records)",1,2%,2%
+QHSE and Sustainability ,Weekly Safety Training / Awareness about Safety Fundamental ,"Target: 100% Adherence 
+Weekly Training records of last 3 month : Attache records File.
+Single Week Missed record the score will be considered as Zero.",1,2%,2%
+KPIs,% of KPIs Target achieved,"KPI adherence as per corporate guidelines for the months (KPI adherence % = 100%)
+Target Vs Adhered -Status",0,5.0%,0.0%
+KPIs,% of KPIs Target achieved,"Agreement Target achieved for all KPI's For the last Quarter  (KPI Achievement % > 95%)
+Target Vs Achieved-Status of last 3 months",1,5.0%,5.0%
+KPIs,% of KPIs Target achieved,RCA for the Not achieved KPI and Action tracker,1,5.0%,5.0%
+Inventory,Cycle count Adherence ,"Target: >=100% for last quarter or consistently last three month
+Records of daily cycle count adherence for last 3 month ",1,5%,5%
+Inventory,Inventory Accuracy ,"Target: Inventory variance shall be within allowable shrinkage as per agreement
+Inventory variance in quantity and value (last 3 months )
+Reconciliation status: IRA- ?? , IVA- ??
+Stock Variance value : Is variance within the shrinkage limit?
+",1,5%,5%
+Inventory,Inventory Accuracy ,Location Accuracy for sample 50 locations (Target - 96% accuracy),1,5%,5%
+Inventory,SAP / Client ERP / FM WMS reconciliation,"Target: 100% Match for consistently last three  month
+Records of SAP vs WMS Match for the last 3 month. Check record for Stock Synchro
+RCA shall be available along with action tracker",1,5%,5%
+Continuous improvement ,Productivity Adherence as per solution,"Target: >=95% For the (YTD Produtcivty to be considered)
+Record of solution productivity vs actual productivity for all key activity, Solution Productivity: , Actual productivity: ",0,5%,0%
+Continuous improvement ,KAIZEN per person ,"Target: One Kaizen Per FM employee / Year (if Monthly target is achieved)
+Total no of kaizen Implemented : 
+Total no of employee on FM Role : ",0,5%,0%
+Standardisation / Basics ,SQDCIEP Board management (L1/L2 meeting),"Target: 100% Adherence  for consistently for last three month
+Record of SQDC board for the last 3 Months and open actions status need to be updated till the audit date. 
+Attendance records of SQDC meeting",1,2.5%,2.5%
+Standardisation / Basics ,"5S Adherence, Gemba walk (atleast once a week by WM) and Audit ","Target: 100% Adherence 
+5's audit record for 6 months and actions implemented.  
+Weekly Gemba walk records & action tracker
+Physical conditions indicate 5's adherence at the time of the audit ",1,2.5%,2.5%
+Standardisation / Basics ,SOP /WI Availability and Adherence ,"Target: Availability and 100% Adherence 
+100% availability of work instruction and SOP ",1,2.5%,2.5%
+Standardisation / Basics ,Weekly Operations Training ,"Target: 100% Adherence 
+Weekly Training records of last 6 month 
+Single Week Missed record the score will be considered as Zero.",1,2.5%,2.5%
+P1 -WHS Rules Warehouse Audit ,Capacity Calculator ,Adherence of Capacity calculator as per FM global standard,1,3%,3%
+P1 -WHS Rules Warehouse Audit ,Logistics Parameter monitoring ,Monthly Check of Logistics parameter and records to be maintained ,1,3%,3%
+P1 -WHS Rules Warehouse Audit ,Customer claim within limit ,Customer complaints within limit as per agreement ,1,3%,3%
+P1 -WHS Rules Warehouse Audit ,Hrly Monitoring of Productivity,Hrly monitoring of produtcivity for major activities ,1,3%,3%
+P1 -WHS Rules Warehouse Audit ,FSN Available and reviewed quaterly ,Inventory shuffling as per FSN in every quarter ,1,3%,3%
+Operational Audit ,"Cross Functional 
+Operations Audit open point","Target: Zero beyond 30 days (Operations related)
+If the cross functional audit is not done as per the schedule then score will be considered as Zero
+Total audit points: 
+Total Open Points :",1,5%,5%
+Operational Audit ,"Cross Functional 
+Operations Audit open point",Target: Zero beyond 60 days (Capex related  ),1,5%,5%

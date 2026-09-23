@@ -1,0 +1,5 @@
+.env
+writable/
+vendor/
+node_modules/
+*.zip

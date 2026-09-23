@@ -1,0 +1,9 @@
+[2023-06-20 07:56:21] Received Payload: 
+[2023-06-20 07:56:21] Request Headers: array (
+  'Accept' => 'application/json, text/plain, */*',
+  'Content-Type' => 'application/x-www-form-urlencoded',
+  'User-Agent' => 'pipedream/1',
+  'Host' => 'ads.unitglo.com',
+  'Connection' => 'close',
+  'Content-Length' => '0',
+)

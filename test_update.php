@@ -1,0 +1,26 @@
+<?php
+// load CI
+define('FCPATH', __DIR__ . DIRECTORY_SEPARATOR);
+require FCPATH . 'app/Config/Paths.php';
+$paths = new Config\Paths();
+require rtrim($paths->systemDirectory, '\\/ ') . DIRECTORY_SEPARATOR . 'bootstrap.php';
+
+use App\Models\CRUDBaseModel;
+$dbParams = [
+    'table' => 'alert_users',
+    'allowedFields' => ['user_name'],
+    'primaryKey' => 'user_id'
+];
+$model = new CRUDBaseModel($dbParams);
+
+// Set user_id 2 to 'Shivani'
+$model->update(2, ['user_name' => 'Shivani']);
+echo "Updated ID 2 to Shivani.\n";
+
+// Check the DB
+$db = \Config\Database::connect();
+$users = $db->table('alert_users')->get()->getResultArray();
+foreach ($users as $u) {
+    echo $u['user_id'] . " - " . $u['user_name'] . "\n";
+}
+?>

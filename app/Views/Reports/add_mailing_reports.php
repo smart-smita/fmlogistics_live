@@ -1,0 +1,470 @@
+
+<?php 
+// NEW CHANGE: Fixed undefined variable issue with proper fallback
+$form_id = (isset($button_id) && !empty($button_id)) ? $button_id : 'mailing_form_' . rand(1000, 9999);
+$button_id = $button_id ?? 'mailing_modal_' . rand(1000, 9999);
+//data-ajax-url during add/edit 
+//data-ajax-add-url during add Important
+?>
+<?php $this->extend("Layout/base_admin"); ?>
+<?php 
+					$this->section("breadcrumb_title_li");
+?>
+
+<!--begin::Item-->
+	<li class="breadcrumb-item text-muted">
+		<a href="<?= current_url() ?>" class="text-muted text-hover-primary"><?=isset($title)?$title:"Client"?></a>
+	</li>
+<!--end::Item-->
+<?php $this->endSection();?>	
+
+<?php $this->section("main_body"); ?>
+<?=$table?>
+<?php $this->endSection(); ?>
+
+<?php  $this->section("modals_section"); ?>
+
+		<!--begin::Modal - Create App-->
+		<div class="modal fade" id="<?=$button_id?>" tabindex="-1" aria-hidden="true">
+		    <form id="<?=$form_id?>" onsubmit="return false;">
+			<!--begin::Modal dialog-->
+			<div class="modal-dialog modal-dialog-centered mw-900px">
+				<!--begin::Modal content-->
+				<div class="modal-content">
+					<!--begin::Modal header-->
+					<div class="modal-header">
+						<!--begin::Modal title-->
+						<h2>Mail Details</h2>
+						<!--end::Modal title-->
+						<!--begin::Close-->
+						<div class="btn btn-sm btn-icon btn-active-color-primary" data-bs-dismiss="modal">
+							<!--begin::Svg Icon | path: icons/duotune/arrows/arr061.svg-->
+							<span class="svg-icon svg-icon-1">
+								<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none">
+									<rect opacity="0.5" x="6" y="17.3137" width="16" height="2" rx="1" transform="rotate(-45 6 17.3137)" fill="black" />
+									<rect x="7.41422" y="6" width="16" height="2" rx="1" transform="rotate(45 7.41422 6)" fill="black" />
+								</svg>
+							</span>
+							<!--end::Svg Icon-->
+						</div>
+						<!--end::Close-->
+					</div>
+					<!--end::Modal header-->
+					<!--begin::Modal body-->
+					<div class="modal-body py-lg-10 px-lg-10">
+                    	<div class="scroll-y me-n7 pe-7" id="user" data-kt-scroll="false" data-kt-scroll-activate="{default: false, lg: true}" data-kt-scroll-max-height="auto" data-kt-scroll-dependencies="#kt_modal_new_address_header" data-kt-scroll-wrappers="#fees_head" data-kt-scroll-offset="300px" style="max-height: 273px;">
+								<!--begin::Input group-->
+								<div class="row mb-12">
+									<!--begin::Col-->
+									<div class="col-md-12 fv-row fv-plugins-icon-container">
+										<label class="required fs-5 fw-bold mb-2">Receiver Email </label>
+										<input type="text" class="form-control form-control-solid" id="receiver_email" name="receiver_email">
+										<div class="fv-plugins-message-container invalid-feedback"></div>
+									</div>
+										<div class="col-md-12 fv-row fv-plugins-icon-container">
+										<label class="required fs-5 fw-bold mb-2">From Email </label>
+										<input type="text" class="form-control form-control-solid" id="from_email" name="from_email">
+										<div class="fv-plugins-message-container invalid-feedback"></div>
+									</div>
+										
+										<div class="col-md-12 fv-row fv-plugins-icon-container">
+										<label class="required fs-5 fw-bold mb-2"> CC Emails </label>
+										<input type="text" class="form-control form-control-solid"  id="cc_emails" name="cc_emails">
+										<div class="fv-plugins-message-container invalid-feedback"></div>
+									</div>
+									<div class="col-md-12 fv-row fv-plugins-icon-container">
+										<label class="required fs-5 fw-bold mb-2">Subject </label>
+										<input type="text" class="form-control form-control-solid"  id="subject" name="subject">
+										<div class="fv-plugins-message-container invalid-feedback"></div>
+									</div>
+										<div class="col-md-12 fv-row fv-plugins-icon-container">
+										<label class="required fs-5 fw-bold mb-2">Body</label>
+										<textarea class="form-control form-control-solid" id="body" name="body" rows="4"></textarea>
+										<div class="fv-plugins-message-container invalid-feedback"></div>
+									</div>
+									
+									
+									
+									<!--end::Col-->
+								</div>
+								
+								
+								
+								<!--end::Input group-->
+							</div>
+					</div>
+					<!--end::Modal body-->
+					
+					<!--begin::Modal footer-->
+					<div class="modal-footer flex-center">
+							<!--begin::Button-->
+							<button type="reset" class="btn btn-light me-3" data-bs-dismiss="modal">Discard</button>
+							<!--end::Button-->
+							
+							<!--begin::Button-->
+							<button type="submit" id="ajax_click" data-ajax-add-url="<?=$ajax_url?>" class="btn btn-primary">
+								<span class="indicator-label">Submit</span>
+								<span class="indicator-progress">Please wait... 
+								<span class="spinner-border spinner-border-sm align-middle ms-2"></span></span>
+							</button>
+							<!--end::Button-->
+							
+						</div>
+						<!--end::Modal footer-->
+						
+				</div>
+				<!--end::Modal content-->
+			</div>
+			<!--end::Modal dialog-->
+        </form>
+        </div>
+		<!--end::Modal - Create App-->
+
+		<!--begin::Modal - Email Popup-->
+		<div class="modal fade" id="emailModal" tabindex="-1" aria-hidden="true">
+		    <form id="emailForm" onsubmit="return false;">
+			<!--begin::Modal dialog-->
+			<div class="modal-dialog modal-dialog-centered mw-800px">
+				<!--begin::Modal content-->
+				<div class="modal-content">
+					<!--begin::Modal header-->
+					<div class="modal-header">
+						<!--begin::Modal title-->
+						<h2>Send Email</h2>
+						<!--end::Modal title-->
+						<!--begin::Close-->
+						<div class="btn btn-sm btn-icon btn-active-color-primary" data-bs-dismiss="modal">
+							<!--begin::Svg Icon | path: icons/duotune/arrows/arr061.svg-->
+							<span class="svg-icon svg-icon-1">
+								<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none">
+									<rect opacity="0.5" x="6" y="17.3137" width="16" height="2" rx="1" transform="rotate(-45 6 17.3137)" fill="black" />
+									<rect x="7.41422" y="6" width="16" height="2" rx="1" transform="rotate(45 7.41422 6)" fill="black" />
+								</svg>
+							</span>
+							<!--end::Svg Icon-->
+						</div>
+						<!--end::Close-->
+					</div>
+					<!--end::Modal header-->
+					<!--begin::Modal body-->
+					<div class="modal-body py-lg-10 px-lg-10">
+                    	<div class="scroll-y me-n7 pe-7" id="emailModalBody" data-kt-scroll="false" data-kt-scroll-activate="{default: false, lg: true}" data-kt-scroll-max-height="auto" data-kt-scroll-dependencies="#kt_modal_new_address_header" data-kt-scroll-wrappers="#emailModalBody" data-kt-scroll-offset="300px" style="max-height: 400px;">
+								<!--begin::Input group-->
+								<div class="row mb-8">
+									<!--begin::Col-->
+									<div class="col-md-6 fv-row fv-plugins-icon-container">
+										<label class="required fs-5 fw-bold mb-2">To Email</label>
+										<input type="email" class="form-control form-control-solid" id="emailTo" name="receiver_email" readonly>
+										<div class="fv-plugins-message-container invalid-feedback"></div>
+									</div>
+									<div class="col-md-6 fv-row fv-plugins-icon-container">
+										<label class="fs-5 fw-bold mb-2">CC Emails</label>
+										<input type="text" class="form-control form-control-solid" id="emailCC" name="cc_emails" placeholder="Enter CC emails separated by comma">
+										<div class="fv-plugins-message-container invalid-feedback"></div>
+									</div>
+								</div>
+								
+								<div class="row mb-8">
+									<div class="col-md-12 fv-row fv-plugins-icon-container">
+										<label class="required fs-5 fw-bold mb-2">Subject</label>
+										<input type="text" class="form-control form-control-solid" id="emailSubject" name="subject">
+										<div class="fv-plugins-message-container invalid-feedback"></div>
+									</div>
+								</div>
+								
+								<div class="row mb-8">
+									<div class="col-md-12 fv-row fv-plugins-icon-container">
+										<label class="required fs-5 fw-bold mb-2">Message</label>
+										<textarea class="form-control form-control-solid" id="emailBody" name="body" rows="6" placeholder="Enter your message here..."></textarea>
+										<div class="fv-plugins-message-container invalid-feedback"></div>
+									</div>
+								</div>
+								
+								<div class="row mb-8">
+									<div class="col-md-12">
+										<div class="alert alert-info">
+											<i class="fas fa-info-circle me-2"></i>
+											<strong>Note:</strong> A PDF report will be automatically attached to this email.
+										</div>
+									</div>
+								</div>
+								
+								<!-- Hidden fields -->
+								<input type="hidden" id="emailMailId" name="mail_id">
+								<input type="hidden" id="emailDocId" name="doc_id">
+								<input type="hidden" id="emailDocCategory" name="doc_category">
+								
+								<!--end::Input group-->
+							</div>
+					</div>
+					<!--end::Modal body-->
+					
+					<!--begin::Modal footer-->
+					<div class="modal-footer flex-center">
+							<!--begin::Button-->
+							<button type="button" class="btn btn-light me-3" data-bs-dismiss="modal">Cancel</button>
+							<!--end::Button-->
+							
+							<!--begin::Button-->
+							<button type="submit" id="sendEmailBtn" class="btn btn-primary">
+								<span class="indicator-label">Send Email</span>
+								<span class="indicator-progress">Sending... 
+								<span class="spinner-border spinner-border-sm align-middle ms-2"></span></span>
+							</button>
+							<!--end::Button-->
+							
+						</div>
+						<!--end::Modal footer-->
+						
+				</div>
+				<!--end::Modal content-->
+			</div>
+			<!--end::Modal dialog-->
+        </form>
+        </div>
+		<!--end::Modal - Email Popup-->
+
+
+<?php 				$this->endSection();?>
+	
+
+<?php 					$this->section("javascript_section");?>
+<script>
+//$("#kt_datepicker_1").flatpickr();
+//$.ajax()
+const form = document.getElementById('<?=$form_id?>');
+// NEW CHANGE: Fixed validation object for mailing form fields
+var validation_object  = {
+        fields: {
+            'receiver_email': {
+                validators: {
+                    notEmpty: {
+                        message: 'Receiver Email is required'
+                    },
+                    emailAddress: {
+                        message: 'Please enter a valid email address'
+                    }
+                }
+            },
+            'subject': {
+                validators: {
+                    notEmpty: {
+                        message: 'Subject is required'
+                    }
+                }
+            },
+            'body': {
+                validators: {
+                    notEmpty: {
+                        message: 'Body is required'
+                    }
+                }
+            }
+        },
+
+        plugins: {
+            trigger: new FormValidation.plugins.Trigger(),
+            bootstrap: new FormValidation.plugins.Bootstrap5({
+                rowSelector: '.fv-row',
+                eleInvalidClass: '',
+                eleValidClass: ''
+            })
+        }
+    };
+var validator = FormValidation.formValidation(form,validation_object);
+
+        $("#ajax_click").on("click",function(){
+                var button = $(this);
+                var url = $(this).attr("data-ajax-url");
+        if (validator) {
+        validator.validate().then(function (status) {
+            if (status == 'Valid') {
+                var data_to_send =$("#<?=$form_id?>").serializeArray();
+                    var formData = {};
+                    $.each(data_to_send, function(i, field){
+                        if(field.value.trim() != ""){
+                          formData[field.name] = field.value;
+                        }
+                    });
+
+                //ajax_call(url,data_to_send,button,success_function)
+                    ajax_call(url,formData,button,function(responce){
+                        try{
+                            responce = JSON.parse(responce);
+                            if(responce.status==1){
+                                    toastr.success(responce.message);
+                                    form.reset();
+                                    $("#<?=$form_id?>").modal("hide");
+                                    reload_data_table();
+                            }else{
+                                    toastr.warning(responce.message);
+                                }
+                            }catch(error){
+                                toastr.error(error);
+                            }
+                    });
+                }else{
+                    // not validate 
+                }
+        });
+        }
+    
+});
+function edit_id(obj,id){
+    var url = $(obj).attr("data-ajax-url");
+    var formData={"id":id};
+    ajax_call(url,formData,$(obj),function(responce){
+                        try{
+                            responce = JSON.parse(responce);
+                            if(responce.status==1){
+                                    toastr.success(responce.message);
+                                    //form.reset();
+                                    // to update value 
+                                    $("#<?=$form_id?>").find("#receiver_email").val(responce.data.receiver_email);
+                                    $("#<?=$form_id?>").find("#from_email").val(responce.data.from_email);
+                                    $("#<?=$form_id?>").find("#cc_emails").val(responce.data.cc_emails);
+                                    $("#<?=$form_id?>").find("#subject").val(responce.data.subject);
+                                    $("#<?=$form_id?>").find("#body").val(responce.data.body);
+
+
+
+                                
+                                    $("#<?=$form_id?>").find("#ajax_click").attr("data-ajax-url",$("#<?=$form_id?>").find("#ajax_click").attr("data-ajax-add-url")+"/"+id);
+                                    $("#<?=$form_id?>").modal("show");
+                            }else{
+                                    toastr.warning(responce.message);
+                                }
+                            }catch(error){
+                                toastr.error(error);
+                            }
+                    });
+}
+function delete_row(obj,id){
+    Swal.fire({
+              title: 'Do you want delete?',
+              //showDenyButton: true,
+              showCancelButton: true,
+              confirmButtonText: 'Save',
+              //denyButtonText: `Don't delete`,
+            }).then((result) => {
+              /* Read more about isConfirmed, isDenied below */
+              if (result.isConfirmed) {
+                //Swal.fire('Saved!', '', 'success')
+                url_call_ajax($(obj).attr("data-ajax-url"),$(obj));
+              } 
+            //   else if (result.isDenied) {
+            //     Swal.fire('Changes are not saved', '', 'info')
+            //   }
+            });
+
+}
+
+// NEW CHANGE: Email popup functionality
+function openEmailModal(mailId, receiverEmail, subject, body, docId, docCategory) {
+    // Pre-fill the form fields
+    document.getElementById('emailMailId').value = mailId;
+    document.getElementById('emailTo').value = receiverEmail;
+    document.getElementById('emailSubject').value = subject || '';
+    document.getElementById('emailBody').value = body || '';
+    document.getElementById('emailDocId').value = docId || '';
+    document.getElementById('emailDocCategory').value = docCategory || '';
+    
+    // Clear CC field
+    document.getElementById('emailCC').value = '';
+    
+    // Show the modal
+    var emailModal = new bootstrap.Modal(document.getElementById('emailModal'));
+    emailModal.show();
+}
+
+// Email form validation and submission
+var emailValidator = FormValidation.formValidation(document.getElementById('emailForm'), {
+    fields: {
+        'receiver_email': {
+            validators: {
+                notEmpty: {
+                    message: 'Receiver email is required'
+                },
+                emailAddress: {
+                    message: 'Please enter a valid email address'
+                }
+            }
+        },
+        'subject': {
+            validators: {
+                notEmpty: {
+                    message: 'Subject is required'
+                }
+            }
+        },
+        'body': {
+            validators: {
+                notEmpty: {
+                    message: 'Message is required'
+                }
+            }
+        }
+    },
+    plugins: {
+        trigger: new FormValidation.plugins.Trigger(),
+        bootstrap: new FormValidation.plugins.Bootstrap5({
+            rowSelector: '.fv-row',
+            eleInvalidClass: '',
+            eleValidClass: ''
+        })
+    }
+});
+
+// Handle email form submission
+document.getElementById('sendEmailBtn').addEventListener('click', function() {
+    var button = this;
+    var form = document.getElementById('emailForm');
+    
+    if (emailValidator) {
+        emailValidator.validate().then(function (status) {
+            if (status == 'Valid') {
+                // Show loading state
+                button.setAttribute('data-kt-indicator', 'on');
+                button.disabled = true;
+                
+                // Prepare form data
+                var formData = new FormData(form);
+                formData.append('user_id', '<?= $_SESSION['login_id'] ?? '' ?>');
+                
+                // Send AJAX request
+                fetch('<?= base_url("Reports/Mailing_report/email") ?>', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status == 1) {
+                        toastr.success('Email sent successfully!');
+                        // Close modal
+                        var emailModal = bootstrap.Modal.getInstance(document.getElementById('emailModal'));
+                        emailModal.hide();
+                        // Reload table data
+                        if (typeof reload_data_table === 'function') {
+                            reload_data_table();
+                        }
+                    } else {
+                        toastr.error(data.message || 'Failed to send email');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    toastr.error('An error occurred while sending email');
+                })
+                .finally(() => {
+                    // Hide loading state
+                    button.removeAttribute('data-kt-indicator');
+                    button.disabled = false;
+                });
+            }
+        });
+    }
+});
+
+</script>
+<?php 				$this->endSection();?>
+

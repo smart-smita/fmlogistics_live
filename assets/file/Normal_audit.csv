@@ -1,0 +1,3 @@
+Category,Audit Question,Audit Parameter,Risk Priority,Weightage,Audit Finding,Calculated
+Legal Compliance,Is Factory license available?,Check validity,High,10,NA,0
+Fire Safety,Are Fire Extinguishers available?,Check expiry,High,20,NA,0

@@ -1,0 +1,134 @@
+/* Custom Typography Overhaul */
+/* Applied to improve readability, accessibility, and professional appearance */
+
+/* 1. Base Font & Font Sizes */
+body {
+    font-family: 'Poppins', sans-serif !important;
+    font-size: 15px !important; /* Increased base font size */
+    color: #1e1e2d !important; /* Darker base text color */
+}
+
+/* 2. Headings and Card Titles */
+h1, h2, h3, h4, h5, h6, 
+.card-title, .modal-title {
+    font-weight: 700 !important;
+    color: #111118 !important; /* Darker headings */
+}
+
+h1 { font-size: 1.75rem !important; }
+h2 { font-size: 1.5rem !important; }
+h3 { font-size: 1.35rem !important; }
+h4 { font-size: 1.25rem !important; }
+h5 { font-size: 1.15rem !important; }
+h6 { font-size: 1.05rem !important; }
+
+.card-title {
+    font-size: 1.25rem !important;
+}
+
+/* 3. Text Colors (Replacing faint text) */
+.text-muted, .text-gray-400, .text-gray-500, .text-gray-600 {
+    color: #4b5675 !important; /* Darker gray for better contrast */
+    font-weight: 500 !important;
+}
+
+/* 4. Table Headers & Content */
+.table th, .table thead th {
+    font-weight: 700 !important;
+    color: #1e1e2d !important;
+    font-size: 1.05rem !important;
+    background-color: #f5f8fa !important;
+}
+
+.table td, .table tbody td {
+    font-weight: 500 !important;
+    color: #3f4254 !important;
+    font-size: 15px !important;
+}
+
+/* DataTables specific adjustments */
+.dataTables_wrapper .dataTables_info,
+.dataTables_wrapper .dataTables_paginate .paginate_button {
+    font-weight: 600 !important;
+    color: #3f4254 !important;
+}
+
+/* 5. Forms, Inputs, & Filters */
+.form-label, label {
+    font-weight: 600 !important;
+    color: #1e1e2d !important;
+    font-size: 15px !important;
+}
+
+.form-control, .form-select, input, select, textarea {
+    font-size: 15px !important;
+    font-weight: 500 !important;
+    color: #1e1e2d !important;
+}
+
+/* Placeholder text */
+::placeholder, .form-control::placeholder {
+    color: #7e8299 !important; /* Readable but distinct placeholder */
+    font-weight: 400 !important;
+}
+
+/* 6. Dashboard KPI Values & Quick Actions */
+.kpi-value, .fs-2hx, .fs-1, .fs-2 {
+    font-weight: 700 !important;
+    color: #111118 !important;
+}
+
+/* 7. Sidebar & Navigation Menus */
+.aside-dark .menu .menu-item .menu-link .menu-title {
+    font-size: 1.05rem !important;
+    font-weight: 500 !important;
+}
+
+/* 8. Breadcrumbs */
+.breadcrumb-item, .breadcrumb-item a {
+    font-weight: 500 !important;
+    font-size: 14px !important;
+    color: #4b5675 !important;
+}
+
+/* 9. Badges / Tags */
+.badge {
+    font-weight: 600 !important;
+    font-size: 13px !important;
+}
+
+/* 10. Modals, Alerts, & Toast Notifications */
+.modal-body {
+    font-size: 15px !important;
+    color: #3f4254 !important;
+}
+
+.toast-body, .alert {
+    font-size: 15px !important;
+    font-weight: 500 !important;
+}
+
+/* 11. Chart & Graph Labels */
+/* D3, ApexCharts, Chart.js elements usually use SVG text */
+.apexcharts-text, .apexcharts-legend-text, text {
+    font-family: 'Poppins', sans-serif !important;
+    font-size: 13px !important;
+    font-weight: 600 !important;
+    fill: #3f4254 !important;
+}
+
+/* 12. Multi-Select Checkbox Styling */
+.select2-results__option {
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+}
+
+.select2-container--default .select2-results__option[aria-selected="true"] {
+    background-color: #f1faff !important;
+}
+
+.select2-container--default .select2-results__option--highlighted[aria-selected] {
+    background-color: #009ef7 !important;
+    color: white !important;
+}

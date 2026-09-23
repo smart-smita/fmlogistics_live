@@ -1,0 +1,262 @@
+
+<?php 
+$form_id= $button_id;
+//data-ajax-url during add/edit 
+//data-ajax-add-url during add Important
+?>
+<?php $this->extend("Layout/base_admin"); ?>
+<?php 
+					$this->section("breadcrumb_title_li");
+?>
+
+<!--begin::Item-->
+	<li class="breadcrumb-item text-muted">
+		<a href="<?= current_url() ?>" class="text-muted text-hover-primary"><?=isset($title)?$title:"Client"?></a>
+	</li>
+<!--end::Item-->
+<?php $this->endSection();?>	
+
+<?php $this->section("main_body"); ?>
+<?=$table?>
+<?php $this->endSection(); ?>
+
+<?php  $this->section("modals_section"); ?>
+
+		<!--begin::Modal - Create App-->
+		<div class="modal fade" id="<?=$button_id?>" tabindex="-1" aria-hidden="true">
+		    <form id="<?=$form_id?>_form" onsubmit="return false;">
+			<!--begin::Modal dialog-->
+			<div class="modal-dialog modal-dialog-centered mw-900px">
+				<!--begin::Modal content-->
+				<div class="modal-content">
+					<!--begin::Modal header-->
+					<div class="modal-header">
+						<!--begin::Modal title-->
+						<h2>Client Details</h2>
+						<!--end::Modal title-->
+						<!--begin::Close-->
+						<div class="btn btn-sm btn-icon btn-active-color-primary" data-bs-dismiss="modal">
+							<!--begin::Svg Icon | path: icons/duotune/arrows/arr061.svg-->
+							<span class="svg-icon svg-icon-1">
+								<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none">
+									<rect opacity="0.5" x="6" y="17.3137" width="16" height="2" rx="1" transform="rotate(-45 6 17.3137)" fill="black" />
+									<rect x="7.41422" y="6" width="16" height="2" rx="1" transform="rotate(45 7.41422 6)" fill="black" />
+								</svg>
+							</span>
+							<!--end::Svg Icon-->
+						</div>
+						<!--end::Close-->
+					</div>
+					<!--end::Modal header-->
+					<!--begin::Modal body-->
+					<div class="modal-body py-lg-10 px-lg-10">
+                    	<div class="scroll-y me-n7 pe-7" id="user" data-kt-scroll="false" data-kt-scroll-activate="{default: false, lg: true}" data-kt-scroll-max-height="auto" data-kt-scroll-dependencies="#kt_modal_new_address_header" data-kt-scroll-wrappers="#fees_head" data-kt-scroll-offset="300px" style="max-height: 273px;">
+								<!--begin::Input group-->
+								<div class="row mb-12">
+									<!--begin::Col-->
+									<div class="col-md-12 fv-row fv-plugins-icon-container">
+										<label class="required fs-5 fw-bold mb-2">Category text  </label>
+										<input type="text" class="form-control form-control-solid" placeholder="Please enter Category text" id="lmra_category_text" name="lmra_category_text">
+										<div class="fv-plugins-message-container invalid-feedback"></div>
+									</div>
+									<div class="col-md-12 fv-row fv-plugins-icon-container">
+										<label class="required fs-5 fw-bold mb-2">lmra text  </label>
+										<input type="text" class="form-control form-control-solid" placeholder="Please enter lmra text" id="lmra_text" name="lmra_text">
+										<div class="fv-plugins-message-container invalid-feedback"></div>
+									</div>
+									<!--<div class="col-md-12 fv-row fv-plugins-icon-container">-->
+									<!--	<label class="required fs-5 fw-bold mb-2">lmra_options  </label>-->
+									<!--	<input type="text" class="form-control form-control-solid" placeholder="Please enter lmra options" id="lmra_options" name="lmra_options">-->
+									<!--	<div class="fv-plugins-message-container invalid-feedback"></div>-->
+									<!--</div>-->
+							
+							<div  class="col-md-12 fv-row fv-plugins-icon-container">
+							    <?php foreach ($lmra_options as $row){ ?>
+                               	<label>
+                                    <input type="checkbox" name="options[]" value="<?=$row?>"> <?=$row?>
+                                </label>
+                               <?php } ?>
+                        		 </div>
+                        		 
+							
+							<!--<div class="form-check" id="checkbox-container">-->
+                                    <!-- Checkboxes will be generated here by JavaScript -->
+       <!--                         </div>		-->
+                            									<!--end::Col-->
+							<!--	</div>-->
+								
+								
+								
+								<!--end::Input group-->
+							</div>
+					</div>
+					<!--end::Modal body-->
+					
+					<!--begin::Modal footer-->
+					<div class="modal-footer flex-center">
+							<!--begin::Button-->
+							<button type="reset" class="btn btn-light me-3" data-bs-dismiss="modal">Discard</button>
+							<!--end::Button-->
+							
+							<!--begin::Button-->
+							<button type="submit" id="ajax_click" data-ajax-add-url="<?=$ajax_url?>" class="btn btn-primary">
+								<span class="indicator-label">Submit</span>
+								<span class="indicator-progress">Please wait... 
+								<span class="spinner-border spinner-border-sm align-middle ms-2"></span></span>
+							</button>
+							<!--end::Button-->
+							
+						</div>
+						<!--end::Modal footer-->
+							
+						
+				<!--end::Modal content-->
+			</div>
+			<!--end::Modal dialog-->
+        </form>
+        </div>
+		<!--end::Modal - Create App-->
+
+
+<?php 				$this->endSection();?>
+	
+
+<?php 					$this->section("javascript_section");?>
+<script>
+//$("#kt_datepicker_1").flatpickr();
+//$.ajax()
+const form = document.getElementById('<?=$form_id?>_form');
+var validation_object  = {
+        fields: {
+            'lmra_category_text': {
+                validators: {
+                    notEmpty: {
+                        message: 'Lmra Category Name is required'
+                    }
+                }
+            },'lmra_text':{
+                 validators: {
+                    notEmpty: {
+                        message: 'Lmra Text  Name is required'
+                    }
+                }
+            }
+        },
+
+        plugins: {
+            trigger: new FormValidation.plugins.Trigger(),
+            bootstrap: new FormValidation.plugins.Bootstrap5({
+                rowSelector: '.fv-row',
+                eleInvalidClass: '',
+                eleValidClass: ''
+            })
+        }
+    };
+var validator = FormValidation.formValidation(form,validation_object);
+
+        $("#ajax_click").on("click",function(){
+                var button = $(this);
+                var url = $(this).attr("data-ajax-url");
+        if (validator) {
+        validator.validate().then(function (status) {
+            if (status == 'Valid') {
+                var data_to_send = $("#<?=$form_id?>_form").serializeArray();
+                var formData = {};
+                $.each(data_to_send, function(i, field) {
+                    // Check if the field name is 'options[]'
+                    if (field.name === 'options[]') {
+                        // Initialize the array if it doesn't exist
+                        if (!formData['options[]']) {
+                            formData['options[]'] = [];
+                        }
+                        // Push the value into the 'options[]' array
+                        formData['options[]'].push(field.value);
+                    } else {
+                        // Assign the value directly to the corresponding key
+                        if (field.value.trim() !== "") {
+                            formData[field.name] = field.value;
+                        }
+                    }
+                });
+
+                //ajax_call(url,data_to_send,button,success_function)
+                    ajax_call(url,formData,button,function(responce){
+                        try{
+                            responce = JSON.parse(responce);
+                            if(responce.status==1){
+                                    toastr.success(responce.message);
+                                    form.reset();
+                                    $("#<?=$form_id?>").modal("hide");
+                                    reload_data_table();
+                            }else{
+                                    toastr.warning(responce.message);
+                                }
+                            }catch(error){
+                                toastr.error(error);
+                            }
+                    });
+                }else{
+                    // not validate 
+                }
+        });
+        }
+    
+});
+function edit_id(obj,id){
+    var url = $(obj).attr("data-ajax-url");
+    var formData={"id":id};
+    ajax_call(url,formData,$(obj),function(responce){
+                        try{
+                            responce = JSON.parse(responce);
+                            if(responce.status==1){
+                                    toastr.success(responce.message);
+                                    //form.reset();
+                                    // to update value 
+                                    $('input[name="options[]"]').prop('checked', false);
+
+                                    $("#<?=$form_id?>").find("#lmra_category_text").val(responce.data.lmra_category_text);
+                                    $("#<?=$form_id?>").find("#lmra_text").val(responce.data.lmra_text);
+                                    $("#<?=$form_id?>").find("#lmra_options").val(responce.data.lmra_options);
+                                    var valuesToCheck = responce.data.lmra_options.split(",");
+
+                                    // Iterate over the array and check the corresponding checkboxes
+                                    valuesToCheck.forEach(function(value) {
+                                        $('input[name="options[]"][value="' + value + '"]').prop('checked', true);
+                                    });
+                                                                
+                                    $("#<?=$form_id?>").find("#ajax_click").attr("data-ajax-url",$("#<?=$form_id?>").find("#ajax_click").attr("data-ajax-add-url")+"/"+id);
+                                    $("#<?=$form_id?>").modal("show");
+                            }else{
+                                    toastr.warning(responce.message);
+                                }
+                            }catch(error){
+                                toastr.error(error);
+                            }
+                    });
+}
+function delete_row(obj,id){
+    Swal.fire({
+              title: 'Do you want delete?',
+              //showDenyButton: true,
+              showCancelButton: true,
+              confirmButtonText: 'Save',
+              //denyButtonText: `Don't delete`,
+            }).then((result) => {
+              /* Read more about isConfirmed, isDenied below */
+              if (result.isConfirmed) {
+                //Swal.fire('Saved!', '', 'success')
+                url_call_ajax($(obj).attr("data-ajax-url"),$(obj));
+              } 
+            //   else if (result.isDenied) {
+            //     Swal.fire('Changes are not saved', '', 'info')
+            //   }
+            });
+
+}
+ 
+
+
+
+</script>
+<?php 				$this->endSection();?>
+

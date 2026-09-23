@@ -1,0 +1,902 @@
+<?php
+
+//namespace App\Controllers;
+namespace App\Controllers\Masters;
+use App\Controllers\BaseController;
+use App\Models\CRUDBaseModel;
+
+
+class Client_nc_tracker extends BaseController
+{
+ 
+    /**
+     * @var CRUDBaseModel
+     */
+    protected $BaseModel;
+ 
+  public function __construct(){
+        // changes on 16/10/25 by darsh: Using simple ACL helper without database changes
+        // ACL: Load designation ACL helper - 12/11/25
+        helper(["form", "simple_acl", "designation_acl"]);
+     $db = null;
+     $db['table']         = 'alert_hse_audit_details';
+     // changes on 13/11/25 by darsh: Add nc_worked_by and nc_closed_by_user to allowedFields
+     $db['allowedFields'] = ['hse_audit_id','question_audit_id','question_name','audit_question','client_leased','inplant','fm_leased','remark','attachment','nc_closed_date','nc_reviewed_date','nc_close_by','nc_reviewed_by','nc_status','nc_remark','nc_after_photo','client_leased_json','inplant_json','fm_leased_json','nc_status','nc_worked_by','nc_closed_by_user'];
+     $db['primaryKey'] = "id";
+     $this->BaseModel = new CRUDBaseModel($db);
+    }
+    public function index()
+    {
+            $data = [];
+    
+            $tdata['title']="Client Nc Tracker";
+            // $tdata['button_name']="Add Client_nc_tracker";
+            $tdata['button_id']="user_modal";
+            // changes on 10/11/12 by darsh: pass multi-filter qs to ajax url
+            $req = service('request');
+            $qs = http_build_query([
+                'region'   => $req->getGet('region'),
+                'cluster'  => $req->getGet('cluster'),
+                'location' => $req->getGet('location'),
+                'month'    => $req->getGet('month'),
+            ]);
+            
+            // changes on 10/11/12 by darsh: streamline columns and move Action after Id
+            // changes on 13/11/25 by darsh: Add NC Worked By column
+            $tdata['display_contents'] = [
+                'id'               => 'Id',
+                'action'           => 'Action',
+                'audit_no'         => 'Audit no.',
+                'audit_name'       => 'Audit Name',
+                'auditor_name'     => 'Auditor Name',
+                'auditee_name'     => 'Auditee Name',
+                'client_name'      => 'Client Name',
+                'audit_date'       => 'Audit Date',
+                'region'           => 'Region',
+                'score'            => 'Score',
+                'perform_audit_by' => 'Site Category',
+                'question_name'    => 'Question Name',
+                'audit_question'   => 'Audit Question',
+                'client_leased'    => 'Client Leased',
+                'remark'           => 'Remark',
+                'attachment'       => 'Attachment',
+                'nc_closed_date'   => 'Nc Closed Date',
+            'nc_reviewed_date' => 'Nc Reviewed Date',
+                'nc_closed_by'     => 'Nc Closed By',
+                'nc_reviewed_by'   => 'Nc Reviewed By',
+                'nc_worked_by'     => 'NC Worked By',
+                'nc_closed_by_user' => 'NC Closed By User',
+                'nc_remark'        => 'Nc Remark',
+                'nc_after_photo'   => 'Nc After Photo',
+                // 'nc_status'        => 'Nc Status',
+                ];
+            $data['ajax_url']=base_url("Masters/Client_nc_tracker/save_details");
+            $tdata ['ajax_url_for_data']=base_url("Masters/Client_nc_tracker/table_ajax").($qs ? ('?'.$qs) : '');
+            // $data['user_designation'] = ["Engineer","Reporting manager",""];
+           
+            // $data['table'] ="";
+            
+             $db = db_connect(); // Add database connection
+    
+        // NEW CHANGES: Fix counts to match Client NC Tracker filter (client_leased = 'NO')
+        $statusCountQuery = $db->query("SELECT count(*) as found_count, nc_status FROM alert_hse_audit_details WHERE client_leased = 'NO' GROUP BY nc_status");
+        $statusCounts = array_column($statusCountQuery->getResultArray(), 'found_count', 'nc_status');
+    
+        // Get counts with default 0 if no records exist
+        $openCount = $statusCounts[0] ?? 0;
+        $closedCount = $statusCounts[2] ?? 0; // Assuming 2 is "Closed" status
+        $workingCount = $statusCounts[1] ?? 0;
+        
+             $datatop='<div class="row g-5 g-xl-8">
+        <div class="col-md-4">
+            <a href="'.base_url('Masters/Client_nc_tracker/template_type_filter/0').'" class="card bg-primary hoverable mb-xl-8">
+                <!--begin::Body-->
+                <div class="card-body" style="padding: 1rem 2.25rem;">
+                   
+                    <div class="fw-semibold text-gray-100">Open('.$openCount.')</div>
+                </div>
+            </a>
+        </div>
+        
+        <div class="col-md-4">
+            <a href="'.base_url('Masters/Client_nc_tracker/template_type_filter/2').'" class="card bg-dark hoverable mb-xl-8">
+                <div class="card-body" style="padding: 1rem 2.25rem;">
+                    <div class="fw-semibold text-gray-100">Close('.$closedCount.')</div>
+                </div>
+            </a>
+        </div>
+        
+        <div class="col-md-4">
+            <a href="'.base_url('Masters/Client_nc_tracker/template_type_filter/1').'" class="card bg-warning hoverable mb-xl-8">
+                <div class="card-body" style="padding: 1rem 2.25rem;">
+                    <div class="fw-semibold text-white">Working('.$workingCount.')</div>
+                </div>
+            </a>
+        </div>
+    
+        
+    </div>
+    ';
+        // changes on 10/11/12 by darsh: Select2 filter bar fed from DB
+        $db2 = db_connect();
+        $regions  = $db2->table('alert_region')->select('region_name')->where('status', 1)->get()->getResultArray();
+        
+        // ACL: Retrieve user cluster FIRST
+        $userClusterACL = null;
+        if (isClusterManager() || isWHManager()) {
+            $userClusterACL = getClusterManagerAssignedCluster();
+        }
+
+        // changes on 10/11/12 by darsh: clusters strictly from Location Master
+        $clusterBuilder = $db2->table('alert_location_master')->select('DISTINCT(cluster_name) cluster_name', false)->where('status', 1);
+        if (!empty($userClusterACL)) {
+            $clusterBuilder->whereIn('cluster_name', $userClusterACL);
+        }
+        $clusters = $clusterBuilder->get()->getResultArray();
+
+        $locBuilder = $db2->table('alert_location_master')->select('location_name')->where('status', 1);
+        if (!empty($userClusterACL)) {
+            $locBuilder->whereIn('cluster_name', $userClusterACL);
+        }
+        $locations = $locBuilder->get()->getResultArray();
+        $selRegion   = (string)($req->getGet('region') ?? '');
+        $selCluster  = (string)($req->getGet('cluster') ?? '');
+        $selLocation = (string)($req->getGet('location') ?? '');
+        $selMonth    = (string)($req->getGet('month') ?? '');
+        $opt = function(array $rows, string $col, string $selected){ $h = '<option value="">Select '.$col.'</option>'; foreach($rows as $r){ $v=trim($r[$col]??''); if(!$v) continue; $sel = ($v===$selected)?' selected':''; $h.='<option value="'.htmlspecialchars($v,ENT_QUOTES).'"'.$sel.'>'.$v.'</option>'; } return $h; };
+        $filterBar = '
+            <form method="get" class="card mb-5 p-3" style="overflow:visible">
+                <div class="row g-3 align-items-end">
+                    <div class="col-md-3">
+                        <label class="form-label">Region</label>
+                        <select id="flt_region" name="region" class="form-select form-select-sm select2">'. $opt($regions,'region_name',$selRegion) .'</select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Cluster</label>
+                        <select id="flt_cluster" name="cluster" class="form-select form-select-sm select2" data-selected="'.htmlspecialchars($selCluster,ENT_QUOTES).'">'. $opt($clusters,'cluster_name',$selCluster) .'</select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Location</label>
+                        <select id="flt_location" name="location" class="form-select form-select-sm select2" data-selected="'.htmlspecialchars($selLocation,ENT_QUOTES).'">'. $opt($locations,'location_name',$selLocation) .'</select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Month (YYYY-MM)</label>
+                        <input type="month" name="month" value="'.htmlspecialchars($selMonth, ENT_QUOTES).'" class="form-control form-control-sm"/>
+                    </div>
+                    <div class="col-md-1">
+                        <button class="btn btn-sm btn-primary w-100" type="submit">Show</button>
+                    </div>
+                </div>
+            </form>
+            <script>
+            $(function(){
+                $(".select2").select2();
+                $("#flt_region").on("change", function(){
+                    var region = $(this).val();
+                    $("#flt_cluster").empty().append("<option value=\"\">Loading...</option>").trigger("change");
+                    $("#flt_location").empty().append("<option value=\"\">Select Location</option>").trigger("change");
+                    $.post("'.base_url('Customer/Audit_dashboard/get_clusters_by_region').'", { region_name: region }, function(rows){
+                        var opts = "<option value=\\\"\\\">Select cluster_name</option>";
+                        if(Array.isArray(rows)){ rows.forEach(function(r){ var v = (r.cluster_name||\" \").trim(); if(v){ opts += \"<option>\"+v+\"</option>\"; } });}
+                        $("#flt_cluster").html(opts).val("'.htmlspecialchars($selCluster,ENT_QUOTES).'").trigger("change");
+                    });
+                });
+                $("#flt_cluster").on("change", function(){
+                    var cluster = $(this).val();
+                    var region = $("#flt_region").val();
+                    $("#flt_location").empty().append("<option value=\"\">Loading...</option>").trigger("change");
+                    $.post("'.base_url('Customer/Audit_dashboard/get_locations_by_cluster').'", { region_name: region, cluster_name: cluster }, function(rows){
+                        var opts = "<option value=\\\"\\\">Select location_name</option>";
+                        if(Array.isArray(rows)){ rows.forEach(function(r){ var v = (r.location_name||\" \").trim(); if(v){ opts += \"<option>\"+v+\"</option>\"; } });}
+                        $("#flt_location").html(opts).val("'.htmlspecialchars($selLocation,ENT_QUOTES).'").trigger("change");
+                    });
+                });
+                if("'.($selRegion !== '' ? '1':'').'" !== ""){ $("#flt_region").trigger("change"); }
+            });
+            </script>';
+        $data['table'] =$filterBar.$datatop;
+         
+        $data['table'] .= view("Layout/table-view",$tdata);
+        return view("Master/add_client_nc_tracker",$data);
+    }
+     public function template_type_filter($nc_status)
+    {
+     $data = [];
+
+        $tdata['title']="Client Nc Tracker";
+        // $tdata['button_name']="Add Client_nc_tracker";
+        $tdata['button_id']="user_modal";
+        // changes on 10/11/12 by darsh: pass multi-filter qs to ajax url
+        $req = service('request');
+        $qs = http_build_query([
+            'region'   => $req->getGet('region'),
+            'cluster'  => $req->getGet('cluster'),
+            'location' => $req->getGet('location'),
+            'month'    => $req->getGet('month'),
+        ]);
+        
+        $tdata['display_contents'] = [
+            'id'=>'Id',
+        'audit_no'       => 'Audit no.',
+        'audit_name' => 'Audit Name',
+        'auditor_name' => 'Auditor Name',
+        'auditee_name' => 'Auditee Name',
+        'client_name' => 'Client Name',
+        'audit_date'=>'Audit Date',
+        'template_date'=>'Completion  Date',
+        'region'=>'Region',
+        'location'=>'Site Location',
+        'score'=>'Score',
+        'perform_audit_by'=>'Site Category',
+        'auditor_name' => 'Auditor Name',
+        'question_name'  => 'Question Name',
+        'audit_question' => 'Audit Question',
+        'client_leased'  => 'Client Leased',
+        // 'inplant'        => 'Inplant',
+        // 'fm_leased'      => 'FM Leased',
+        'remark'         => 'Remark',
+        'attachment'     => 'Attachment',
+        'nc_closed_date' => 'Nc Closed Date',
+        'nc_reviewed_date' => 'Nc Reviewed Date',
+        'nc_closed_by' => 'Nc Closed By',
+        'nc_reviewed_by'=>'Nc Reviewed By',
+        'nc_remark'=>'Nc Remark',
+        'nc_after_photo'=>'Nc After Photo',
+        'nc_status'  => "Nc Status",
+        'action' =>'Action'
+        
+            ];
+        $data['ajax_url']=base_url("Masters/Client_nc_tracker/save_details");
+        $tdata ['ajax_url_for_data']=base_url("Masters/Client_nc_tracker/table_ajax/".$nc_status).($qs ? ('?'.$qs) : '');
+        // $data['user_designation'] = ["Engineer","Reporting manager",""];
+       
+        // $data['table'] ="";
+        
+         $db = db_connect(); // Add database connection
+
+            // Add status count query
+            $statusCountQuery = $db->query("SELECT count(*) as found_count, nc_status FROM alert_hse_audit_details WHERE `client_leased` = 'NO' GROUP BY nc_status;");
+            $statusCounts = array_column($statusCountQuery->getResultArray(), 'found_count', 'nc_status');
+        
+            // Get counts with default 0 if no records exist
+            $openCount = $statusCounts[0] ?? 0;
+            $closedCount = $statusCounts[2] ?? 0; // Assuming 2 is "Closed" status
+            $workingCount = $statusCounts[1] ?? 0;
+            
+                 $datatop='<div class="row g-5 g-xl-8">
+            <div class="col-md-4">
+                <a href="'.base_url('Masters/Client_nc_tracker/template_type_filter/0').'" class="card bg-primary hoverable mb-xl-8">
+                    <!--begin::Body-->
+                    <div class="card-body" style="padding: 1rem 2.25rem;">
+                       
+                        <div class="fw-semibold text-gray-100">Open('.$openCount.')</div>
+                    </div>
+                </a>
+            </div>
+            
+            <div class="col-md-4">
+                <a href="'.base_url('Masters/Client_nc_tracker/template_type_filter/2').'" class="card bg-dark hoverable mb-xl-8">
+                    <div class="card-body" style="padding: 1rem 2.25rem;">
+                        <div class="fw-semibold text-gray-100">Close('.$closedCount.')</div>
+                    </div>
+                </a>
+            </div>
+            
+            <div class="col-md-4">
+                <a href="'.base_url('Masters/Client_nc_tracker/template_type_filter/1').'" class="card bg-warning hoverable mb-xl-8">
+                    <div class="card-body" style="padding: 1rem 2.25rem;">
+                        <div class="fw-semibold text-white">Working('.$workingCount.')</div>
+                    </div>
+                </a>
+            </div>
+        </div>';
+        // changes on 10/11/12 by darsh: Select2 filter bar fed from DB
+        $db2 = db_connect();
+        $regions  = $db2->table('alert_region')->select('region_name')->where('status', 1)->get()->getResultArray();
+        
+        // ACL: Retrieve user cluster FIRST
+        $userClusterACL = null;
+        if (isClusterManager() || isWHManager()) {
+            $userClusterACL = getClusterManagerAssignedCluster();
+        }
+
+        $clusterBuilder = $db2->table('alert_location_master')->select('DISTINCT(cluster_name) cluster_name', false)->where('status', 1);
+        if (!empty($userClusterACL)) {
+            $clusterBuilder->whereIn('cluster_name', $userClusterACL);
+        }
+        $clusters = $clusterBuilder->get()->getResultArray();
+
+        $locBuilder = $db2->table('alert_location_master')->select('location_name')->where('status', 1);
+        if (!empty($userClusterACL)) {
+            $locBuilder->whereIn('cluster_name', $userClusterACL);
+        }
+        $locations = $locBuilder->get()->getResultArray();
+        $selRegion   = (string)($req->getGet('region') ?? '');
+        $selCluster  = (string)($req->getGet('cluster') ?? '');
+        $selLocation = (string)($req->getGet('location') ?? '');
+        $selMonth    = (string)($req->getGet('month') ?? '');
+        $opt = function(array $rows, string $col, string $selected){ $h = '<option value="">Select '.$col.'</option>'; foreach($rows as $r){ $v=trim($r[$col]??''); if(!$v) continue; $sel = ($v===$selected)?' selected':''; $h.='<option value="'.htmlspecialchars($v,ENT_QUOTES).'"'.$sel.'>'.$v.'</option>'; } return $h; };
+        $filterBar = '
+            <form method="get" class="card mb-5 p-3" style="overflow:visible">
+                <div class="row g-3 align-items-end">
+                    <div class="col-md-3">
+                        <label class="form-label">Region</label>
+                        <select id="flt_region" name="region" class="form-select form-select-sm select2">'. $opt($regions,'region_name',$selRegion) .'</select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Cluster</label>
+                        <select id="flt_cluster" name="cluster" class="form-select form-select-sm select2" data-selected="'.htmlspecialchars($selCluster,ENT_QUOTES).'">'. $opt($clusters,'cluster_name',$selCluster) .'</select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Location</label>
+                        <select id="flt_location" name="location" class="form-select form-select-sm select2" data-selected="'.htmlspecialchars($selLocation,ENT_QUOTES).'">'. $opt($locations,'location_name',$selLocation) .'</select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Month (YYYY-MM)</label>
+                        <input type="month" name="month" value="'.htmlspecialchars($selMonth, ENT_QUOTES).'" class="form-control form-control-sm"/>
+                    </div>
+                    <div class="col-md-1">
+                        <button class="btn btn-sm btn-primary w-100" type="submit">Show</button>
+                    </div>
+                </div>
+            </form>
+            <script>
+            $(function(){
+                $(".select2").select2();
+                $("#flt_region").on("change", function(){
+                    var region = $(this).val();
+                    $("#flt_cluster").empty().append("<option value=\"\">Loading...</option>").trigger("change");
+                    $("#flt_location").empty().append("<option value=\"\">Select Location</option>").trigger("change");
+                    $.post("'.base_url('Customer/Audit_dashboard/get_clusters_by_region').'", { region_name: region }, function(rows){
+                        var opts = "<option value=\\\"\\\">Select cluster_name</option>";
+                        if(Array.isArray(rows)){ rows.forEach(function(r){ var v = (r.cluster_name||\" \").trim(); if(v){ opts += \"<option>\"+v+\"</option>\"; } });}
+                        $("#flt_cluster").html(opts).val("'.htmlspecialchars($selCluster,ENT_QUOTES).'").trigger("change");
+                    });
+                });
+                $("#flt_cluster").on("change", function(){
+                    var cluster = $(this).val();
+                    var region = $("#flt_region").val();
+                    $("#flt_location").empty().append("<option value=\"\">Loading...</option>").trigger("change");
+                    $.post("'.base_url('Customer/Audit_dashboard/get_locations_by_cluster').'", { region_name: region, cluster_name: cluster }, function(rows){
+                        var opts = "<option value=\\\"\\\">Select location_name</option>";
+                        if(Array.isArray(rows)){ rows.forEach(function(r){ var v = (r.location_name||\" \").trim(); if(v){ opts += \"<option>\"+v+\"</option>\"; } });}
+                        $("#flt_location").html(opts).val("'.htmlspecialchars($selLocation,ENT_QUOTES).'").trigger("change");
+                    });
+                });
+                if("'.($selRegion !== '' ? '1':'').'" !== ""){ $("#flt_region").trigger("change"); }
+            });
+            </script>';
+        $data['table'] =$filterBar.$datatop;
+         
+        $data['table'] .= view("Layout/table-view",$tdata);
+        return view("Master/add_client_nc_tracker",$data);
+    }
+  public function table_ajax($nc_status=null)
+{
+    // changes on 14/10/25 by darsh: Implemented ACL filtering for regional data access
+    $db = db_connect();
+    
+    // Build base query with ACL filtering
+    // changes on 13/11/25 by darsh: Add nc_worked_by and nc_closed_by_user columns to SELECT and join with alert_users to get usernames
+    $sql = "SELECT 
+                alert_hse_audit_details.id,
+                alert_hse_audit_details.question_name, 
+                alert_hse_audit_details.audit_question,
+                alert_hse_audit_details.client_leased, 
+                alert_hse_audit_details.remark, 
+                alert_hse_audit_details.attachment,
+                alert_hse_audit_details.nc_closed_date,
+                alert_hse_audit_details.nc_reviewed_date,
+                alert_hse_audit_details.nc_closed_by,
+                alert_hse_audit_details.nc_reviewed_by,
+                alert_hse_audit_details.nc_worked_by,
+                alert_hse_audit_details.nc_closed_by_user,
+                worked_user.user_name AS nc_worked_by_name,
+                closed_user.user_name AS nc_closed_by_user_name,
+                alert_hse_audit_details.nc_status,
+                alert_hse_audit_details.nc_remark,
+                alert_hse_audit_details.nc_after_photo, 
+                alert_hse_audit_master.audit_no, 
+                alert_hse_audit_master.audit_name, 
+                alert_hse_audit_master.auditor_name, 
+                alert_hse_audit_master.auditee_name, 
+                alert_hse_audit_master.client_name, 
+                alert_hse_audit_master.audit_date, 
+                alert_hse_audit_master.template_date, 
+                alert_hse_audit_master.region, 
+                alert_hse_audit_master.location, 
+                alert_hse_audit_master.score,
+                alert_hse_audit_master.perform_audit_by
+            FROM alert_hse_audit_details
+            LEFT JOIN alert_hse_audit_master ON alert_hse_audit_master.hse_audit_id = alert_hse_audit_details.hse_audit_id
+            LEFT JOIN alert_location_master L ON L.location_name = alert_hse_audit_master.location
+            LEFT JOIN alert_users worked_user ON worked_user.user_id = alert_hse_audit_details.nc_worked_by
+            LEFT JOIN alert_users closed_user ON closed_user.user_id = alert_hse_audit_details.nc_closed_by_user
+            WHERE alert_hse_audit_details.client_leased = 'NO'";
+    
+    $params = [];
+    
+    // Add nc_status filter if specified
+    if(isset($nc_status)) {
+        $sql .= " AND alert_hse_audit_details.nc_status = ?";
+        $params[] = $nc_status;
+    }
+    // changes on 10/11/12 by darsh: apply multi-filters for region/cluster/location/month
+    $req = service('request');
+    $region   = trim((string)$req->getGet('region'));
+    $cluster  = trim((string)$req->getGet('cluster'));
+    $location = trim((string)$req->getGet('location'));
+    $month    = trim((string)$req->getGet('month'));
+    if ($region !== '')   { $sql .= " AND alert_hse_audit_master.region = ?"; $params[] = $region; }
+    if ($cluster !== '')  { $sql .= " AND L.cluster_name = ?";                 $params[] = $cluster; }
+    if ($location !== '') { $sql .= " AND alert_hse_audit_master.location = ?";$params[] = $location; }
+    if ($month !== '' && preg_match('/^\d{4}\-\d{2}$/', $month)) {
+        $sql .= " AND DATE_FORMAT(alert_hse_audit_master.audit_date, '%Y-%m') = ?";
+        $params[] = $month;
+    }
+    
+    // ACL: Apply cluster-based filtering for Cluster Managers - 13/11/25
+    if (isClusterManager() || isWHManager()) {
+        $userClusters = getClusterManagerAssignedCluster();
+        if (!empty($userClusters)) {
+            $escapedClusters = array_map([$db, 'escape'], $userClusters);
+            $sql .= " AND EXISTS (
+                SELECT 1 FROM alert_client 
+                WHERE alert_client.client_name = alert_hse_audit_master.client_name
+                AND LOWER(TRIM(alert_client.cluster)) IN (" . implode(',', array_map(function($c) { return "LOWER(TRIM($c))"; }, $escapedClusters)) . ")
+                AND alert_client.status = 1
+            )";
+        }
+    }
+    
+    $sql .= " ORDER BY alert_hse_audit_details.id DESC";
+    
+    $query = $db->query($sql, $params)->getResultArray();
+        
+      // changes on 10/11/12 by darsh: status map aligned with OE (2=Under Review,3=Closed)
+      $nc_statusMessages = [                
+             0 => '<span class="badge badge-danger">Open</span>',
+             1 => '<span class="badge badge-warning">Working</span>',
+             2 => '<span class="badge badge-info">Under Review</span>',
+             3 => '<span class="badge badge-success">Closed</span>',
+             4 => '<span class="badge badge-secondary">Draft</span>',
+             ];
+    $tdata['table_data'] = []; 
+    foreach ($query as $row) {
+        // NEW CHANGES: Fixed status flow and icon visibility logic
+        // Status 0 (Open): Both lock and edit icons visible
+        // Status 1 (Working): Only edit icon visible  
+        // Status 2 (Under Review): approve/reject visible
+        // Status 3 (Closed): No icons visible
+        
+        $active = '<button class="btn btn-icon btn-success" title="Move to Working" onclick="updateNcStatus(' . $row['id'] . ', \'working\');">
+                <span class="indicator-label svg-icon svg-icon-2">
+                    <i class="fa fa-unlock"></i>
+                </span>
+            </button>';
+
+        $edit = '<button data-ajax-url="'.base_url("Masters/Client_nc_tracker/get_form_data/".$row['id']).'" class="btn btn-icon btn-primary" title="Edit / Submit" onclick="edit_id(this,'.$row['id'].');">
+                 <span class="indicator-label svg-icon svg-icon-3">
+                     <i class="fa fa-edit"></i>
+                 </span>
+                 <span class="indicator-progress">
+                     <span class="spinner-border spinner-border-sm align-middle ms-2"></span>
+                 </span>
+                 </button>';
+                 
+        // NEW CHANGES: Complete workflow action button logic
+        // ACL: Cluster Managers cannot approve/reject - 12/11/25
+        if($row['nc_status']=="0") {
+            // Status 0 (Open): Show lock icon only
+            $edit = ""; // Hide edit icon for open status
+        } else if($row['nc_status']=="1") {
+            // Status 1 (Working): Show edit icon only
+            $active = ""; // Hide lock icon for working status
+        } else if($row['nc_status']=="2") {
+            // Status 2 (Under Review): Show approve (✓) and reject (✗) icons
+            // ACL: Cluster Managers cannot approve/reject - only Auditors can - 12/11/25
+            if (isClusterManager() || isWHManager()) {
+                // Cluster Managers see "Pending Approval" status
+                $active = "";
+                $edit = '<span class="badge badge-light-info" title="Waiting for approval from Auditor/Higher Authority">Pending Approval</span>';
+            } else {
+                // Auditors and Higher Authority can approve/reject
+                $active = '<button class="btn btn-icon btn-success me-2" title="Approve & Close" onclick="updateNcStatus(' . $row['id'] . ', \'closed\');">
+                        <span class="indicator-label svg-icon svg-icon-2">
+                            <i class="fa fa-check"></i>
+                        </span>
+                    </button>';
+                $edit = '<button class="btn btn-icon btn-danger" title="Send Back to Working" onclick="updateNcStatus(' . $row['id'] . ', \'working\');">
+                        <span class="indicator-label svg-icon svg-icon-2">
+                            <i class="fa fa-times"></i>
+                        </span>
+                    </button>';
+            }
+        } else if($row['nc_status']=="3") {
+            // Status 3 (Closed): No icons shown
+            // ACL: For Cluster Managers, show disabled message - 12/11/25
+            if (isClusterManager() || isWHManager()) {
+                $edit = '<span class="badge badge-light-secondary" title="Cluster Managers cannot modify closed NCs"></span>';
+            }
+            $active = "";
+        } else if($row['nc_status']=="4") {
+            // Status 4 (Draft): Only edit icon
+            $active = "";
+        }
+
+        //$action = $active.' '. $edit;
+        //$row['nc_status'].
+        $nc_statuss=$row['nc_status'];
+        		$action	="<center>".$nc_statusMessages[$row['nc_status']]."<br><br>".$active.$edit."</center>";
+
+    // changes on 7/10/25 by darsh: Robust Before NC photo resolution from uploads/audit_files/{audit_no}
+    // Display before photo (always image)
+    $beforePath = $row['attachment'] ?? '';
+    // Normalize any absolute prefixes
+    if (!empty($beforePath)) {
+        if (preg_match('/(uploads\/.+)$/', $beforePath, $m)) { $beforePath = $m[1]; }
+        elseif (preg_match('/(writable\/.+)$/', $beforePath, $m)) { $beforePath = $m[1]; }
+    }
+    // If path is not site-relative, or missing, try to rebuild from audit_no folder
+    if (empty($beforePath) || strpos($beforePath, 'uploads/') !== 0) {
+        $auditNo = $row['audit_no'] ?? '';
+        if (!empty($auditNo)) {
+            $folder = 'uploads/audit_files/'.$auditNo.'/';
+            // If original had just a basename, try to use it; otherwise pick latest image in folder
+            $base = basename((string)$row['attachment']);
+            if (!empty($base) && $base !== '.' && $base !== '..') {
+                $candidate = $folder.$base;
+                if (is_file(FCPATH.$candidate)) {
+                    $beforePath = $candidate;
+                }
+            }
+            if (empty($beforePath) || !is_file(FCPATH.$beforePath)) {
+                // Find most recent image file in the folder
+                $pattern = FCPATH.$folder.'*';
+                $matches = glob($pattern);
+                if ($matches) {
+                    usort($matches, function($a,$b){ return filemtime($b) <=> filemtime($a); });
+                    // Prefer image extensions
+                    $picked = null;
+                    foreach ($matches as $mfile) {
+                        $ext = strtolower(pathinfo($mfile, PATHINFO_EXTENSION));
+                        if (in_array($ext, ['jpg','jpeg','png','gif'])) { $picked = $mfile; break; }
+                    }
+                    if (!$picked) { $picked = $matches[0]; }
+                    $rel = str_replace(FCPATH, '', $picked);
+                    $rel = str_replace('\\', '/', $rel);
+                    $beforePath = $rel;
+                }
+            }
+        }
+    }
+    $attachment_html = "<img src='".base_url($beforePath)."' onerror=\"this.src='".env("defaultLogo")."'\" height='50' width='50' />";
+    
+    // Display after photo/file with proper handling for different file types
+    $nc_after_photos = "-";
+    if (!empty($row['nc_after_photo'])) {
+        $file_path = $row['nc_after_photo'];
+        $file_extension = strtolower(pathinfo($file_path, PATHINFO_EXTENSION));
+        
+        if (in_array($file_extension, ['jpg', 'jpeg', 'png', 'gif'])) {
+            // Display as image
+            $nc_after_photos = "<img src='".base_url($file_path)."' onerror=\"this.src='".env("defaultLogo")."'\" height='50' width='50' />";
+        } elseif (in_array($file_extension, ['pdf'])) {
+            // Display as PDF icon with click to open
+            $nc_after_photos = "<a href='".base_url($file_path)."' target='_blank' class='btn btn-sm btn-danger'><i class='fa fa-file-pdf'></i> PDF</a>";
+        } elseif (in_array($file_extension, ['xls', 'xlsx'])) {
+            // Display as Excel icon with click to open
+            $nc_after_photos = "<a href='".base_url($file_path)."' target='_blank' class='btn btn-sm btn-success'><i class='fa fa-file-excel'></i> Excel</a>";
+        } elseif (in_array($file_extension, ['csv'])) {
+            // Display as CSV icon with click to open
+            $nc_after_photos = "<a href='".base_url($file_path)."' target='_blank' class='btn btn-sm btn-info'><i class='fa fa-file-csv'></i> CSV</a>";
+        }
+    }
+
+        $tdata['table_data'][] = [
+            'id'               => $row['id'],
+            'audit_no'         => $row['audit_no'],
+            'audit_name'       => $row['audit_name'],
+            'auditor_name'     => $row['auditor_name'],
+            'auditee_name'     => $row['auditee_name'],
+            'client_name'      => $row['client_name'],
+            'audit_date'       => $row['audit_date'],
+            'template_date'    => $row['template_date'],
+            'region'           => $row['region'],
+            'location'         => $row['location'],
+            'score'            => $row['score'],
+            'perform_audit_by' => $row['perform_audit_by'],
+            'question_name'    => $row['question_name'],
+            'audit_question'   => $row['audit_question'],
+            'client_leased'    => $row['client_leased'],
+            'remark'           => $row['remark'],
+            'attachment'       => $attachment_html,
+            'nc_closed_date'        => $row['nc_closed_date'],
+            'nc_reviewed_date'        => $row['nc_reviewed_date'],
+            'nc_closed_by'        => $row['nc_closed_by'],
+            'nc_reviewed_by'        => $row['nc_reviewed_by'],
+            'nc_worked_by'      => $row['nc_worked_by_name'] ?? '-',
+            'nc_closed_by_user' => $row['nc_closed_by_user_name'] ?? '-',
+            'nc_remark'        => nl2br(htmlspecialchars($row['nc_remark'])),
+            'nc_after_photo'        =>  $nc_after_photos,
+            'nc_status'        => $nc_statuss,
+            'action'           => $action
+        ];
+    }
+
+    $tdata['data'] = $tdata['table_data'];
+    unset($tdata['table_data']);
+
+    return $this->response->setJSON($tdata);
+}
+
+
+   public function get_form_data($id) {
+    // NEW CHANGES: Align AJAX response key with frontend expectation (status vs nc_status)
+    $response = [
+        'status' => "0",
+        'message' => "Details not found"
+    ];
+
+    if (isset($id)) {
+        $db = db_connect();
+
+        // changes on 7/10/25 by darsh: include audit_no to resolve before photo from uploads/audit_files/{audit_no}
+        $query = $db->table('alert_hse_audit_details')
+            ->select('alert_hse_audit_details.*, alert_hse_audit_master.audit_no, alert_hse_audit_master.audit_name, 
+                      alert_hse_audit_master.auditor_name, alert_hse_audit_master.auditee_name, 
+                      alert_hse_audit_master.client_name, alert_hse_audit_master.audit_date, 
+                      alert_hse_audit_master.template_date, alert_hse_audit_master.region, 
+                      alert_hse_audit_master.location, alert_hse_audit_master.score, 
+                      alert_hse_audit_master.perform_audit_by')
+            ->join('alert_hse_audit_master', 'alert_hse_audit_master.hse_audit_id = alert_hse_audit_details.hse_audit_id', 'left')
+            ->where('alert_hse_audit_details.id', $id)
+            ->get();
+        if ($query->getNumRows() > 0) {
+            $response['data'] = $query->getRowArray();
+            // changes on 7/10/25 by darsh: compute before_photo_url for edit form preview
+            $beforePath = $response['data']['attachment'] ?? '';
+            if (!empty($beforePath)) {
+                if (preg_match('/(uploads\/.+)$/', $beforePath, $m)) { $beforePath = $m[1]; }
+                elseif (preg_match('/(writable\/.+)$/', $beforePath, $m)) { $beforePath = $m[1]; }
+            }
+            if (empty($beforePath) || strpos($beforePath, 'uploads/') !== 0 || !is_file(FCPATH.$beforePath)) {
+                $auditNo = $response['data']['audit_no'] ?? '';
+                if (!empty($auditNo)) {
+                    $folder = 'uploads/audit_files/'.$auditNo.'/';
+                    $base = basename((string)($response['data']['attachment'] ?? ''));
+                    if (!empty($base) && $base !== '.' && $base !== '..') {
+                        $candidate = $folder.$base;
+                        if (is_file(FCPATH.$candidate)) { $beforePath = $candidate; }
+                    }
+                    if (empty($beforePath) || !is_file(FCPATH.$beforePath)) {
+                        $matches = glob(FCPATH.$folder.'*');
+                        if ($matches) {
+                            usort($matches, function($a,$b){ return filemtime($b) <=> filemtime($a); });
+                            $picked = null;
+                            foreach ($matches as $mfile) {
+                                $ext = strtolower(pathinfo($mfile, PATHINFO_EXTENSION));
+                                if (in_array($ext, ['jpg','jpeg','png','gif','webp'])) { $picked = $mfile; break; }
+                            }
+                            if (!$picked) { $picked = $matches[0]; }
+                            $rel = str_replace(FCPATH, '', $picked);
+                            $rel = str_replace('\\', '/', $rel);
+                            $beforePath = $rel;
+                        }
+                    }
+                }
+            }
+            $response['data']['before_photo_url'] = !empty($beforePath) ? base_url($beforePath) : '';
+            // NEW CHANGES: Return standard 'status' flag expected by JS
+            $response['status'] = "1";
+            $response['message'] = "Details found";
+        } else {
+            log_message('error', 'No results found for ID: ' . $id);
+        }
+    }
+
+    echo json_encode($response);
+}
+
+    public function save_details($id=null,$action=null){
+                helper('designation_acl'); // ACL: Load helper - 12/11/25
+                $request = service('request');
+                $postData = $request->getVar();
+                
+                // NEW CHANGES: Handle action parameter from frontend
+                $formAction = $postData['action'] ?? 'submit_for_review';
+                unset($postData['action']); // Remove action from postData
+                
+                $db = db_connect();
+                
+                if(isset($postData['honeypot']))
+                    {
+                     unset($postData['honeypot']);   
+                    }
+                // NEW CHANGES: Keep records in this tracker; default client_leased to 'NO'
+                if (!isset($postData['client_leased']) || $postData['client_leased'] === '') {
+                    $postData['client_leased'] = "NO";
+                }
+               
+                $allowed = array('jpg', 'jpeg', 'png', 'gif', 'webp');
+                
+                    // NEW CHANGES: Before photo always comes from audit - no file upload allowed
+                    if(isset($postData['before_photo_url']))
+                        $postData['attachment'] = $postData['before_photo_url'];
+                    if(isset($postData['before_photo_url'])) unset($postData['before_photo_url']);
+
+                    // Handle NC After Photo upload
+                    if(isset($_FILES['nc_after_photo']) &&  isset( $_FILES['nc_after_photo']['error'])){
+                        if( $_FILES['nc_after_photo']['error'] == UPLOAD_ERR_OK){
+                            $ext = pathinfo($_FILES["nc_after_photo"]["name"], PATHINFO_EXTENSION);
+                            if (in_array($ext, $allowed)) {
+                              $folder="uploads/nc_after_photo/";
+                                $url = "";
+                                if(isset($postData['after_photo_url']))
+                                $url = $this->uploadImage($folder,"nc_after_photo",$postData['after_photo_url']);
+                                else
+                                $url = $this->uploadImage($folder,"nc_after_photo");
+                                
+                                $postData['nc_after_photo'] = $url;
+                            }
+                        }
+                    }else{
+                        if(isset($postData['after_photo_url']))
+                                $postData['nc_after_photo'] = $postData['after_photo_url'];
+                        
+                    }
+                    if(isset($postData['after_photo_url']))
+                            unset($postData['after_photo_url']);
+               
+                if(isset($id)){
+                        // ACL: Check if Cluster Manager is trying to edit closed NC or approve - 12/11/25
+                        if (isClusterManager() || isWHManager()) {
+                            $currentRecord = $db->table('alert_hse_audit_details')
+                                ->where('id', $id)
+                                ->get()
+                                ->getRowArray();
+                            
+                            if ($currentRecord && isset($currentRecord['nc_status'])) {
+                                $currentStatus = $currentRecord['nc_status'];
+                                
+                                // Block editing closed NCs
+                                if ($currentStatus == 3) {
+                                    $responce['status'] = "0";
+                                    $responce['message'] = "Cluster Managers cannot modify closed NCs";
+                                    echo json_encode($responce);
+                                    return;
+                                }
+                                
+                                // Block if trying to approve (2 → 3)
+                                if ($currentStatus == 2 && isset($postData['nc_status']) && $postData['nc_status'] == '3') {
+                                    $responce['status'] = "0";
+                                    $responce['message'] = "Cluster Managers cannot approve NCs. Only Auditors can approve.";
+                                    echo json_encode($responce);
+                                    return;
+                                }
+                            }
+                        }
+                        
+                        $responce['message'] = "Data updation faild";
+                if(isset($action)){
+                            switch($action){
+                                case "open":
+                                    $postData['nc_status']= "0";
+                                    break;
+                                case "working":
+                                    $postData['nc_status']= "1";
+                                    break;
+                                case "closed":
+                                    $postData['nc_status']= "2";
+                                    break;
+                                case "reviewed":
+                                    $postData['nc_status']= "3";
+                                    break;
+                                case "draft":
+                                    $postData['nc_status']= "4";
+                                    break;
+                               
+                            }
+                        } else {
+                            // NEW CHANGES: Handle form action (submit_for_review or save_as_draft)
+                            if($formAction === 'save_as_draft') {
+                                // Save as draft: Set to 4 (Draft) and keep editable
+                                $postData['nc_status'] = "4";
+                            } else if($formAction === 'submit_for_review') {
+                                // Submit for review: Change status to closed (2)
+                                $postData['nc_status'] = "2";
+                                $postData['nc_closed_date'] = date('Y-m-d H:i:s'); // Set closed date
+                            }
+                        }
+                    if($this->BaseModel->update($id,$postData)){
+                        // NEW CHANGES: Align response key with frontend (status)
+                        $responce['status'] = "1";
+                        $responce['message'] = "Data saved successfully";
+                    }
+                }else{
+                    $postData['nc_status']="1";
+                        // NEW CHANGES: Align response key with frontend (status)
+                        $responce['status'] = "0";
+                        $responce['message'] = "Data insertion faild";
+                    if($this->BaseModel->insert($postData)){
+                        // NEW CHANGES: Align response key with frontend (status)
+                        $responce['status'] = "1";
+                        $responce['message'] = "Data saved successfully";
+                    }
+                }
+                echo json_encode($responce);
+    }
+    
+    // NEW CHANGES: Enhanced update_nc_status method with proper status mapping
+    public function update_nc_status()
+{
+    helper('designation_acl'); // ACL: Load helper - 12/11/25
+    $id = $this->request->getVar('id');
+    $status = $this->request->getVar('status');
+    
+    // changes on 10/11/12 by darsh: Map updated status keywords to numeric values
+    $statusMap = [
+        'working' => '1',
+        'under review' => '2',
+        'closed' => '3'
+    ];
+    
+    $numericStatus = isset($statusMap[$status]) ? $statusMap[$status] : $status;
+    
+    // ACL: Cluster Managers cannot approve/reject or modify closed - 12/11/25
+    if (isClusterManager() || isWHManager()) {
+        $db = db_connect();
+        $currentRecord = $db->table('alert_hse_audit_details')
+            ->where('id', $id)
+            ->get()
+            ->getRowArray();
+        
+        if ($currentRecord && isset($currentRecord['nc_status'])) {
+            $currentStatus = $currentRecord['nc_status'];
+            
+            // Block if trying to modify closed NC
+            if ($currentStatus == 3) {
+                return $this->response->setJSON([
+                    'status' => 0,
+                    'message' => 'Cluster Managers cannot modify closed NCs'
+                ]);
+            }
+            
+            // Block if trying to approve (2 → 3) or reject (2 → 1)
+            if ($currentStatus == 2 && ($numericStatus == 3 || $numericStatus == 1)) {
+                return $this->response->setJSON([
+                    'status' => 0,
+                    'message' => 'Cluster Managers cannot approve or reject NCs. Only Auditors can approve/reject.'
+                ]);
+            }
+        }
+    }
+    
+    // NEW CHANGES: Ensure no data deletion - only update status field
+    $updateData = ['nc_status' => $numericStatus];
+    
+    // NEW CHANGES: Add timestamp updates for status changes
+    // changes on 13/11/25 by darsh: Track who worked on and closed NC using session (store user_id)
+    $loggedInUserId = $_SESSION['user_id'] ?? null;
+    if($numericStatus == '1') {
+        // When moving to working status, update reviewed date and track user_id
+        $updateData['nc_reviewed_date'] = date('Y-m-d H:i:s');
+        if ($loggedInUserId) {
+            $updateData['nc_worked_by'] = $loggedInUserId;
+        }
+    } elseif($numericStatus == '3') {
+        // When moving to closed status, update closed date and track user_id
+        $updateData['nc_closed_date'] = date('Y-m-d H:i:s');
+        if ($loggedInUserId) {
+            $updateData['nc_closed_by_user'] = $loggedInUserId;
+        }
+    }
+    
+    $result = $this->BaseModel->update($id, $updateData);
+    if ($result) {
+        return $this->response->setJSON(['status' => 1, 'message' => 'NC status updated successfully']);
+    } else {
+        return $this->response->setJSON(['status' => 0, 'message' => 'Update failed']);
+    }
+}
+}

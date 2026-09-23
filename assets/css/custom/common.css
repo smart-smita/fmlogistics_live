@@ -1,0 +1,6 @@
+/* common.css */
+.aside.aside-dark { background-color: #1e1c77; }
+.aside-dark .menu .menu-item .menu-link .menu-title { color: #FFFF !important; }
+.aside-menu .menu-item .menu-icon { color: #FFFF !important; }
+.aside-dark .menu .menu-item .menu-link.active { background-color: #0f0e5a !important; color: #fff !important; }
+pre { font-family: inherit !important; white-space: pre-wrap; margin: 0; background: transparent; border: 0; padding: 0; }
