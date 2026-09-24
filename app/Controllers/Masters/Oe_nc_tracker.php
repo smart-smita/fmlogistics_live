@@ -309,61 +309,13 @@ class Oe_nc_tracker extends BaseController
             'alert_final_structured_audit.structured_audit_id = alert_final_structured_audit_details.structured_audit_id',
             'left'
         );
-        $builder->select('COUNT(*) as total, alert_final_structured_audit_details.audit_finding, alert_final_structured_audit_details.status');
+        $builder->select('COUNT(*) as total, UPPER(TRIM(alert_final_structured_audit_details.audit_finding)) as audit_finding, alert_final_structured_audit_details.status');
 
-        // Apply filters (region / cluster / location / month)
-        if (!empty($selRegion)) {
-            $builder->whereIn('alert_final_structured_audit.region', $selRegion);
-        }
-
-        if (!empty($selCluster)) {
-
-            $builder->where(
-                "EXISTS (
-                    SELECT 1 
-                    FROM alert_client ac
-                    WHERE ac.client_name = alert_final_structured_audit.client_name
-                    AND ac.cluster IN (" . implode(',', array_map([$db, 'escape'], $selCluster)) . ")
-                )",
-                null,
-                false
-            );
-        }
-
-        if (!empty($selLocation)) {
-            $builder->whereIn('alert_final_structured_audit.location', $selLocation);
-        }
-
-        if ($month !== '' && preg_match('/^\d{4}-\d{2}$/', $month)) {
-            $builder->where(
-                "DATE_FORMAT(alert_final_structured_audit.audit_date,'%Y-%m') = " . $db->escape($month),
-                null,
-                false
-            );
-        }
-
-        // ACL: Cluster Manager / Account Manager
-        if (!empty($userClusterACLs)) {
-            $builder->where(
-                "EXISTS (
-                    SELECT 1 FROM alert_client 
-                    WHERE alert_client.client_name = alert_final_structured_audit.client_name
-                    AND LOWER(TRIM(alert_client.cluster)) IN (" . implode(',', array_map([$db, 'escape'], $userClusterACLs)) . ")
-                    AND alert_client.status = 1
-                )",
-                null,
-                false
-            );
-        }
-        if (!empty($userClient)) {
-            $builder->whereIn('alert_final_structured_audit.client_name', $userClient);
-        }
-
-        // Show all NCs, but exclude reaudited ones UNLESS they are closed/force-closed
-        $builder->where("(alert_final_structured_audit.reaudit = '0' OR alert_final_structured_audit_details.status IN (3, 5))", null, false);
+        // Apply unified base filters and Multi-Site ACL
+        $this->applyOETrackerFilters($builder, $db, $selRegion, $selCluster, $selLocation, $month);
 
         $builder->groupBy('alert_final_structured_audit_details.status');
-        $builder->groupBy('alert_final_structured_audit_details.audit_finding');
+        $builder->groupBy('UPPER(TRIM(alert_final_structured_audit_details.audit_finding))');
 
         $countRows = $builder->get()->getResultArray();
 
@@ -372,25 +324,28 @@ class Oe_nc_tracker extends BaseController
         $workingCount = 0;
         $submittedToCMCount = 0;  // Status 6
         $underReviewAuditorCount = 0; // Status 2
-        $closedCount = 0;       // normal closed only
-        $forcedClosedCount = 0;       // forced closed
+        $closedCount = 0;       // Status 3
+        $forcedClosedCount = 0;       // Status 5
 
         foreach ($countRows as $row) {
-
-            if ($row['status'] == '5') {
-                $forcedClosedCount += $row['total'];
-            } else if ($row['status'] == '3') {
-                $closedCount += $row['total'];
-            } else if ($row['audit_finding'] == "NO" && $row['status'] == "0") {
-                $openCount += $row['total'];
-            } else if ($row['audit_finding'] == "NO" && ($row['status'] == "1" || $row['status'] == "4")) {
-                $workingCount += $row['total'];
-            } else if ($row['audit_finding'] == "NO" && $row['status'] == "6") {
-                $submittedToCMCount += $row['total'];
-            } else if ($row['audit_finding'] == "NO" && $row['status'] == "2") {
-                $underReviewAuditorCount += $row['total'];
+            $finding = strtoupper(trim((string)($row['audit_finding'] ?? '')));
+            $st = (int)$row['status'];
+            if ($st === 5) {
+                $forcedClosedCount += (int)$row['total'];
+            } else if ($st === 3) {
+                $closedCount += (int)$row['total'];
+            } else if (($finding === "NO" || $finding === "") && $st === 0) {
+                $openCount += (int)$row['total'];
+            } else if (($finding === "NO" || $finding === "") && ($st === 1 || $st === 4)) {
+                $workingCount += (int)$row['total'];
+            } else if (($finding === "NO" || $finding === "") && $st === 6) {
+                $submittedToCMCount += (int)$row['total'];
+            } else if (($finding === "NO" || $finding === "") && $st === 2) {
+                $underReviewAuditorCount += (int)$row['total'];
             }
         }
+
+
 
         // 0 => Open, 1 => Working, 2 => Under Review, 3 => Closed, 4 => Draft, 5 => Forced Closed
         $qsString = $qs ? ('?' . $qs) : '';
@@ -493,183 +448,104 @@ class Oe_nc_tracker extends BaseController
     {
         $db = db_connect();
         helper('designation_acl');
-
-        // base query
-        $sql = "SELECT 
-                    alert_final_structured_audit_details.audit_details_id,
-                    alert_final_structured_audit_details.category,
-                    alert_final_structured_audit_details.audit_parameter, 
-                    alert_final_structured_audit_details.risk_priority,
-                    alert_final_structured_audit_details.weightage,
-                    alert_final_structured_audit_details.audit_finding,
-                    alert_final_structured_audit_details.audit_remark,
-                    alert_final_structured_audit_details.audit_attachment,
-                    alert_final_structured_audit_details.audit_after_attachment,
-                    alert_final_structured_audit_details.nc_worked_by,
-                    alert_final_structured_audit_details.nc_closed_by,
-                    alert_final_structured_audit_details.nc_rejected_by,
-                    worked_user.user_name AS nc_worked_by_name,
-                    closed_user.user_name AS nc_closed_by_name,
-                    reject_user.user_name AS nc_rejected_by_name,
-                    alert_final_structured_audit_details.status,
-                    alert_final_structured_audit_details.structured_audit_id,
-                    alert_final_structured_audit.audit_no, 
-                    alert_final_structured_audit.audit_name,
-                    alert_final_structured_audit.auditor_name, 
-                    alert_final_structured_audit.auditee_name,
-                    alert_final_structured_audit.region, 
-                    alert_final_structured_audit.cluster_name,
-                    alert_final_structured_audit.client_manager_name,
-                    alert_final_structured_audit.audit_date,
-                    alert_final_structured_audit.completion_date, 
-                    alert_final_structured_audit.client_name, 
-                    alert_final_structured_audit.location, 
-                    alert_final_structured_audit.zone,
-                    alert_final_structured_audit.audit_score
-                FROM alert_final_structured_audit_details
-                LEFT JOIN alert_final_structured_audit ON alert_final_structured_audit.structured_audit_id = alert_final_structured_audit_details.structured_audit_id
-                LEFT JOIN alert_users worked_user ON worked_user.user_id = alert_final_structured_audit_details.nc_worked_by
-                LEFT JOIN alert_users closed_user ON closed_user.user_id = alert_final_structured_audit_details.nc_closed_by
-                LEFT JOIN alert_users reject_user ON reject_user.user_id = alert_final_structured_audit_details.nc_rejected_by
-                 ";
-
-        $params = [];
-
-        // status filter
-        if (!empty($status)) {
-            $sql .= " WHERE ";
-
-            $status = strtolower(trim($status));
-
-            switch ($status) {
-
-                case 'open':
-                    $sql .= "alert_final_structured_audit_details.audit_finding = 'NO'";
-                    $sql .= " AND alert_final_structured_audit_details.status = ?";
-                    $params[] = 0;
-                    break;
-
-                case 'working':
-                    $sql .= "alert_final_structured_audit_details.audit_finding = 'NO'";
-                    $sql .= " AND alert_final_structured_audit_details.status IN (?, ?)";
-                    $params[] = 1;
-                    $params[] = 4;
-                    break;
-
-                case 'submitted_to_cm':   // STATUS 6
-                    $sql .= "alert_final_structured_audit_details.audit_finding = 'NO'";
-                    $sql .= " AND alert_final_structured_audit_details.status = ?";
-                    $params[] = 6;
-                    break;
-
-                case 'under_review_auditor':  // STATUS 2
-                    $sql .= "alert_final_structured_audit_details.audit_finding = 'NO'";
-                    $sql .= " AND alert_final_structured_audit_details.status = ?";
-                    $params[] = 2;
-                    break;
-
-                case 'close':
-                    $sql .= "alert_final_structured_audit_details.audit_finding = 'NO'";
-                    $sql .= " AND alert_final_structured_audit_details.status = ?";
-                    $params[] = 3;
-                    break;
-
-                case 'forced':
-                case 'forced close':
-                    $sql .= "alert_final_structured_audit_details.status = ?";
-                    $params[] = 5;
-                    break;
-
-                default:
-                    $sql .= " alert_final_structured_audit_details.audit_finding = 'NO'";
-                    $sql .= " AND (alert_final_structured_audit.reaudit = 0 
-                                  OR alert_final_structured_audit_details.status IN (3,5))";
-                    break;
-            }
-            // For specific status filters, also apply the reaudit logic
-            // Closed (3) and Force Closed (5) NCs should always be visible
-            if ($status !== 'close' && $status !== 'forced' && $status !== 'forced close') {
-                $sql .= " AND (alert_final_structured_audit.reaudit = 0 OR alert_final_structured_audit_details.status IN (3, 5))";
-            }
-        } else {
-            // NO STATUS FILTER - DEFAULT view (Show Open/Working/Review/Closed/Forced)
-            // MUST ensuring finding is NO
-            $sql .= " WHERE alert_final_structured_audit_details.audit_finding = 'NO'";
-            $sql .= " AND (alert_final_structured_audit.reaudit = 0 OR alert_final_structured_audit_details.status IN (3, 5))";
-        }
-
-        // multi-filters
         $req = service('request');
+
+        if (empty($status)) {
+            $status = $req->getGet('status');
+        }
 
         $inRegion = $req->getGet('region');
         $inCluster = $req->getGet('cluster');
         $inLocation = $req->getGet('location');
-        $month = trim((string) $req->getGet('month') ?? '');
+        $month = trim((string) ($req->getGet('month') ?? ''));
 
         $selRegion = !empty($inRegion) ? (is_array($inRegion) ? $inRegion : [$inRegion]) : [];
         $selCluster = !empty($inCluster) ? (is_array($inCluster) ? $inCluster : [$inCluster]) : [];
         $selLocation = !empty($inLocation) ? (is_array($inLocation) ? $inLocation : [$inLocation]) : [];
 
-        // Small safety: if no WHERE yet, start it
-        if (strpos($sql, 'WHERE') === false) {
-            $sql .= " WHERE 1=1";
-        }
+        $builder = $db->table('alert_final_structured_audit_details');
+        $builder->select("
+            alert_final_structured_audit_details.audit_details_id,
+            alert_final_structured_audit_details.audit_details_id AS id,
+            alert_final_structured_audit_details.category,
+            alert_final_structured_audit_details.audit_parameter, 
+            alert_final_structured_audit_details.risk_priority,
+            alert_final_structured_audit_details.weightage,
+            alert_final_structured_audit_details.audit_finding,
+            alert_final_structured_audit_details.audit_remark,
+            alert_final_structured_audit_details.audit_attachment,
+            alert_final_structured_audit_details.audit_after_attachment,
+            alert_final_structured_audit_details.nc_worked_by,
+            alert_final_structured_audit_details.nc_closed_by,
+            alert_final_structured_audit_details.nc_rejected_by,
+            worked_user.user_name AS nc_worked_by_name,
+            closed_user.user_name AS nc_closed_by_name,
+            reject_user.user_name AS nc_rejected_by_name,
+            alert_final_structured_audit_details.status,
+            alert_final_structured_audit_details.structured_audit_id,
+            alert_final_structured_audit.audit_no, 
+            alert_final_structured_audit.audit_name,
+            alert_final_structured_audit.auditor_name, 
+            alert_final_structured_audit.auditee_name,
+            alert_final_structured_audit.region, 
+            COALESCE(NULLIF(alert_final_structured_audit.snapshot_cluster_manager_name, ''), NULLIF(alert_final_structured_audit.cluster_name, ''), ac.cluster, '-') AS cluster_name,
+            COALESCE(NULLIF(alert_final_structured_audit.snapshot_account_manager_name, ''), NULLIF(alert_final_structured_audit.client_manager_name, ''), ac.account_manager, '-') AS client_manager_name,
+            alert_final_structured_audit.audit_date,
+            alert_final_structured_audit.completion_date, 
+            alert_final_structured_audit.client_name, 
+            alert_final_structured_audit.location, 
+            alert_final_structured_audit.zone,
+            alert_final_structured_audit.audit_score
+        ");
+        $builder->join('alert_final_structured_audit', 'alert_final_structured_audit.structured_audit_id = alert_final_structured_audit_details.structured_audit_id', 'left');
+        $builder->join('alert_client ac', '(ac.client_name = alert_final_structured_audit.client_name OR ac.client_name = alert_final_structured_audit.location)', 'left');
+        $builder->join('alert_users worked_user', 'worked_user.user_id = alert_final_structured_audit_details.nc_worked_by', 'left');
+        $builder->join('alert_users closed_user', 'closed_user.user_id = alert_final_structured_audit_details.nc_closed_by', 'left');
+        $builder->join('alert_users reject_user', 'reject_user.user_id = alert_final_structured_audit_details.nc_rejected_by', 'left');
 
-        if (!empty($selRegion)) {
-            $placeholders = implode(',', array_fill(0, count($selRegion), '?'));
-            $sql .= " AND alert_final_structured_audit.region IN ($placeholders)";
-            foreach ($selRegion as $r) {
-                $params[] = $r;
+        // Apply status filter
+        if (!empty($status)) {
+            $statusStr = strtolower(trim($status));
+            switch ($statusStr) {
+                case 'open':
+                    $builder->where("UPPER(TRIM(alert_final_structured_audit_details.audit_finding)) = 'NO'", null, false);
+                    $builder->where('alert_final_structured_audit_details.status', 0);
+                    break;
+                case 'working':
+                    $builder->where("UPPER(TRIM(alert_final_structured_audit_details.audit_finding)) = 'NO'", null, false);
+                    $builder->whereIn('alert_final_structured_audit_details.status', [1, 4]);
+                    break;
+                case 'submitted_to_cm':
+                    $builder->where("UPPER(TRIM(alert_final_structured_audit_details.audit_finding)) = 'NO'", null, false);
+                    $builder->where('alert_final_structured_audit_details.status', 6);
+                    break;
+                case 'under_review_auditor':
+                    $builder->where("UPPER(TRIM(alert_final_structured_audit_details.audit_finding)) = 'NO'", null, false);
+                    $builder->where('alert_final_structured_audit_details.status', 2);
+                    break;
+                case 'close':
+                    $builder->where("UPPER(TRIM(alert_final_structured_audit_details.audit_finding)) = 'NO'", null, false);
+                    $builder->where('alert_final_structured_audit_details.status', 3);
+                    break;
+                case 'forced':
+                case 'forced close':
+                    $builder->where('alert_final_structured_audit_details.status', 5);
+                    break;
+                default:
+                    $builder->where("UPPER(TRIM(alert_final_structured_audit_details.audit_finding)) = 'NO'", null, false);
+                    break;
             }
+        } else {
+            $builder->where("UPPER(TRIM(alert_final_structured_audit_details.audit_finding)) = 'NO'", null, false);
         }
 
-        if (!empty($selCluster)) {
-            $placeholders = implode(',', array_fill(0, count($selCluster), '?'));
-            $sql .= " AND alert_final_structured_audit.cluster_name IN ($placeholders)";
-            foreach ($selCluster as $c) {
-                $params[] = $c;
-            }
-        }
+        // Apply unified filters & ACL
+        $this->applyOETrackerFilters($builder, $db, $selRegion, $selCluster, $selLocation, $month);
 
-        if (!empty($selLocation)) {
-            $placeholders = implode(',', array_fill(0, count($selLocation), '?'));
-            $sql .= " AND alert_final_structured_audit.location IN ($placeholders)";
-            foreach ($selLocation as $l) {
-                $params[] = $l;
-            }
-        }
+        $builder->orderBy('alert_final_structured_audit_details.audit_details_id', 'DESC');
 
-        if ($month !== '' && preg_match('/^\d{4}-\d{2}$/', $month)) {
-            $sql .= " AND DATE_FORMAT(alert_final_structured_audit.audit_date,'%Y-%m') = ?";
-            $params[] = $month;
-        }
+        $query = $builder->get()->getResultArray();
 
-        // ACL
-        if (isClusterManager() || isWHManager()) {
-            $userClusters = getClusterManagerAssignedCluster();
-            if (!empty($userClusters)) {
-                $escapedClusters = array_map([$db, 'escape'], $userClusters);
-                $sql .= " AND LOWER(TRIM(alert_final_structured_audit.cluster_name)) IN (" . implode(',', array_map(function ($c) {
-                    return "LOWER(TRIM($c))"; }, $escapedClusters)) . ")";
-            }
-        } elseif (isAccountManager()) {
-            $userClients = getAccountManagerAssignedClient();
-            if (!empty($userClients)) {
-                $placeholders = implode(',', array_fill(0, count($userClients), '?'));
-                $sql .= " AND alert_final_structured_audit.client_name IN ($placeholders)";
-                foreach ($userClients as $c) {
-                    $params[] = $c;
-                }
-            } else {
-                // If AM has no assigned clients, return empty result
-                $tdata['data'] = [];
-                return $this->response->setJSON($tdata);
-            }
-        }
-
-        $sql .= " ORDER BY alert_final_structured_audit_details.audit_details_id DESC";
-
-        $query = $db->query($sql, $params)->getResultArray();
 
         // status labels
         // $statusMessages = [
@@ -2394,4 +2270,66 @@ class Oe_nc_tracker extends BaseController
         fclose($output);
         exit;
     }
+
+    /**
+     * Unified Base Filter for OE NC Tracker (used by both top counter cards and datatable AJAX)
+     */
+    private function applyOETrackerFilters($builder, $db, $selRegion = [], $selCluster = [], $selLocation = [], $month = '')
+    {
+        if (!empty($selRegion)) {
+            $builder->whereIn('alert_final_structured_audit.region', (array)$selRegion);
+        }
+
+        if (!empty($selCluster)) {
+            $clusters = array_map([$db, 'escape'], (array)$selCluster);
+            $clusterList = implode(',', $clusters);
+            $builder->where(
+                "(alert_final_structured_audit.cluster_name IN ($clusterList) OR EXISTS (
+                    SELECT 1 FROM alert_client ac
+                    WHERE (ac.client_name = alert_final_structured_audit.client_name OR ac.client_name = alert_final_structured_audit.location)
+                    AND ac.cluster IN ($clusterList)
+                ))",
+                null,
+                false
+            );
+        }
+
+        if (!empty($selLocation)) {
+            $locations = (array)$selLocation;
+            $builder->groupStart()
+                    ->whereIn('alert_final_structured_audit.location', $locations)
+                    ->orWhereIn('alert_final_structured_audit.client_name', $locations)
+                    ->groupEnd();
+        }
+
+        if ($month !== '' && preg_match('/^\d{4}-\d{2}$/', $month)) {
+            $builder->where(
+                "DATE_FORMAT(alert_final_structured_audit.audit_date,'%Y-%m') = " . $db->escape($month),
+                null,
+                false
+            );
+        }
+
+        // Multi-Site Access Control (ACL) Filter
+        $acl = getUserACL();
+        if ($acl['is_restricted']) {
+            $allocatedSites = getUserAllocatedSiteNames('OE');
+            if (!empty($allocatedSites)) {
+                $builder->groupStart()
+                        ->whereIn('alert_final_structured_audit.client_name', $allocatedSites)
+                        ->orWhereIn('alert_final_structured_audit.location', $allocatedSites)
+                        ->groupEnd();
+            } else {
+                $builder->where('1=0');
+            }
+        }
+
+        // Re-audit condition (exclude old re-audited records unless closed or forced closed)
+        $builder->where(
+            "(COALESCE(alert_final_structured_audit.reaudit, '0') = '0' OR alert_final_structured_audit_details.status IN (3, 5))",
+            null,
+            false
+        );
+    }
 }
+

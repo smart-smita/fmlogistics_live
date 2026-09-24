@@ -265,6 +265,7 @@ $this->section("breadcrumb_title_li");
                             <div class="form-group mb-0">
                                 <label for="oe_site_ids" class="fw-bold text-dark mb-1">Allocated OE Sites (Multi-Select)</label>
                                 <select class="form-control select2" name="oe_site_ids[]" id="oe_site_ids" multiple="multiple" data-placeholder="Select OE Sites">
+                                    <option value="ALL">Select All</option>
                                     <?php if (isset($oe_clients) && is_array($oe_clients)) { foreach ($oe_clients as $client) { ?>
                                         <option value="<?= $client['client_id'] ?>"><?= esc($client['client_name']) ?><?= !empty($client['cluster']) ? ' ('.esc($client['cluster']).')' : '' ?></option>
                                     <?php } } ?>
@@ -275,6 +276,7 @@ $this->section("breadcrumb_title_li");
                             <div class="form-group mb-0">
                                 <label for="hse_site_ids" class="fw-bold text-dark mb-1">Allocated HSE Sites (Multi-Select)</label>
                                 <select class="form-control select2" name="hse_site_ids[]" id="hse_site_ids" multiple="multiple" data-placeholder="Select HSE Sites">
+                                    <option value="ALL">Select All</option>
                                     <?php if (isset($hse_clients) && is_array($hse_clients)) { foreach ($hse_clients as $client) { ?>
                                         <option value="<?= $client['client_id'] ?>"><?= esc($client['client_name']) ?><?= !empty($client['cluster']) ? ' ('.esc($client['cluster']).')' : '' ?></option>
                                     <?php } } ?>
@@ -314,7 +316,7 @@ $this->section("breadcrumb_title_li");
 
 <?php $this->endSection(); ?>
 
-<?php $this->section("custom_js"); ?>
+<?php $this->section("javascript_section"); ?>
 <script>
     // Enhanced user form with cascading dropdowns and validation
     $(document).ready(function () {
@@ -322,6 +324,26 @@ $this->section("breadcrumb_title_li");
             $('#oe_site_ids, #hse_site_ids').select2({
                 placeholder: 'Select Sites',
                 allowClear: true
+            });
+
+            $('#oe_site_ids, #hse_site_ids').on('select2:select', function (e) {
+                if (e.params && e.params.data && e.params.data.id === 'ALL') {
+                    var allVals = $(this).find('option').map(function () { return $(this).val(); }).get();
+                    $(this).val(allVals).trigger('change');
+                }
+            });
+
+            $('#oe_site_ids, #hse_site_ids').on('select2:unselect', function (e) {
+                if (e.params && e.params.data && e.params.data.id === 'ALL') {
+                    $(this).val([]).trigger('change');
+                } else {
+                    var currentVals = $(this).val() || [];
+                    var allIdx = currentVals.indexOf('ALL');
+                    if (allIdx !== -1) {
+                        currentVals.splice(allIdx, 1);
+                        $(this).val(currentVals).trigger('change');
+                    }
+                }
             });
         }
 
@@ -497,12 +519,14 @@ $this->section("breadcrumb_title_li");
 
         // Note: Designation-based hierarchy validation is handled directly on form submission in the #ajax_click handler.
 
-        // Override the global edit_id function
         window.edit_id = function (button, id) {
             isEditing = true;
 
-            // Get user data via AJAX
-            var ajaxUrl = $(button).data('ajax-url');
+            var ajaxUrl = $(button).data('ajax-url') || $(button).attr('data-ajax-url');
+            if (!ajaxUrl) {
+                var baseUrl = "<?= base_url('Masters/User/get_form_data') ?>";
+                ajaxUrl = baseUrl + "/" + id;
+            }
 
             $.ajax({
                 url: ajaxUrl,
@@ -512,28 +536,41 @@ $this->section("breadcrumb_title_li");
                     if (response.status == "1" && response.data) {
                         var userData = response.data;
 
-                        // Store original data
                         originalData = {
                             region: userData.user_region,
                             cluster: userData.user_cluster,
                             location: userData.user_location
                         };
 
-                        // Populate form fields
-                        $('#user_name').val(userData.user_name);
-                        $('#user_email').val(userData.user_email);
-                        $('#user_contact').val(userData.user_contact);
-                        $('#user_emp_code').val(userData.user_emp_code);
-                        $('#user_designation').val(userData.user_designation);
-                        $('#user_emp_country').val(userData.user_emp_country);
+                        $('#user_name').val(userData.user_name || '');
+                        $('#user_email').val(userData.user_email || '');
+                        $('#user_contact').val(userData.user_contact || '');
+                        $('#user_emp_code').val(userData.user_emp_code || '');
+                        $('#user_designation').val(userData.user_designation || '').trigger('change');
+                        $('#user_emp_country').val(userData.user_emp_country || '');
+                        $('#admin_flag').val(userData.admin_flag || '0');
+                        $('#user_region').val(userData.user_region || '');
+                        $('#user_cluster').val(userData.user_cluster || '');
+                        $('#user_location').val(userData.user_location || '');
 
-                        // Trigger cascading dropdowns
-                        if (userData.user_emp_country) {
-                            $('#user_emp_country').trigger('change');
+                        if (userData.oe_site_ids && userData.oe_site_ids.length > 0) {
+                            $('#oe_site_ids').val(userData.oe_site_ids).trigger('change');
+                        } else {
+                            $('#oe_site_ids').val([]).trigger('change');
                         }
 
-                        // Show modal
+                        if (userData.hse_site_ids && userData.hse_site_ids.length > 0) {
+                            $('#hse_site_ids').val(userData.hse_site_ids).trigger('change');
+                        } else {
+                            $('#hse_site_ids').val([]).trigger('change');
+                        }
+
+                        var addUrl = $("#ajax_click").attr("data-ajax-add-url") || "<?= base_url('Masters/User/save_details') ?>";
+                        $("#ajax_click").attr("data-ajax-url", addUrl + "/" + id);
+
                         $('#<?= $button_id ?>').modal('show');
+                    } else {
+                        showAlert(response.message || 'Error loading user data', 'error');
                     }
                 },
                 error: function () {
@@ -570,10 +607,6 @@ $this->section("breadcrumb_title_li");
         }
     });
 </script>
-<?php $this->endSection(); ?>
-
-
-<?php $this->section("javascript_section"); ?>
 <script>
     var myInput = document.getElementById("user_password");
     var letter = document.getElementById("letter");
@@ -736,50 +769,6 @@ $this->section("breadcrumb_title_li");
         }
     };
 
-    window.edit_id = function (obj, id) {
-        var url = $(obj).attr("data-ajax-url");
-        var formData = { "id": id };
-        ajax_call(url, formData, $(obj), function (responce) {
-            try {
-                responce = JSON.parse(responce);
-                if (responce.status == 1) {
-                    toastr.success(responce.message);
-                    //form.reset();
-                    // to update value 
-
-                    $("#<?= $form_id ?>").find("#user_emp_code").val(responce.data.user_emp_code);
-                    $("#<?= $form_id ?>").find("#user_name").val(responce.data.user_name);
-                    $("#<?= $form_id ?>").find("#user_contact").val(responce.data.user_contact);
-                    $("#<?= $form_id ?>").find("#user_emp_zone").val(responce.data.user_emp_zone);
-                    $("#<?= $form_id ?>").find("#user_email").val(responce.data.user_email);
-                    $("#<?= $form_id ?>").find("#user_password").val(responce.data.user_password);
-                    $("#<?= $form_id ?>").find("#user_designation").val(responce.data.user_designation).trigger("change");
-                    $("#<?= $form_id ?>").find("#user_location").val(responce.data.user_location);
-                    $("#<?= $form_id ?>").find("#user_region").val(responce.data.user_region);
-                    $("#<?= $form_id ?>").find("#user_cluster").val(responce.data.user_cluster);
-                    $("#<?= $form_id ?>").find("#user_emp_country").val(responce.data.user_emp_country);
-
-                    if (responce.data.oe_site_ids) {
-                        $("#oe_site_ids").val(responce.data.oe_site_ids).trigger("change");
-                    } else {
-                        $("#oe_site_ids").val([]).trigger("change");
-                    }
-                    if (responce.data.hse_site_ids) {
-                        $("#hse_site_ids").val(responce.data.hse_site_ids).trigger("change");
-                    } else {
-                        $("#hse_site_ids").val([]).trigger("change");
-                    }
-
-                    $("#<?= $form_id ?>").find("#ajax_click").attr("data-ajax-url", $("#<?= $form_id ?>").find("#ajax_click").attr("data-ajax-add-url") + "/" + id);
-                    $("#<?= $form_id ?>").modal("show");
-                } else {
-                    toastr.warning(responce.message);
-                }
-            } catch (error) {
-                toastr.error(error);
-            }
-        });
-    }
     window.delete_row = function (obj, id) {
         Swal.fire({
             title: 'Do you want delete?',

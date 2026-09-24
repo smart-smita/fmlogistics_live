@@ -3699,9 +3699,8 @@ class Hse_audit extends BaseController
     // Load audit questions dynamically from alert_audit_questions
     public function get_audit_questions_ajax()
     {
-        if (!$this->request->isAJAX() && strpos($_SERVER['HTTP_ACCEPT'] ?? '', 'json') === false) {
-            return redirect()->to(base_url('Masters/Hse_audit'));
-        }
+        // Set JSON header explicitly
+        $this->response->setHeader('Content-Type', 'application/json');
 
         $site_category = $this->request->getVar('site_category');
         $sub_category = $this->request->getVar('sub_category');

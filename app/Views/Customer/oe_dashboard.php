@@ -946,6 +946,7 @@ if (!empty($aging_OE_score)) {
                 'audit_no' => $auditNo,
                 'region' => $arRegion,
                 'cluster' => $arCluster,
+                'account_manager' => $ar['account_manager'] ?? '-',
                 'audit_date' => $date,
                 'aging_days' => $agingDays,
                 'cats' => [],
@@ -1196,6 +1197,25 @@ $oeAgingCount = count($agingPivot);
         </div>
     </div>
 
+    <?php if (!empty($selected_site_managers)): ?>
+        <!-- Selected Site Managers Info Card -->
+        <div class="alert alert-primary bg-light-primary border-primary d-flex align-items-center mb-4 p-3 rounded-3 shadow-sm">
+            <i class="fas fa-building text-primary fs-3 me-3"></i>
+            <div class="flex-grow-1">
+                <h6 class="mb-1 fw-bold text-dark"><i class="fas fa-map-marker-alt text-danger me-1"></i> Selected Site Info</h6>
+                <div class="d-flex flex-wrap gap-3 text-dark" style="font-size: 0.95rem;">
+                    <?php foreach ($selected_site_managers as $ssm): ?>
+                        <div class="p-2 border rounded bg-white shadow-sm">
+                            <span class="fw-bold text-primary"><?= esc($ssm['client_name']) ?></span>:
+                            <span class="badge bg-primary ms-1" style="font-size: 0.8rem;"><i class="fas fa-user-tie me-1"></i> Account Manager: <?= esc($ssm['account_manager'] ?: '-') ?></span>
+                            <span class="badge bg-info text-dark ms-1" style="font-size: 0.8rem;"><i class="fas fa-user-shield me-1"></i> Cluster Manager: <?= esc($ssm['cluster_manager'] ?: '-') ?></span>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+        </div>
+    <?php endif; ?>
+
     <!-- ===================== KPI CARDS (5 cards) ===================== -->
     <style>
         @media (min-width: 768px) {
@@ -1443,7 +1463,8 @@ $oeAgingCount = count($agingPivot);
                     <thead>
                         <tr class="table-light">
                             <th style="min-width:160px;">Account Name</th>
-                            <th style="min-width:110px;">Cluster</th>
+                            <th style="min-width:110px;">Cluster Manager</th>
+                            <th style="min-width:130px;">Account Manager</th>
                             <th class="text-center" style="min-width:90px;">Open Points</th>
                             <th class="text-center" style="min-width:100px;">Working Points</th>
                             <th class="text-center" style="min-width:120px;">Under Review-CM</th>
@@ -1458,6 +1479,7 @@ $oeAgingCount = count($agingPivot);
                                 $loc = isset($row['location']) ? $row['location'] : '';
                                 $reg = isset($row['region']) ? $row['region'] : '';
                                 $clu = isset($row['cluster_name']) ? $row['cluster_name'] : '';
+                                $am = isset($row['account_manager']) ? $row['account_manager'] : '-';
                                 ?>
                                 <tr class="clickable-row oe-drilldown-row"
                                     data-loc="<?= esc($loc) ?>" 
@@ -1467,6 +1489,7 @@ $oeAgingCount = count($agingPivot);
                                         <?= esc(isset($row['client_name']) ? $row['client_name'] : $loc) ?>
                                     </td>
                                     <td><?= esc($clu) ?></td>
+                                    <td><?= esc($am) ?></td>
                                     <td class="text-center text-danger fw-bold">
                                         <?= (int) (isset($row['count_open_points']) ? $row['count_open_points'] : 0) ?>
                                     </td>
@@ -1491,7 +1514,7 @@ $oeAgingCount = count($agingPivot);
                             <?php endforeach;
                         else: ?>
                             <tr>
-                                <td colspan="8" class="text-center text-muted py-4">No open points data found</td>
+                                <td colspan="9" class="text-center text-muted py-4">No open points data found</td>
                             </tr>
                         <?php endif; ?>
                     </tbody>
@@ -1666,9 +1689,10 @@ $oeAgingCount = count($agingPivot);
                             <tr class="table-light">
                                 <th style="min-width:160px;">Account Name</th>
                                 <th style="min-width:90px;">Region</th>
+                                <th style="min-width:110px;">Cluster Manager</th>
+                                <th style="min-width:130px;">Account Manager</th>
                                 <th style="min-width:90px;">Month</th>
                                 <th style="min-width:100px;">Audit Date</th>
-                                <th style="min-width:110px;">Cluster</th>
                                 <th style="min-width:130px;">Category</th>
                                 <th style="min-width:130px;">Sub Category</th>
                                 <th style="min-width:200px;">Remark</th>
@@ -1683,10 +1707,11 @@ $oeAgingCount = count($agingPivot);
                                             <?= esc(isset($row['client_name']) ? $row['client_name'] : '') ?>
                                         </td>
                                         <td><?= esc(isset($row['region']) ? $row['region'] : '') ?></td>
+                                        <td><?= esc(isset($row['cluster_name']) ? $row['cluster_name'] : '-') ?></td>
+                                        <td><?= esc(isset($row['account_manager']) ? $row['account_manager'] : '-') ?></td>
                                         <td><?= esc(isset($row['audit_month']) ? $row['audit_month'] : '') ?></td>
                                         <td><?= !empty($row['audit_date']) ? date('d-M-Y', strtotime($row['audit_date'])) : '' ?>
                                         </td>
-                                        <td><?= esc(isset($row['cluster_name']) ? $row['cluster_name'] : '') ?></td>
                                         <td><?= esc(isset($row['category']) ? $row['category'] : '') ?></td>
                                         <td><?= esc(isset($row['audit_parameter']) ? $row['audit_parameter'] : '') ?></td>
                                         <td><?= esc(isset($row['audit_remark']) ? $row['audit_remark'] : '') ?></td>
@@ -1694,7 +1719,7 @@ $oeAgingCount = count($agingPivot);
                                 <?php endforeach;
                             else: ?>
                                 <tr>
-                                    <td colspan="8" class="text-center text-muted py-4">No open points report data found
+                                    <td colspan="9" class="text-center text-muted py-4">No open points report data found
                                     </td>
                                 </tr>
                             <?php endif; ?>
@@ -1715,7 +1740,7 @@ $oeAgingCount = count($agingPivot);
                             <thead>
                                 <!-- Row 1: group header -->
                                 <tr style="background:#f0f4ff;">
-                                    <th colspan="6" class="text-center fw-bold"
+                                    <th colspan="7" class="text-center fw-bold"
                                         style="background:#e8edff;border-right:2px solid #c5cfee;">Location Info</th>
                                     <th colspan="<?= max(1, count($agingCategories)) ?>" class="text-center fw-bold"
                                         style="background:#fff3cd;">NC Points</th>
@@ -1728,7 +1753,8 @@ $oeAgingCount = count($agingPivot);
                                         Account Name</th>
                                     <th style="min-width:110px;">Audit No</th>
                                     <th style="min-width:80px;">Region</th>
-                                    <th style="min-width:110px;">Cluster</th>
+                                    <th style="min-width:110px;">Cluster Manager</th>
+                                    <th style="min-width:130px;">Account Manager</th>
                                     <th style="min-width:100px;">Audit Date</th>
                                     <th style="min-width:90px;border-right:2px solid #c5cfee;">Aging (Days)</th>
                                     <?php foreach ($agingCategories as $cat): ?>
@@ -1754,6 +1780,7 @@ $oeAgingCount = count($agingPivot);
                                             <td><?= esc($pd['audit_no']) ?></td>
                                             <td><?= esc($pd['region']) ?></td>
                                             <td><?= esc($pd['cluster']) ?></td>
+                                            <td><?= esc(isset($pd['account_manager']) ? $pd['account_manager'] : '-') ?></td>
                                             <td><?= esc($pd['audit_date']) ?></td>
                                             <td style="border-right:2px solid #c5cfee; font-weight: 600; color: #dc3545;">
                                                 <?= esc($pd['aging_days']) ?>

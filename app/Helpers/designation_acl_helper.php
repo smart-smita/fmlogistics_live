@@ -123,13 +123,16 @@
                 if (!empty($m['cluster_name'])) $clusters[] = trim($m['cluster_name']);
             }
 
-            // Fallback & expansion for Account Manager or empty mappings
-            if ($designation === 'account manager' || empty($oeSites) || empty($hseSites)) {
+            // Fallback & expansion for legacy setup if user has no entries in alert_user_client_mapping
+            if (empty($mappings)) {
                 if (!empty($userName)) {
-                    // Fetch OE clients for Account Manager from alert_client
+                    // Fetch OE clients for Manager from alert_client
                     $oeRows = $db->table('alert_client')
                         ->select('client_id, client_name, cluster')
-                        ->where('LOWER(TRIM(account_manager))', strtolower(trim($userName)))
+                        ->groupStart()
+                            ->where('LOWER(TRIM(account_manager))', strtolower(trim($userName)))
+                            ->orWhere('LOWER(TRIM(cluster))', strtolower(trim($userName)))
+                        ->groupEnd()
                         ->where('status !=', 2)
                         ->get()->getResultArray();
                     foreach ($oeRows as $r) {
@@ -138,10 +141,13 @@
                         if (!empty($r['cluster'])) $clusters[] = trim($r['cluster']);
                     }
 
-                    // Fetch HSE clients for Account Manager from alert_hse_client_master
+                    // Fetch HSE clients for Manager from alert_hse_client_master
                     $hseRows = $db->table('alert_hse_client_master')
                         ->select('client_id, client_name, cluster')
-                        ->where('LOWER(TRIM(account_manager))', strtolower(trim($userName)))
+                        ->groupStart()
+                            ->where('LOWER(TRIM(account_manager))', strtolower(trim($userName)))
+                            ->orWhere('LOWER(TRIM(cluster))', strtolower(trim($userName)))
+                        ->groupEnd()
                         ->where('status !=', 2)
                         ->get()->getResultArray();
                     foreach ($hseRows as $r) {
@@ -176,18 +182,20 @@
                 }
             }
 
-            // Resolve site names by IDs if mapping contained IDs but empty names
-            if (!empty($oeIds) && empty($oeSites)) {
-                $resolvedOE = $db->table('alert_client')->select('client_name')->whereIn('client_id', array_unique($oeIds))->get()->getResultArray();
+            // Resolve site names & location names by IDs so both client_name and location variations are matched
+            if (!empty($oeIds)) {
+                $resolvedOE = $db->table('alert_client')->select('client_name, location')->whereIn('client_id', array_unique($oeIds))->get()->getResultArray();
                 foreach ($resolvedOE as $r) {
                     if (!empty($r['client_name'])) $oeSites[] = trim($r['client_name']);
+                    if (!empty($r['location'])) $oeSites[] = trim($r['location']);
                 }
             }
 
-            if (!empty($hseIds) && empty($hseSites)) {
-                $resolvedHSE = $db->table('alert_hse_client_master')->select('client_name')->whereIn('client_id', array_unique($hseIds))->get()->getResultArray();
+            if (!empty($hseIds)) {
+                $resolvedHSE = $db->table('alert_hse_client_master')->select('client_name, location')->whereIn('client_id', array_unique($hseIds))->get()->getResultArray();
                 foreach ($resolvedHSE as $r) {
                     if (!empty($r['client_name'])) $hseSites[] = trim($r['client_name']);
+                    if (!empty($r['location'])) $hseSites[] = trim($r['location']);
                 }
             }
 
@@ -581,48 +589,25 @@
              if (isAdmin() || isAuditor() || isHigherAuthority()) {
                  return '';
              }
- 
+
              $db = \Config\Database::connect();
-             $userName = getUserName();
-             $loginUser = $db->escape(strtolower(trim($userName)));
- 
-             // Both alert_normal_audit and alert_final_structured_audit have 'location' column
-             // which stores the site/client identifier.
-             $auditClientColumn = 'location';
- 
-             if (isClusterManager()) {
-                 $assignedClusters = getClusterManagerAssignedCluster();
-                 if (empty($assignedClusters)) {
-                     return " AND 1=0";
-                 }
-                 $escapedClusters = array_map([$db, 'escape'], (array)$assignedClusters);
-                 $clusterList = implode(',', array_map(function($c) { return "LOWER(TRIM($c))"; }, $escapedClusters));
- 
-                 return " AND EXISTS (
-                     SELECT 1 FROM alert_client c
-                     WHERE (LOWER(TRIM(c.location)) = LOWER(TRIM({$alias}.{$auditClientColumn})) OR LOWER(TRIM(c.client_name)) = LOWER(TRIM({$alias}.{$auditClientColumn})))
-                     AND LOWER(TRIM(c.cluster)) IN ({$clusterList})
-                     AND c.status != 2
-                 )";
+             $assignedSites = getUserAllocatedSiteNames('OE');
+             if (empty($assignedSites)) {
+                 return " AND 1=0";
              }
- 
-             if (isAccountManager() || isWHManager()) {
-                 $assignedSites = getUserAllocatedSiteNames('OE');
-                 if (empty($assignedSites)) {
-                     return " AND 1=0";
-                 }
-                 $escapedSites = array_map([$db, 'escape'], (array)$assignedSites);
-                 $siteList = implode(',', array_map(function($c) { return "LOWER(TRIM($c))"; }, $escapedSites));
- 
-                 return " AND EXISTS (
+             $escapedSites = array_map([$db, 'escape'], (array)$assignedSites);
+             $siteList = implode(',', array_map(function($c) { return "LOWER(TRIM($c))"; }, $escapedSites));
+
+             return " AND (
+                 LOWER(TRIM({$alias}.location)) IN ({$siteList})
+                 OR LOWER(TRIM({$alias}.client_name)) IN ({$siteList})
+                 OR EXISTS (
                      SELECT 1 FROM alert_client c
-                     WHERE (LOWER(TRIM(c.location)) = LOWER(TRIM({$alias}.{$auditClientColumn})) OR LOWER(TRIM(c.client_name)) = LOWER(TRIM({$alias}.{$auditClientColumn})))
+                     WHERE (LOWER(TRIM(c.location)) = LOWER(TRIM({$alias}.location)) OR LOWER(TRIM(c.client_name)) = LOWER(TRIM({$alias}.client_name)) OR LOWER(TRIM(c.location)) = LOWER(TRIM({$alias}.client_name)) OR LOWER(TRIM(c.client_name)) = LOWER(TRIM({$alias}.location)))
                      AND LOWER(TRIM(c.client_name)) IN ({$siteList})
                      AND c.status != 2
-                 )";
-             }
- 
-             return " AND 1=0";
+                 )
+             )";
          }
      }
 
@@ -996,12 +981,9 @@
 
     if (!function_exists('getClusterFilterByClientName')) {
         /**
-         * Get SQL WHERE clause for cluster filtering via client_name join
-         * This is used when the main table has client_name but not cluster
-         * Updated: 14/11/25 - Enhanced cluster-based filtering using username as cluster
-         * Updated: 28/01/26 - Added Account Manager support
+         * Get SQL WHERE clause for site filtering via client_name
          * @param string $clientNameColumn - column name for client_name in main table
-         * @return string - WHERE clause with EXISTS subquery
+         * @return string - WHERE clause
          */
         function getClusterFilterByClientName($clientNameColumn = 'client_name') {
             if (!needsClusterFiltering()) {
@@ -1009,42 +991,20 @@
             }
             
             $db = \Config\Database::connect();
-            
-            if (isAccountManager()) {
-                $assignedClients = getAccountManagerAssignedClient();
-                if (!empty($assignedClients)) {
-                    $escapedClients = array_map([$db, 'escape'], $assignedClients);
-                    return " AND {$clientNameColumn} IN (" . implode(',', $escapedClients) . ")";
-                }
-                return ' AND 1=0';
+            $assignedClients = getUserAllocatedSiteNames('OE');
+            if (!empty($assignedClients)) {
+                $escapedClients = array_map([$db, 'escape'], $assignedClients);
+                return " AND LOWER(TRIM({$clientNameColumn})) IN (" . implode(',', array_map(function($c) { return "LOWER(TRIM($c))"; }, $escapedClients)) . ")";
             }
-
-            // Cluster Manager / WH Manager logic
-            $assignedClusters = getClusterManagerAssignedCluster();
-            
-            if (!empty($assignedClusters)) {
-                $escapedClusters = array_map([$db, 'escape'], $assignedClusters);
-                return " AND EXISTS (
-                    SELECT 1 FROM alert_client 
-                    WHERE alert_client.client_name = {$clientNameColumn}
-                    AND LOWER(TRIM(alert_client.cluster)) IN (" . implode(',', array_map(function($c) { return "LOWER(TRIM($c))"; }, $escapedClusters)) . ")
-                    AND (alert_client.status IS NULL OR alert_client.status != 2)
-                )";
-            }
-            
-            return '';
+            return ' AND 1=0';
         }
     }
 
     if (!function_exists('getClusterFilterByLocation')) {
         /**
-         * Get SQL WHERE clause for cluster filtering via location join with alert_location_master
-         * This is used when the main table has location but not client_name or cluster
-         * For tables like alert_normal_audit that only have location column
-         * Updated: 14/11/25 - Location-based filtering for normal audit tables
-         * Updated: 28/01/26 - Added Account Manager support
+         * Get SQL WHERE clause for site filtering via location column
          * @param string $locationColumn - column name for location in main table
-         * @return string - WHERE clause with EXISTS subquery
+         * @return string - WHERE clause
          */
         function getClusterFilterByLocation($locationColumn = 'client_name')
         {
@@ -1053,55 +1013,30 @@
             }
 
             $db = \Config\Database::connect();
+            $assignedClients = getUserAllocatedSiteNames('OE');
+            if (!empty($assignedClients)) {
+                $escapedClients = array_map([$db, 'escape'], $assignedClients);
+                $siteList = implode(',', array_map(function($c) { return "LOWER(TRIM($c))"; }, $escapedClients));
 
-            // Account Manager
-            if (isAccountManager()) {
-
-                $assignedClients = getAccountManagerAssignedClient();
-
-                if (!empty($assignedClients)) {
-
-                    $escapedClients = array_map([$db, 'escape'], $assignedClients);
-
-                    // Match client_name
-                    return " AND {$locationColumn} IN (" . implode(',', $escapedClients) . ")";
-                }
-
-                return ' AND 1=0';
-            }
-
-            // Cluster Manager / WH Manager
-            $assignedClusters = getClusterManagerAssignedCluster();
-
-            if (!empty($assignedClusters)) {
-
-                $escapedClusters = array_map([$db, 'escape'], $assignedClusters);
-
-                return " AND EXISTS (
-                    SELECT 1
-                    FROM alert_client ac
-                    WHERE ac.client_name = {$locationColumn}
-                    AND LOWER(TRIM(ac.cluster)) IN (
-                        " . implode(',', array_map(function($c) {
-                            return 'LOWER(TRIM(' . $c . '))';
-                        }, $escapedClusters)) . "
+                return " AND (
+                    LOWER(TRIM({$locationColumn})) IN ({$siteList})
+                    OR EXISTS (
+                        SELECT 1 FROM alert_client ac
+                        WHERE (LOWER(TRIM(ac.client_name)) = LOWER(TRIM({$locationColumn})) OR LOWER(TRIM(ac.location)) = LOWER(TRIM({$locationColumn})))
+                        AND LOWER(TRIM(ac.client_name)) IN ({$siteList})
+                        AND (ac.status IS NULL OR ac.status != 2)
                     )
-                    AND (ac.status IS NULL OR ac.status != 2)
                 )";
             }
-
-            return '';
+            return ' AND 1=0';
         }
     }
 
     if (!function_exists('getClusterFilterByLocationForHSE')) {
         /**
-         * Get SQL WHERE clause for cluster filtering via location join for HSE audits
-         * HSE audit tables use different structure, so we need a specific function
-         * Updated: 14/11/25 - HSE-specific location-based filtering
-         * Updated: 28/01/26 - Added Account Manager support
-         * @param string $locationColumn - column name for location in HSE table
-         * @return string - WHERE clause with EXISTS subquery
+         * Get SQL WHERE clause for HSE site filtering
+         * @param string $column - column name for client_name/location in HSE table
+         * @return string - WHERE clause
          */
         function getClusterFilterByLocationForHSE($column = 'master.client_name')
         {
@@ -1110,35 +1045,22 @@
             }
 
             $db = \Config\Database::connect();
+            $assignedClients = getUserAllocatedSiteNames('HSE');
+            if (!empty($assignedClients)) {
+                $escapedClients = array_map([$db, 'escape'], $assignedClients);
+                $siteList = implode(',', array_map(function($c) { return "LOWER(TRIM($c))"; }, $escapedClients));
 
-            if (isAccountManager()) {
-                $assignedClients = getAccountManagerAssignedClient();
-                if (!empty($assignedClients)) {
-                    $escapedClients = array_map([$db, 'escape'], $assignedClients);
-                    return " AND {$column} IN (" . implode(',', $escapedClients) . ")";
-                }
-                return ' AND 1=0';
-            }
-
-            $assignedClusters = getClusterManagerAssignedCluster();
-
-            if (!empty($assignedClusters)) {
-
-                $escapedClusters = array_map(function ($c) use ($db) {
-                    return "LOWER(TRIM(" . $db->escape($c) . "))";
-                }, $assignedClusters);
-
-                return " AND EXISTS (
-                    SELECT 1 
-                    FROM alert_hse_client_master cm
-                    WHERE 
-                        TRIM(LOWER(cm.client_name)) = TRIM(LOWER({$column}))
-                        AND LOWER(TRIM(cm.cluster)) IN (" . implode(',', $escapedClusters) . ")
+                return " AND (
+                    LOWER(TRIM({$column})) IN ({$siteList})
+                    OR EXISTS (
+                        SELECT 1 FROM alert_hse_client_master cm
+                        WHERE (LOWER(TRIM(cm.client_name)) = LOWER(TRIM({$column})) OR LOWER(TRIM(cm.location)) = LOWER(TRIM({$column})))
+                        AND LOWER(TRIM(cm.client_name)) IN ({$siteList})
                         AND (cm.status IS NULL OR cm.status != 2)
+                    )
                 )";
             }
-
-            return '';
+            return ' AND 1=0';
         }
     }
 

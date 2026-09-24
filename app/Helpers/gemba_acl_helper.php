@@ -21,21 +21,22 @@ if (!function_exists('gemba_can_write')) {
             return true;
         }
 
-        if (!session()->get('role')) {
-            return false;
-        }
-
-        $role = strtolower(trim(session()->get('role')));
+        helper('designation_acl');
+        $role = strtolower(trim(session()->get('role') ?? ''));
+        $designation = getUserDesignation();
 
         // Define roles that are allowed to perform write/modification actions
         $write_roles = [
             'super_admin',
             'super admin',
             'admin',
-            'auditor'
+            'auditor',
+            'cluster manager',
+            'account manager',
+            'wh manager'
         ];
 
-        return in_array($role, $write_roles, true);
+        return in_array($role, $write_roles, true) || in_array($designation, $write_roles, true);
     }
 }
 

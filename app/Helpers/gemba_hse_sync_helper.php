@@ -31,7 +31,7 @@ if (!function_exists('execute_hse_gemba_nc_action')) {
 
         /* ================= FETCH RECORD ================= */
         $current = $db->table('alert_hse_audit_details d')
-            ->select('d.*, cm.account_manager, cm.cluster, m.audit_no')
+            ->select('d.*, m.client_name, m.location, cm.account_manager, cm.cluster, m.audit_no')
             ->join('alert_hse_audit_master m', 'm.hse_audit_id = d.hse_audit_id', 'left')
             ->join('alert_hse_client_master cm', 'cm.client_name = m.client_name AND cm.status = 1', 'left')
             ->where('d.id', $id)
@@ -49,10 +49,12 @@ if (!function_exists('execute_hse_gemba_nc_action')) {
             return ['status' => 0, 'message' => 'Read only access'];
         }
 
+        $siteName = $current['client_name'] ?? ($current['site_name'] ?? ($current['location'] ?? ''));
+
         /* 🔒 ACCOUNT MANAGER LOCK */
         $isAssignedAM = false;
         if (isAccountManager()) {
-            if (!empty($current['account_manager']) && strtolower(trim($current['account_manager'])) === strtolower(trim($userName))) {
+            if (verifySiteAccess($siteName, 'HSE') || verifySiteAccess($siteName, 'GEMBA') || verifySiteAccess($siteName, 'OE') || (!empty($current['account_manager']) && strtolower(trim($current['account_manager'])) === strtolower(trim($userName)))) {
                 $isAssignedAM = true;
             }
         }
@@ -61,10 +63,11 @@ if (!function_exists('execute_hse_gemba_nc_action')) {
         $isAssignedCM = false;
         if (isClusterManager()) {
             $assignedClusters = getClusterManagerAssignedClusterHSE();
-            if (in_array($current['cluster'], $assignedClusters)) {
+            if (verifySiteAccess($siteName, 'HSE') || verifySiteAccess($siteName, 'GEMBA') || verifySiteAccess($siteName, 'OE') || (!empty($current['cluster']) && in_array($current['cluster'], $assignedClusters))) {
                 $isAssignedCM = true;
             }
         }
+
 
         $isSuperAdmin = isSuperAdmin();
         $isAuditor = isAuditor();

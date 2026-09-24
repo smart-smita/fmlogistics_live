@@ -411,6 +411,16 @@ class User extends BaseController
                         $hse_ids[] = (string)$m['client_id'];
                     }
                 }
+                $totalOeCount = $db->table('alert_client')->where('status !=', 2)->countAllResults();
+                if ($totalOeCount > 0 && count(array_unique($oe_ids)) >= $totalOeCount) {
+                    $oe_ids[] = 'ALL';
+                }
+
+                $totalHseCount = $db->table('alert_hse_client_master')->where('status !=', 2)->countAllResults();
+                if ($totalHseCount > 0 && count(array_unique($hse_ids)) >= $totalHseCount) {
+                    $hse_ids[] = 'ALL';
+                }
+
                 $userData['oe_site_ids'] = $oe_ids;
                 $userData['hse_site_ids'] = $hse_ids;
                 $responce['data'] = $userData;
@@ -551,6 +561,14 @@ class User extends BaseController
             }
         }
 
+        $mappingPostData = $postData;
+        unset(
+            $postData['oe_site_ids'],
+            $postData['hse_site_ids'],
+            $postData['oe_site_ids[]'],
+            $postData['hse_site_ids[]']
+        );
+
         if (isset($id)) {
             $responce['message'] = "Data update failed";
             if (isset($action)) {
@@ -584,7 +602,7 @@ class User extends BaseController
                 $responce['message'] = "Data updated successfully";
 
                 if ($action === null) {
-                    $this->saveUserClientMappings($id, $postData);
+                    $this->saveUserClientMappings($id, $mappingPostData);
                 }
 
                 // Add entry to cluster master if designation is Cluster manager
@@ -619,7 +637,7 @@ class User extends BaseController
                 $responce['message'] = "Data saved successfully";
 
                 $newUserId = $this->BaseModel->insertID() ?: db_connect()->insertID();
-                $this->saveUserClientMappings($newUserId, $postData);
+                $this->saveUserClientMappings($newUserId, $mappingPostData);
 
                 // Add entry to cluster master if designation is Cluster manager
                 if (isset($postData['user_designation']) && $postData['user_designation'] == 'Cluster manager') {
@@ -906,9 +924,22 @@ class User extends BaseController
             $oeSiteIds = array_filter(explode(',', $oeSiteIds));
         }
         if (is_array($oeSiteIds)) {
+            $hasAllOe = false;
+            foreach ($oeSiteIds as $val) {
+                $valStr = strtolower(trim((string)$val));
+                if (in_array($valStr, ['all', 'all_selected', 'select_all', 'all selected', '0'], true)) {
+                    $hasAllOe = true;
+                    break;
+                }
+            }
+            if ($hasAllOe) {
+                $allOeClients = $db->table('alert_client')->where('status !=', 2)->select('client_id')->get()->getResultArray();
+                $oeSiteIds = array_column($allOeClients, 'client_id');
+            }
+
             foreach ($oeSiteIds as $oeId) {
                 $oeId = trim($oeId);
-                if (empty($oeId)) continue;
+                if (empty($oeId) || strtolower($oeId) === 'all') continue;
                 $client = $db->table('alert_client')->where('client_id', $oeId)->get()->getRowArray();
                 if ($client) {
                     $key = 'OE_' . $client['client_id'];
@@ -939,9 +970,22 @@ class User extends BaseController
             $hseSiteIds = array_filter(explode(',', $hseSiteIds));
         }
         if (is_array($hseSiteIds)) {
+            $hasAllHse = false;
+            foreach ($hseSiteIds as $val) {
+                $valStr = strtolower(trim((string)$val));
+                if (in_array($valStr, ['all', 'all_selected', 'select_all', 'all selected', '0'], true)) {
+                    $hasAllHse = true;
+                    break;
+                }
+            }
+            if ($hasAllHse) {
+                $allHseClients = $db->table('alert_hse_client_master')->where('status !=', 2)->select('client_id')->get()->getResultArray();
+                $hseSiteIds = array_column($allHseClients, 'client_id');
+            }
+
             foreach ($hseSiteIds as $hseId) {
                 $hseId = trim($hseId);
-                if (empty($hseId)) continue;
+                if (empty($hseId) || strtolower($hseId) === 'all') continue;
                 $hseClient = $db->table('alert_hse_client_master')->where('client_id', $hseId)->get()->getRowArray();
                 if ($hseClient) {
                     $key = 'HSE_' . $hseClient['client_id'];

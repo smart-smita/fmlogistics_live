@@ -1438,15 +1438,21 @@ class GembaNcTracker extends BaseController
 
         $currentStatus = (int) $current['nc_status'];
         
+        $siteName = $current['site_name'] ?? ($current['client_name'] ?? ($current['location'] ?? ''));
         $isAssignedAM = false;
-        if (isAccountManager() && !empty($current['account_manager']) && strtolower(trim($current['account_manager'])) === strtolower(trim($userName))) {
-            $isAssignedAM = true;
+        if (isAccountManager()) {
+            if (verifySiteAccess($siteName, 'GEMBA') || verifySiteAccess($siteName, 'OE') || verifySiteAccess($siteName, 'HSE') || (!empty($current['account_manager']) && strtolower(trim($current['account_manager'])) === strtolower(trim($userName)))) {
+                $isAssignedAM = true;
+            }
         }
 
         $isAssignedCM = false;
-        if (isClusterManager() && !empty($current['cluster_manager_spoc']) && strtolower(trim($current['cluster_manager_spoc'])) === strtolower(trim($userName))) {
-            $isAssignedCM = true;
+        if (isClusterManager()) {
+            if (verifySiteAccess($siteName, 'GEMBA') || verifySiteAccess($siteName, 'OE') || verifySiteAccess($siteName, 'HSE') || (!empty($current['cluster_manager_spoc']) && strtolower(trim($current['cluster_manager_spoc'])) === strtolower(trim($userName)))) {
+                $isAssignedCM = true;
+            }
         }
+
 
         $isSuperAdmin = isSuperAdmin();
         $isAuditor = isAuditor();
