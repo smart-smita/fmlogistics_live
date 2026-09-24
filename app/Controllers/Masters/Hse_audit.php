@@ -1720,7 +1720,7 @@ class Hse_audit extends BaseController
         if (!$newAuditId) {
             $dbError = $db->error();
             $lastQuery = (string) $db->getLastQuery();
-            return redirect()->back()->with('error', 'Reaudit master save failed: ' . ($dbError['message'] ?? 'Unknown DB Error') . ' | SQL: ' . $lastQuery);
+            return redirect()->to(base_url("Masters/Hse_audit/hse_reaudit/" . $originalHseId))->with('error', 'Reaudit master save failed: ' . ($dbError['message'] ?? 'Unknown DB Error') . ' | SQL: ' . $lastQuery);
         }
 
         /* -----------------------------
@@ -1870,7 +1870,7 @@ class Hse_audit extends BaseController
 
                     if (empty($validCapaJson)) {
                         $db->transRollback();
-                        return redirect()->back()->with(
+                        return redirect()->to(base_url("Masters/Hse_audit/hse_reaudit/" . $originalHseId))->with(
                             'error',
                             'CAPA details are mandatory for all NO responses.'
                         );
@@ -1916,7 +1916,7 @@ class Hse_audit extends BaseController
         $db->transComplete();
 
         if ($db->transStatus() === false) {
-            return redirect()->back()->with('error', 'HSE Reaudit save failed. Please try again.');
+            return redirect()->to(base_url("Masters/Hse_audit/hse_reaudit/" . $originalHseId))->with('error', 'HSE Reaudit save failed. Please try again.');
         }
 
         // Requirement 3: Call sync service
@@ -3699,6 +3699,10 @@ class Hse_audit extends BaseController
     // Load audit questions dynamically from alert_audit_questions
     public function get_audit_questions_ajax()
     {
+        if (!$this->request->isAJAX() && strpos($_SERVER['HTTP_ACCEPT'] ?? '', 'json') === false) {
+            return redirect()->to(base_url('Masters/Hse_audit'));
+        }
+
         $site_category = $this->request->getVar('site_category');
         $sub_category = $this->request->getVar('sub_category');
         $audit_template_id = $this->request->getVar('audit_template_id');
