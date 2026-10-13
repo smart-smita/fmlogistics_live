@@ -32,18 +32,13 @@ class User extends BaseController
         $tdata['display_contents'] = [
             "user_id" => "ID",
             "user_emp_country" => "Country",
-            //"user_emp_zone"=>"Region",
-            "user_region" => "Region",
-            "user_location" => "Client Name",
-            "user_cluster" => "Cluster",
             "user_emp_code" => "Code",
             "user_name" => "Name",
             "user_email" => "E-mail",
             "user_contact" => "Contact",
             "user_password" => "Password",
             "user_designation" => "Designation",
-            //"employee_reporting_to"=>"Reporting to",
-            // "fcm_id"=>"ID",
+            "audit_type" => "Audit Type",
             "action" => "Action"
         ];
 

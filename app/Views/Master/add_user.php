@@ -130,14 +130,14 @@ $this->section("breadcrumb_title_li");
                                             <option value='<?= $value['country_short_name'] ?>'><?= $value['country_name'] ?>
                                             </option>
                                         <?php } ?>
-                                    </select>
+   
                                 </div>
                             <?php } else { ?>
                                 <input type="hidden" name='user_emp_country'
                                     value='<?= isset($_SESSION['country']) ? $_SESSION['country'] : '' ?>'>
                             <?php } ?>
 
-                            <div class="form-group" style="display:none;">
+
                                 <label>Region *</label>
                                 <select class="form-control" id="user_region" name="user_region">
                                     <option value="" data-location-id="0">Select Region</option>
