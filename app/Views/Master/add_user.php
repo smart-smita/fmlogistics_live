@@ -175,6 +175,15 @@ $this->section("breadcrumb_title_li");
                                         <?php } ?>
                                 </select>
                             </div>
+                    <div class="form-group">
+                        <label for="audit_type">Audit Type *</label>
+                        <select class="form-select" name="audit_type" id="audit_type" required>
+                            <option value="" <?= (isset($audit_type) && $audit_type == '') ? 'selected' : '' ?>>Select Audit Type</option>
+                            <option value="OE" <?= (isset($audit_type) && $audit_type == 'OE') ? 'selected' : '' ?>>OE</option>
+                            <option value="HSE" <?= (isset($audit_type) && $audit_type == 'HSE') ? 'selected' : '' ?>>HSE</option>
+                            <option value="Both" <?= (isset($audit_type) && $audit_type == 'Both') ? 'selected' : '' ?>>Both</option>
+                        </select>
+                    </div>
                             
                             <?php if (($_SESSION['admin_flag'] ?? 0) == 1 || strtolower($_SESSION['role'] ?? '') == 'super admin' || strtolower($_SESSION['role'] ?? '') == 'admin') { ?>
                             <div class="form-group mt-3">

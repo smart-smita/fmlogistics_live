@@ -340,6 +340,12 @@ if (!function_exists('execute_hse_gemba_nc_action')) {
                     'status_to' => $update['nc_status'],
                     'remarks' => $auditRemarks
                 ]);
+
+                // Record transition cycle for 24-hour reminder tracking
+                try {
+                    helper('nc_transition');
+                    recordNcStatusTransition('HSE', (int)$id, (int)$update['nc_status']);
+                } catch (\Throwable $e) {}
             }
         }
         

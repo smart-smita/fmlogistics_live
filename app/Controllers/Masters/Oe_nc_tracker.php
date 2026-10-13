@@ -1350,8 +1350,13 @@ class Oe_nc_tracker extends BaseController
                 ->set($updatePayload)
                 ->update();
 
-            // Check if status changed, then send mail
+            // Check if status changed, then send mail & record transition
             if (isset($updatePayload['status']) && $updatePayload['status'] != $previousStatus) {
+                try {
+                    helper('nc_transition');
+                    recordNcStatusTransition('OE', (int)$id, (int)$updatePayload['status']);
+                } catch (\Throwable $e) {}
+
                 $ncDetails = $this->getNcMailDetails($id);
                 if ($ncDetails) {
                     $this->sendNcStatusMail($updatePayload['status'], $ncDetails);
@@ -1591,6 +1596,12 @@ class Oe_nc_tracker extends BaseController
             ->where('audit_details_id', $id)
             ->update($updateData);
 
+        // Record transition cycle for 24-hour reminder tracking
+        try {
+            helper('nc_transition');
+            recordNcStatusTransition('OE', (int)$id, (int)$newStatus);
+        } catch (\Throwable $e) {}
+
         return $this->response->setJSON([
             'status' => 1,
             'message' => 'Status updated successfully'
@@ -1655,6 +1666,11 @@ class Oe_nc_tracker extends BaseController
                ->update($updateData);
 
             $closedCount++;
+
+            try {
+                helper('nc_transition');
+                recordNcStatusTransition('OE', (int)$id, 3);
+            } catch (\Throwable $e) {}
 
             // Call mail function for each closed record
             $ncDetails = $this->getNcMailDetails($id);

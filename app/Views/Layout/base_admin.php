@@ -130,6 +130,20 @@
 									</a>
 								</div>
 
+								<?php 
+								$currRole = strtolower(trim($_SESSION['user_designation'] ?? ($_SESSION['role'] ?? '')));
+								if ($currRole === 'auditor'): 
+								?>
+								<div class="menu-item">
+									<a class="menu-link" href="<?= base_url('Profile') ?>">
+										<span class="menu-icon">
+											<span class="fas fa-user-check text-primary"></span>
+										</span>
+										<span class="menu-title fw-bold">Auditor Dashboard</span>
+									</a>
+								</div>
+								<?php endif; ?>
+
 								<?php if (($_SESSION['admin_flag'] ?? 0) == 1 || $_SESSION['role'] == "admin") { ?>
 									<div data-kt-menu-trigger="click" class="menu-item menu-accordion">
 										<span class="menu-link">
@@ -954,7 +968,52 @@
 										}
 										</script>
 										<?php } ?>
-										<!--end::Client Selector-->
+										<!--begin::Review Reminders Notification Bell-->
+										<div class="d-flex align-items-center ms-1 ms-lg-3" id="kt_header_notifications_toggle">
+											<!--begin::Menu wrapper-->
+											<div class="btn btn-icon btn-active-light-primary position-relative w-35px h-35px w-md-40px h-md-40px"
+												data-kt-menu-trigger="click" data-kt-menu-attach="parent"
+												data-kt-menu-placement="bottom-end" title="Review Reminders &amp; Alerts" id="nc_notification_bell_btn">
+												<i class="fa fa-bell fs-3 text-gray-700"></i>
+												<span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger fs-9 px-2 py-1 d-none" id="nc_notif_counter_badge">
+													0
+												</span>
+											</div>
+											<!--end::Menu wrapper-->
+											<!--begin::Menu-->
+											<div class="menu menu-sub menu-sub-dropdown menu-column w-325px w-sm-375px w-md-400px p-0 shadow-lg" data-kt-menu="true" id="nc_notif_dropdown_menu" style="border-radius: 12px; overflow: hidden; border: 1px solid #e2e8f0;">
+												<!--begin::Heading-->
+												<div class="d-flex flex-stack px-4 py-3 bg-primary text-white">
+													<div class="d-flex align-items-center">
+														<i class="fa fa-bell text-white fs-5 me-2"></i>
+														<h3 class="fs-6 fw-bolder text-white mb-0">Review Reminders</h3>
+														<span class="badge badge-light-primary ms-2 fs-8 fw-bold" id="nc_notif_header_badge">0 New</span>
+													</div>
+													<div>
+														<a href="javascript:void(0)" onclick="markAllNcNotifsRead()" class="text-white fs-8 fw-bold text-hover-white text-decoration-underline opacity-75 opacity-100-hover" id="nc_mark_all_read_btn">
+															Mark all read
+														</a>
+													</div>
+												</div>
+												<!--end::Heading-->
+												<!--begin::Items List-->
+												<div class="scroll-y mh-350px px-2 py-2" id="nc_notif_items_container">
+													<div class="text-center py-6 text-muted fs-7" id="nc_notif_loading_state">
+														<span class="spinner-border spinner-border-sm me-2 text-primary"></span> Loading reminders...
+													</div>
+												</div>
+												<!--end::Items List-->
+												<!--begin::Footer-->
+												<div class="py-2 px-4 text-center border-top bg-light fs-9 text-muted d-flex justify-content-between align-items-center">
+													<span>24-Hour Review SLA System</span>
+													<a href="<?= base_url('Masters/Oe_nc_tracker') ?>" class="text-primary fw-bold text-hover-underline">OE Tracker</a>
+													<a href="<?= base_url('Masters/GembaNcTracker') ?>" class="text-primary fw-bold text-hover-underline">Gemba Tracker</a>
+												</div>
+												<!--end::Footer-->
+											</div>
+											<!--end::Menu-->
+										</div>
+										<!--end::Review Reminders Notification Bell-->
 										<!--begin::User-->
 										<div class="d-flex align-items-center ms-1 ms-lg-3" id="kt_header_user_menu_toggle">
 											<!--begin::Menu wrapper-->
@@ -1040,13 +1099,16 @@
 												<div class="separator my-2"></div>
 												<!--end::Menu separator-->
 												<!--begin::Menu item-->
-												<?php if ($_SESSION['role'] != 'admin' && ($_SESSION['admin_flag'] ?? 0) != 1) { ?>
-													<div class="menu-item px-5">
-														<a href="<?= base_url("/profile") ?>" class="menu-link px-5">Change
-															Password</a>
-													</div>
-													<div class="separator my-2"></div>
-												<?php } ?>
+												<div class="menu-item px-5">
+													<a href="<?= base_url("/profile") ?>" class="menu-link px-5">
+														<i class="fa fa-user me-2 text-primary"></i> 
+														<?php
+														$userDesig = strtolower(trim($_SESSION['user_designation'] ?? ($_SESSION['role'] ?? '')));
+														echo ($userDesig === 'auditor') ? 'Auditor Profile & Dashboard' : 'My Profile';
+														?>
+													</a>
+												</div>
+												<div class="separator my-2"></div>
 												<!--end::Menu item-->
 
 												<!--begin::Feedback Option-->
@@ -1706,6 +1768,119 @@
 				}
 			});
 		}, 60000); // 1 minute
+
+		// ─── Automated NC Review Notifications System ─────────────────────
+		function escapeHtml(text) {
+			if (!text) return '';
+			return $('<div>').text(text).html();
+		}
+
+		function loadNcNavbarNotifications() {
+			$.ajax({
+				url: '<?= base_url("notifications/navbar") ?>',
+				type: 'GET',
+				dataType: 'json',
+				success: function(res) {
+					if (res && res.status === 'success') {
+						const count = parseInt(res.unread_count) || 0;
+						const badge = $('#nc_notif_counter_badge');
+						const headerBadge = $('#nc_notif_header_badge');
+						const container = $('#nc_notif_items_container');
+
+						// Update badge
+						if (count > 0) {
+							badge.text(count > 99 ? '99+' : count).removeClass('d-none');
+							headerBadge.text(count + ' Unread');
+						} else {
+							badge.addClass('d-none').text('0');
+							headerBadge.text('0 New');
+						}
+
+						// Render items
+						if (!res.notifications || res.notifications.length === 0) {
+							container.html(`
+								<div class="text-center py-8 text-muted">
+									<i class="fa fa-bell-slash fs-2 text-gray-400 mb-3 d-block"></i>
+									<div class="fw-bold fs-7">No review reminders</div>
+									<div class="fs-8 text-gray-500 mt-1">You are all caught up on pending NCs.</div>
+								</div>
+							`);
+							return;
+						}
+
+						let html = '';
+						res.notifications.forEach(function(item) {
+							const isUnread = (item.is_read === 0);
+							const cardBg = isUnread ? 'bg-light-primary border-primary' : 'bg-hover-light border-transparent';
+							const textWeight = isUnread ? 'fw-bolder text-gray-900' : 'fw-semibold text-gray-700';
+
+							html += `
+								<div class="d-flex align-items-start p-3 my-1 rounded border border-dashed ${cardBg} position-relative transition-all" style="cursor: pointer;" onclick="window.location.href='${item.target_url}'">
+									<div class="symbol symbol-35px me-3 mt-1 flex-shrink-0">
+										<span class="symbol-label ${item.module === 'OE' ? 'bg-light-primary text-primary' : 'bg-light-success text-success'} fs-7 fw-bolder">
+											${escapeHtml(item.module)}
+										</span>
+									</div>
+									<div class="flex-grow-1 min-w-0 me-2">
+										<div class="d-flex align-items-center justify-content-between mb-1">
+											<span class="badge ${escapeHtml(item.review_badge)} fs-9 fw-bold px-2 py-1">
+												${escapeHtml(item.review_status)}
+											</span>
+											<span class="text-muted fs-9">${escapeHtml(item.time_ago)}</span>
+										</div>
+										<div class="fs-7 ${textWeight} text-truncate mb-1" title="${escapeHtml(item.title)}">
+											${escapeHtml(item.title)}
+										</div>
+										<div class="fs-8 text-gray-600 text-truncate" title="${escapeHtml(item.client_site)}">
+											<i class="fa fa-map-marker-alt fs-9 text-muted me-1"></i> ${escapeHtml(item.client_site)}
+										</div>
+									</div>
+									${isUnread ? `
+										<button type="button" class="btn btn-icon btn-sm btn-active-light-primary flex-shrink-0 ms-1" title="Mark as read" onclick="markSingleNcNotifRead(${item.id}, event)">
+											<i class="fa fa-check text-primary fs-8"></i>
+										</button>
+									` : ''}
+								</div>
+							`;
+						});
+
+						container.html(html);
+					}
+				},
+				error: function(err) {
+					console.warn('NC notification fetch error:', err);
+				}
+			});
+		}
+
+		function markSingleNcNotifRead(id, event) {
+			if (event) event.stopPropagation();
+			$.ajax({
+				url: '<?= base_url("notifications/mark_read/") ?>/' + id,
+				type: 'POST',
+				dataType: 'json',
+				success: function() {
+					loadNcNavbarNotifications();
+				}
+			});
+		}
+
+		function markAllNcNotifsRead() {
+			$.ajax({
+				url: '<?= base_url("notifications/mark_all_read") ?>',
+				type: 'POST',
+				dataType: 'json',
+				success: function() {
+					loadNcNavbarNotifications();
+				}
+			});
+		}
+
+		// Initial load and recurring interval (every 60 seconds)
+		$(document).ready(function() {
+			loadNcNavbarNotifications();
+			setInterval(loadNcNavbarNotifications, 60000);
+		});
 		</script>
 
 		<?php $this->renderSection("javascript_section"); ?>

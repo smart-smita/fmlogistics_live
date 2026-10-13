@@ -44,6 +44,17 @@ $routes->get('/ci/', 'Login');
 // Profile routes
 $routes->get('/profile', 'Profile::index');
 $routes->post('/profile/update-password', 'Profile::updatePassword');
+$routes->post('/profile/get-auditor-analytics', 'Profile::getAuditorAnalytics');
+$routes->get('/profile/get-auditor-analytics', 'Profile::getAuditorAnalytics');
+
+// Navbar Notification Routes
+$routes->get('notifications/navbar', 'Notifications::getNavbarNotifications');
+$routes->post('notifications/mark_read/(:num)', 'Notifications::markAsRead/$1');
+$routes->get('notifications/read_and_go/(:num)', 'Notifications::readAndGo/$1');
+$routes->post('notifications/mark_all_read', 'Notifications::markAllAsRead');
+
+// Automated NC Review Reminder Cron Route
+$routes->add('Cron/pendingNcReviewReminder', 'Cron::pendingNcReviewReminder');
 //$routes->get('/staff_role', 'Masters\Staff_role::index');
 $routes->post('Masters/Client_nc_tracker/update_nc_status', 'Masters\Client_nc_tracker::update_nc_status');
 // NEW CHANGES: OE tracker status update endpoint

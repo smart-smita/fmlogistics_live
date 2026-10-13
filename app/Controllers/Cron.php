@@ -10,7 +10,7 @@ use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 class Cron extends BaseController
 {
     // Skip session-based ACL check in BaseController for this method
-    public $publicMethods = ['GembaWeeklyPendingApproval', 'MonthlyPendingApproval', 'AlphaWeeklyReport', 'OeWeeklyPendingApproval', 'GembaManagementWeeklyUpdate'];
+    public $publicMethods = ['GembaWeeklyPendingApproval', 'MonthlyPendingApproval', 'AlphaWeeklyReport', 'OeWeeklyPendingApproval', 'GembaManagementWeeklyUpdate', 'pendingNcReviewReminder'];
 
     public function GembaWeeklyPendingApproval()
     {
@@ -1809,4 +1809,686 @@ class Cron extends BaseController
         }
     }
 
+    /**
+     * Automated NC Review Reminder (OE & Gemba/HSE)
+     * Triggers when an NC has been in 'Cluster Review' or 'Auditor Review' >= 24 hours.
+     * Dispatches notification email to responsible Cluster Manager & Auditor with Higher Authority in CC,
+     * and logs real-time in-app notifications in alert_navbar_notifications.
+     */
+    public function pendingNcReviewReminder()
+    {
+        helper(['designation_acl', 'email_service', 'nc_transition']);
+
+        $configuredToken = env('CRON_SECRET_TOKEN', 'fm_cron_secret_key_2026');
+        $request = service('request');
+        $response = $this->response ?: service('response');
+        $providedToken = $request ? ($request->getGet('token') ?: $request->getHeaderLine('X-Cron-Token')) : null;
+        $isAuthorized = is_cli() || isAdmin() || (!empty($providedToken) && hash_equals($configuredToken, $providedToken));
+
+        if (!$isAuthorized) {
+            return $response->setStatusCode(403)->setJSON([
+                'status' => 'error',
+                'message' => 'Unauthorized access. Valid secret token, CLI execution, or Admin session required.'
+            ]);
+        }
+
+        $cronModel = new \App\Models\CronSettingsModel();
+        if (!$cronModel->isCronEnabled('nc_review_reminder')) {
+            $msg = 'Automated NC Review Reminder cron is disabled in settings.';
+            if (is_cli()) {
+                echo $msg . PHP_EOL;
+                return;
+            }
+            return $response->setJSON(['status' => 'skipped', 'message' => $msg]);
+        }
+
+        $db = Database::connect();
+
+        // Concurrency Advisory Lock to prevent duplicate sends during overlapping cron executions
+        $lockAcquired = $db->query("SELECT GET_LOCK('fm_nc_review_reminder_lock', 5) as lck")->getRowArray();
+        if (empty($lockAcquired['lck'])) {
+            $msg = 'Concurrent NC Review Reminder execution blocked by database advisory lock.';
+            if (is_cli()) {
+                echo $msg . PHP_EOL;
+                return;
+            }
+            return $response->setJSON(['status' => 'busy', 'message' => $msg]);
+        }
+
+        try {
+            $startTime = microtime(true);
+            $now = date('Y-m-d H:i:s');
+
+            // 1. Synchronize any pre-existing pending NC records across OE, HSE, and Gemba
+            $syncSummary = syncExistingPendingNcTransitions();
+
+            // 2. Query eligible transitions: is_current = 1 and entered_at <= NOW() - 24 hours
+            $cutoffTime = date('Y-m-d H:i:s', strtotime('-24 hours'));
+            $candidates = $db->table('alert_nc_status_transition')
+                ->where('is_current', 1)
+                ->where('entered_at <=', $cutoffTime)
+                ->orderBy('entered_at', 'ASC')
+                ->get()->getResultArray();
+
+            // 3. Pre-fetch all active Higher Authority users for CC & navbar notifications
+            $haUsers = $db->table('alert_users')
+                ->select('user_id, user_name, user_email, user_designation')
+                ->where('status', 1)
+                ->groupStart()
+                    ->where('LOWER(TRIM(user_designation))', 'higher authority')
+                    ->orWhere('user_designation', 'Higher authority')
+                ->groupEnd()
+                ->get()->getResultArray();
+            $haEmails = array_values(array_filter(array_unique(array_column($haUsers, 'user_email'))));
+
+            $totalScanned = count($candidates);
+            $emailsSent = 0;
+            $emailsFailed = 0;
+            $alreadySentCount = 0;
+            $staleClosedCount = 0;
+            $notifsCreated = 0;
+            $details = [];
+
+            // In-memory set to prevent duplicate sends for the same logical NC within the same run
+            $processedLogicalInRun = [];
+
+            foreach ($candidates as $trans) {
+                $module = strtoupper(trim($trans['module']));
+                $ncId = (int)$trans['nc_id'];
+                $logicalNcId = !empty($trans['logical_nc_id']) ? $trans['logical_nc_id'] : ($module . '_NC_' . $ncId);
+                $reviewStatus = $trans['review_status'];
+                $enteredAt = $trans['entered_at'];
+                $transId = (int)$trans['id'];
+
+                // ── A. Run-Level Deduplication ──
+                if (isset($processedLogicalInRun[$logicalNcId])) {
+                    $alreadySentCount++;
+                    continue;
+                }
+                $processedLogicalInRun[$logicalNcId] = true;
+
+                // ── B. Database-Level Deduplication Check ──
+                // Check if already notified for this logical NC in this review cycle
+                $alreadyLogged = $db->table('alert_nc_reminder_logs')
+                    ->where('logical_nc_id', $logicalNcId)
+                    ->where('review_status', $reviewStatus)
+                    ->where('status_entry_time', $enteredAt)
+                    ->where('email_status', 'SENT')
+                    ->countAllResults();
+
+                if ($alreadyLogged > 0) {
+                    $alreadySentCount++;
+                    continue;
+                }
+
+                // ── C. Module-specific verification, latest audit scoping, and recipient resolution ──
+                $siteName = 'N/A';
+                $clientName = 'N/A';
+                $auditRef = 'N/A';
+                $ncRef = $trans['nc_reference'] ?: ($module . '-' . $ncId);
+                $findingText = '';
+                $auditorName = '';
+                $cmName = '';
+                $amName = '';
+                $toEmails = [];
+                $recipientUsers = [];
+                $targetUrl = '';
+
+                if ($module === 'OE') {
+                    $oe = $db->table('alert_final_structured_audit_details d')
+                        ->select('d.audit_details_id, d.status, d.category, d.audit_question, d.audit_parameter, d.audit_finding, d.audit_remark,
+                                  sa.structured_audit_id, sa.audit_no, sa.audit_name, sa.client_name, sa.location, sa.region, sa.cluster_name, sa.client_manager_name, sa.auditor_name, sa.audit_by_user_id, sa.audit_date, sa.reaudit,
+                                  c.cluster AS client_cluster, c.location AS client_location, c.account_manager AS client_account_manager')
+                        ->join('alert_final_structured_audit sa', 'sa.structured_audit_id = d.structured_audit_id', 'left')
+                        ->join('alert_client c', 'c.client_name = sa.client_name', 'left')
+                        ->where('d.audit_details_id', $ncId)
+                        ->get()->getRowArray();
+
+                    // Latest audit validation (reaudit = 0) and review status validation
+                    $isLatestAudit = ($oe && (int)($oe['reaudit'] ?? 0) === 0);
+                    $validOeStatus = ($reviewStatus === 'Cluster Review' && (int)($oe['status'] ?? 0) === 6) ||
+                                     ($reviewStatus === 'Auditor Review' && (int)($oe['status'] ?? 0) === 2);
+
+                    if (!$oe || !$isLatestAudit || !$validOeStatus) {
+                        $db->table('alert_nc_status_transition')
+                            ->where('id', $transId)
+                            ->update(['is_current' => 0, 'exited_at' => $now]);
+                        $staleClosedCount++;
+                        continue;
+                    }
+
+                    $auditRef = $oe['audit_no'] ?? ('OE-' . $oe['structured_audit_id']);
+                    $ncRef = $oe['audit_no'] ?? ('OE-NC-' . $ncId);
+                    $siteName = !empty($oe['location']) ? $oe['location'] : (!empty($oe['client_location']) ? $oe['client_location'] : 'OE Site');
+                    $clientName = $oe['client_name'] ?? 'FM Client';
+                    $findingText = !empty($oe['audit_finding']) ? $oe['audit_finding'] : ($oe['audit_parameter'] ?? 'OE Audit Finding');
+                    $auditorName = $oe['auditor_name'] ?? 'Assigned Auditor';
+                    $cmName = !empty($oe['client_cluster']) ? $oe['client_cluster'] : ($oe['cluster_name'] ?? 'Cluster Manager');
+                    $amName = !empty($oe['client_manager_name']) ? $oe['client_manager_name'] : ($oe['client_account_manager'] ?? 'Account Manager');
+                    $targetUrl = base_url('Masters/Oe_nc_tracker?search=' . urlencode($ncRef));
+
+                    // Resolve Auditor User
+                    $auditorUser = null;
+                    if (!empty($oe['audit_by_user_id'])) {
+                        $auditorUser = $db->table('alert_users')
+                            ->where('user_id', (int)$oe['audit_by_user_id'])
+                            ->where('status', 1)
+                            ->get()->getRowArray();
+                    }
+                    if (!$auditorUser && !empty($oe['auditor_name'])) {
+                        $auditorUser = $db->table('alert_users')
+                            ->where('status', 1)
+                            ->where('LOWER(TRIM(user_name))', strtolower(trim($oe['auditor_name'])))
+                            ->get()->getRowArray();
+                    }
+
+                    // Resolve Cluster Manager User
+                    $cmUser = null;
+                    if (!empty($cmName)) {
+                        $cmUser = $db->table('alert_users')
+                            ->where('status', 1)
+                            ->whereIn('LOWER(TRIM(user_designation))', ['cluster manager', 'cluster_manager'])
+                            ->groupStart()
+                                ->where('LOWER(TRIM(user_name))', strtolower(trim($cmName)))
+                                ->orWhere('LOWER(TRIM(user_cluster))', strtolower(trim($cmName)))
+                            ->groupEnd()
+                            ->get()->getRowArray();
+                    }
+                    if (!$cmUser && !empty($oe['region'])) {
+                        $cmUser = $db->table('alert_users')
+                            ->where('status', 1)
+                            ->whereIn('LOWER(TRIM(user_designation))', ['cluster manager', 'cluster_manager'])
+                            ->where('LOWER(TRIM(user_region))', strtolower(trim($oe['region'])))
+                            ->get()->getRowArray();
+                    }
+
+                    // Resolve Account Manager User
+                    $amUser = null;
+                    if (!empty($amName)) {
+                        $amUser = $db->table('alert_users')
+                            ->where('status', 1)
+                            ->whereIn('LOWER(TRIM(user_designation))', ['account manager', 'account_manager'])
+                            ->where('LOWER(TRIM(user_name))', strtolower(trim($amName)))
+                            ->get()->getRowArray();
+                    }
+
+                    if ($auditorUser) {
+                        if (!empty($auditorUser['user_email'])) $toEmails[] = $auditorUser['user_email'];
+                        $recipientUsers[$auditorUser['user_id']] = $auditorUser;
+                    }
+                    if ($cmUser) {
+                        if (!empty($cmUser['user_email'])) $toEmails[] = $cmUser['user_email'];
+                        $recipientUsers[$cmUser['user_id']] = $cmUser;
+                    }
+                    if ($amUser) {
+                        if (!empty($amUser['user_email'])) $toEmails[] = $amUser['user_email'];
+                        $recipientUsers[$amUser['user_id']] = $amUser;
+                    }
+
+                } elseif ($module === 'HSE') {
+                    $hse = $db->table('alert_hse_audit_details d')
+                        ->select('d.id, d.hse_audit_id, d.nc_status, d.finding, d.audit_question, d.action, d.remark,
+                                  m.audit_no, m.audit_name, m.client_name, m.location, m.region, m.cluster_name, m.account_manager, m.auditor_name,
+                                  cm.cluster AS client_cluster, cm.account_manager AS client_am')
+                        ->join('alert_hse_audit_master m', 'm.hse_audit_id = d.hse_audit_id', 'left')
+                        ->join('alert_hse_client_master cm', 'cm.client_name = m.client_name AND cm.status = 1', 'left')
+                        ->where('d.id', $ncId)
+                        ->get()->getRowArray();
+
+                    // Check latest audit logic: m.hse_audit_id must be MAX(hse_audit_id) for this audit_no
+                    $isLatestAudit = false;
+                    if ($hse && !empty($hse['audit_no'])) {
+                        $maxHse = $db->table('alert_hse_audit_master')
+                            ->selectMax('hse_audit_id', 'max_id')
+                            ->where('audit_no', $hse['audit_no'])
+                            ->get()->getRowArray();
+                        $isLatestAudit = ((int)$hse['hse_audit_id'] === (int)($maxHse['max_id'] ?? 0));
+                    }
+
+                    $validHseStatus = ($reviewStatus === 'Cluster Review' && (int)($hse['nc_status'] ?? 0) === 5) ||
+                                      ($reviewStatus === 'Auditor Review' && (int)($hse['nc_status'] ?? 0) === 2);
+                    $isFindingNo = ($hse && ($hse['finding'] ?? '') === 'NO');
+
+                    if (!$hse || !$isLatestAudit || !$validHseStatus || !$isFindingNo) {
+                        $db->table('alert_nc_status_transition')
+                            ->where('id', $transId)
+                            ->update(['is_current' => 0, 'exited_at' => $now]);
+                        $staleClosedCount++;
+                        continue;
+                    }
+
+                    $auditRef = $hse['audit_no'] ?? ('HSE-' . $hse['hse_audit_id']);
+                    $ncRef = 'HSED-' . $ncId;
+                    $siteName = $hse['location'] ?? 'HSE Site';
+                    $clientName = $hse['client_name'] ?? 'HSE Client';
+                    $findingText = !empty($hse['audit_question']) ? $hse['audit_question'] : (!empty($hse['action']) ? $hse['action'] : 'HSE Observation');
+                    $auditorName = $hse['auditor_name'] ?? 'Assigned Auditor';
+                    $cmName = !empty($hse['cluster_name']) ? $hse['cluster_name'] : ($hse['client_cluster'] ?? 'Cluster Manager');
+                    $amName = !empty($hse['account_manager']) ? $hse['account_manager'] : ($hse['client_am'] ?? 'Account Manager');
+                    $targetUrl = base_url('Masters/Hse_nc_tracker?search=' . urlencode($ncRef));
+
+                    // Resolve Auditor User
+                    $auditorUser = null;
+                    if (!empty($hse['auditor_name'])) {
+                        $auditorUser = $db->table('alert_users')
+                            ->where('status', 1)
+                            ->where('LOWER(TRIM(user_name))', strtolower(trim($hse['auditor_name'])))
+                            ->get()->getRowArray();
+                    }
+
+                    // Resolve Cluster Manager User
+                    $cmUser = null;
+                    if (!empty($cmName)) {
+                        $cmUser = $db->table('alert_users')
+                            ->where('status', 1)
+                            ->whereIn('LOWER(TRIM(user_designation))', ['cluster manager', 'cluster_manager'])
+                            ->groupStart()
+                                ->where('LOWER(TRIM(user_name))', strtolower(trim($cmName)))
+                                ->orWhere('LOWER(TRIM(user_cluster))', strtolower(trim($cmName)))
+                            ->groupEnd()
+                            ->get()->getRowArray();
+                    }
+                    if (!$cmUser && !empty($hse['region'])) {
+                        $cmUser = $db->table('alert_users')
+                            ->where('status', 1)
+                            ->whereIn('LOWER(TRIM(user_designation))', ['cluster manager', 'cluster_manager'])
+                            ->where('LOWER(TRIM(user_region))', strtolower(trim($hse['region'])))
+                            ->get()->getRowArray();
+                    }
+
+                    // Resolve Account Manager User
+                    $amUser = null;
+                    if (!empty($amName)) {
+                        $amUser = $db->table('alert_users')
+                            ->where('status', 1)
+                            ->whereIn('LOWER(TRIM(user_designation))', ['account manager', 'account_manager'])
+                            ->where('LOWER(TRIM(user_name))', strtolower(trim($amName)))
+                            ->get()->getRowArray();
+                    }
+
+                    if ($auditorUser) {
+                        if (!empty($auditorUser['user_email'])) $toEmails[] = $auditorUser['user_email'];
+                        $recipientUsers[$auditorUser['user_id']] = $auditorUser;
+                    }
+                    if ($cmUser) {
+                        if (!empty($cmUser['user_email'])) $toEmails[] = $cmUser['user_email'];
+                        $recipientUsers[$cmUser['user_id']] = $cmUser;
+                    }
+                    if ($amUser) {
+                        if (!empty($amUser['user_email'])) $toEmails[] = $amUser['user_email'];
+                        $recipientUsers[$amUser['user_id']] = $amUser;
+                    }
+
+                } elseif ($module === 'GEMBA') {
+                    $g = $db->table('alert_gemba_audits')
+                        ->where('gemba_sr_no', $ncId)
+                        ->get()->getRowArray();
+
+                    // If linked to HSE, verify that parent HSE audit is the latest revision
+                    if ($g && $g['source_module'] === 'hse_audit' && !empty($g['hse_audit_id'])) {
+                        $parentHse = $db->table('alert_hse_audit_master')
+                            ->select('audit_no')
+                            ->where('hse_audit_id', (int)$g['hse_audit_id'])
+                            ->get()->getRowArray();
+                        if ($parentHse && !empty($parentHse['audit_no'])) {
+                            $maxHse = $db->table('alert_hse_audit_master')
+                                ->selectMax('hse_audit_id', 'max_id')
+                                ->where('audit_no', $parentHse['audit_no'])
+                                ->get()->getRowArray();
+                            if ((int)$g['hse_audit_id'] < (int)($maxHse['max_id'] ?? 0)) {
+                                $db->table('alert_nc_status_transition')
+                                    ->where('id', $transId)
+                                    ->update(['is_current' => 0, 'exited_at' => $now]);
+                                $staleClosedCount++;
+                                continue;
+                            }
+                        }
+                    }
+
+                    // Validate Gemba review status
+                    $validGembaStatus = ($reviewStatus === 'Cluster Review' && (int)($g['nc_status'] ?? 0) === 5) ||
+                                        ($reviewStatus === 'Auditor Review' && (int)($g['nc_status'] ?? 0) === 2);
+                    if (!$g || !$validGembaStatus) {
+                        $db->table('alert_nc_status_transition')
+                            ->where('id', $transId)
+                            ->update(['is_current' => 0, 'exited_at' => $now]);
+                        $staleClosedCount++;
+                        continue;
+                    }
+
+                    $auditRef = !empty($g['audit_category']) ? $g['audit_category'] : 'Gemba Audit';
+                    $ncRef = $g['unique_no'] ?? ('GMB-' . $ncId);
+                    $siteName = $g['site_name'] ?? 'Gemba Site';
+                    $clientName = $g['audit_category'] ?? 'Gemba/HSE Audit';
+                    $findingText = !empty($g['observation_point']) ? $g['observation_point'] : ($g['action_recommendation'] ?? 'Observation');
+                    $auditorName = $g['auditor_name'] ?? 'Assigned Auditor';
+                    $cmName = $g['cluster_manager_spoc'] ?? 'Cluster Manager';
+                    $amName = $g['account_manager'] ?? 'Account Manager';
+                    $targetUrl = base_url('Masters/GembaNcTracker?search=' . urlencode($ncRef));
+
+                    // Resolve Auditor User
+                    $auditorUser = null;
+                    if (!empty($g['auditor_name'])) {
+                        $auditorUser = $db->table('alert_users')
+                            ->where('status', 1)
+                            ->where('LOWER(TRIM(user_name))', strtolower(trim($g['auditor_name'])))
+                            ->get()->getRowArray();
+                    }
+
+                    // Resolve Cluster Manager User
+                    $cmUser = null;
+                    if (!empty($g['cluster_manager_spoc'])) {
+                        $cmUser = $db->table('alert_users')
+                            ->where('status', 1)
+                            ->whereIn('LOWER(TRIM(user_designation))', ['cluster manager', 'cluster_manager'])
+                            ->where('LOWER(TRIM(user_name))', strtolower(trim($g['cluster_manager_spoc'])))
+                            ->get()->getRowArray();
+                    }
+                    if (!$cmUser && !empty($g['region'])) {
+                        $cmUser = $db->table('alert_users')
+                            ->where('status', 1)
+                            ->whereIn('LOWER(TRIM(user_designation))', ['cluster manager', 'cluster_manager'])
+                            ->where('LOWER(TRIM(user_region))', strtolower(trim($g['region'])))
+                            ->get()->getRowArray();
+                    }
+
+                    // Resolve Account Manager User
+                    $amUser = null;
+                    if (!empty($g['account_manager'])) {
+                        $amUser = $db->table('alert_users')
+                            ->where('status', 1)
+                            ->whereIn('LOWER(TRIM(user_designation))', ['account manager', 'account_manager'])
+                            ->where('LOWER(TRIM(user_name))', strtolower(trim($g['account_manager'])))
+                            ->get()->getRowArray();
+                    }
+
+                    if ($auditorUser) {
+                        if (!empty($auditorUser['user_email'])) $toEmails[] = $auditorUser['user_email'];
+                        $recipientUsers[$auditorUser['user_id']] = $auditorUser;
+                    }
+                    if ($cmUser) {
+                        if (!empty($cmUser['user_email'])) $toEmails[] = $cmUser['user_email'];
+                        $recipientUsers[$cmUser['user_id']] = $cmUser;
+                    }
+                    if ($amUser) {
+                        if (!empty($amUser['user_email'])) $toEmails[] = $amUser['user_email'];
+                        $recipientUsers[$amUser['user_id']] = $amUser;
+                    }
+                }
+
+                // Deduplicate TO and CC lists gracefully
+                $toEmails = array_values(array_filter(array_unique($toEmails)));
+                if (empty($toEmails)) {
+                    $toEmails = !empty($haEmails) ? array_slice($haEmails, 0, 1) : ['admin@fmlogistic.com'];
+                }
+                $ccEmails = array_values(array_filter(array_unique(array_diff($haEmails, $toEmails))));
+
+                $hoursElapsed = round((strtotime($now) - strtotime($enteredAt)) / 3600, 1);
+
+                // ── D. Build Email Message ──
+                $emailSubject = "REMINDER: Pending {$reviewStatus} Over 24 Hours [{$module} #{$ncRef}]";
+                $emailBody = $this->buildNcReminderEmailHtml([
+                    'module' => $module,
+                    'audit_reference' => $auditRef,
+                    'nc_reference' => $ncRef,
+                    'review_status' => $reviewStatus,
+                    'entered_at' => $enteredAt,
+                    'hours_elapsed' => $hoursElapsed,
+                    'site_name' => $siteName,
+                    'client_name' => $clientName,
+                    'auditor_name' => $auditorName,
+                    'cm_name' => $cmName,
+                    'am_name' => $amName,
+                    'finding_text' => $findingText,
+                    'target_url' => $targetUrl,
+                ]);
+
+                // ── E. Dispatch Email ──
+                $sendError = null;
+                $sendSuccess = sendSystemEmail($toEmails, $emailSubject, $emailBody, [], $ccEmails, [], $sendError);
+
+                $emailStatus = $sendSuccess ? 'SENT' : 'FAILED';
+                if ($sendSuccess) {
+                    $emailsSent++;
+                } else {
+                    $emailsFailed++;
+                }
+
+                // ── F. Log Reminder Attempt (Insert or Update on Retry) ──
+                $existingLog = $db->table('alert_nc_reminder_logs')
+                    ->where('logical_nc_id', $logicalNcId)
+                    ->where('review_status', $reviewStatus)
+                    ->where('status_entry_time', $enteredAt)
+                    ->get()->getRowArray();
+
+                if ($existingLog) {
+                    $db->table('alert_nc_reminder_logs')
+                        ->where('id', $existingLog['id'])
+                        ->update([
+                            'reminder_sent_at' => $now,
+                            'to_emails' => implode(', ', $toEmails),
+                            'cc_emails' => implode(', ', $ccEmails),
+                            'email_status' => $emailStatus,
+                            'error_message' => $sendSuccess ? null : ($sendError ?: 'Mail dispatch failed')
+                        ]);
+                } else {
+                    $db->table('alert_nc_reminder_logs')->insert([
+                        'module' => $module,
+                        'nc_id' => $ncId,
+                        'logical_nc_id' => $logicalNcId,
+                        'review_status' => $reviewStatus,
+                        'status_entry_time' => $enteredAt,
+                        'reminder_sent_at' => $now,
+                        'to_emails' => implode(', ', $toEmails),
+                        'cc_emails' => implode(', ', $ccEmails),
+                        'email_status' => $emailStatus,
+                        'error_message' => $sendSuccess ? null : ($sendError ?: 'Mail dispatch failed'),
+                        'created_at' => $now
+                    ]);
+                }
+
+                // ── G. Create Navbar In-App Notifications ──
+                $notifTargetUsers = $recipientUsers;
+                foreach ($haUsers as $ha) {
+                    $notifTargetUsers[$ha['user_id']] = $ha;
+                }
+
+                foreach ($notifTargetUsers as $uId => $u) {
+                    $notifTitle = "Review Overdue: {$module} #{$ncRef}";
+                    $notifMsg = "NC #{$ncRef} ({$siteName}) has been pending {$reviewStatus} for {$hoursElapsed} hours.";
+                    
+                    try {
+                        $ins = $db->query("
+                            INSERT IGNORE INTO alert_navbar_notifications
+                            (user_id, module, nc_id, logical_nc_id, nc_reference, client_site, review_status, status_entry_time, title, message, target_url, is_read, created_at)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NOW())
+                        ", [
+                            $uId,
+                            $module,
+                            $ncId,
+                            $logicalNcId,
+                            $ncRef,
+                            $siteName,
+                            $reviewStatus,
+                            $enteredAt,
+                            $notifTitle,
+                            $notifMsg,
+                            $targetUrl
+                        ]);
+                        if ($ins) $notifsCreated++;
+                    } catch (\Throwable $ne) {
+                        // ignore duplicates (guaranteed unique by uk_notif_logical_cycle)
+                    }
+                }
+
+                $details[] = [
+                    'module' => $module,
+                    'nc_id' => $ncId,
+                    'logical_nc_id' => $logicalNcId,
+                    'reference' => $ncRef,
+                    'status' => $reviewStatus,
+                    'hours_elapsed' => $hoursElapsed,
+                    'to' => $toEmails,
+                    'email_status' => $emailStatus
+                ];
+            }
+
+            // 4. Update Cron Execution Metadata
+            $cronModel->updateLastRun('nc_review_reminder');
+            $execDuration = round(microtime(true) - $startTime, 2);
+
+            $summary = [
+                'status' => 'success',
+                'message' => "NC Review Reminder cron executed in {$execDuration}s. Scanned: {$totalScanned}, Sent: {$emailsSent}, Failed: {$emailsFailed}, Already Reminded: {$alreadySentCount}, Stale Closed: {$staleClosedCount}, Notifications Created: {$notifsCreated}.",
+                'synced_transitions' => $syncSummary,
+                'total_scanned' => $totalScanned,
+                'emails_sent' => $emailsSent,
+                'emails_failed' => $emailsFailed,
+                'already_sent_skipped' => $alreadySentCount,
+                'stale_transitions_closed' => $staleClosedCount,
+                'navbar_notifications_created' => $notifsCreated,
+                'execution_time_seconds' => $execDuration,
+                'processed_items' => array_slice($details, 0, 10)
+            ];
+
+            if (is_cli()) {
+                echo json_encode($summary, JSON_PRETTY_PRINT) . PHP_EOL;
+                return;
+            }
+
+            return $response->setJSON($summary);
+
+        } finally {
+            // Always release the MySQL advisory lock
+            $db->query("SELECT RELEASE_LOCK('fm_nc_review_reminder_lock')");
+        }
+    }
+
+    /**
+     * Builds responsive HTML email for pending NC review reminder
+     */
+    private function buildNcReminderEmailHtml(array $d): string
+    {
+        $module = esc($d['module']);
+        $auditRef = esc($d['audit_reference'] ?? 'N/A');
+        $ref = esc($d['nc_reference']);
+        $status = esc($d['review_status']);
+        $site = esc($d['site_name']);
+        $client = esc($d['client_name']);
+        $hours = esc($d['hours_elapsed']);
+        $enteredAt = esc($d['entered_at']);
+        $auditor = esc($d['auditor_name'] ?? 'N/A');
+        $cm = esc($d['cm_name'] ?? 'N/A');
+        $am = esc($d['am_name'] ?? 'N/A');
+        $finding = nl2br(esc(strip_tags($d['finding_text'])));
+        $url = esc($d['target_url']);
+
+        return "
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset='utf-8'>
+            <title>FM Logistics - NC Review Reminder</title>
+            <style>
+                body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f1f5f9; color: #1e293b; }
+                .wrapper { max-width: 680px; margin: 30px auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 16px rgba(0,0,0,0.06); border: 1px solid #e2e8f0; }
+                .header { background: linear-gradient(135deg, #002f6c 0%, #001a3e 100%); color: #ffffff; padding: 28px 32px; text-align: left; }
+                .header h1 { margin: 0; font-size: 20px; font-weight: 700; letter-spacing: -0.5px; }
+                .header p { margin: 6px 0 0; font-size: 13px; color: #93c5fd; }
+                .alert-bar { background-color: #fff1f2; border-left: 4px solid #e11d48; padding: 14px 24px; color: #9f1239; font-size: 14px; font-weight: 600; }
+                .content { padding: 32px; }
+                .badge { display: inline-block; padding: 4px 10px; border-radius: 9999px; font-size: 11px; font-weight: 700; text-transform: uppercase; background-color: #e0e7ff; color: #3730a3; margin-bottom: 12px; }
+                .badge-urgent { background-color: #fee2e2; color: #991b1b; }
+                .lead { font-size: 15px; line-height: 1.6; color: #334155; margin-bottom: 24px; }
+                .details-table { width: 100%; border-collapse: collapse; margin-bottom: 28px; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; }
+                .details-table td { padding: 12px 16px; border-bottom: 1px solid #e2e8f0; font-size: 13px; vertical-align: top; }
+                .details-table tr:nth-child(even) td { background-color: #f8fafc; }
+                .label { width: 34%; font-weight: 600; color: #475569; }
+                .value { width: 66%; color: #0f172a; }
+                .btn-container { text-align: center; margin: 30px 0 20px; }
+                .btn-cta { display: inline-block; background-color: #002f6c; color: #ffffff !important; text-decoration: none; font-weight: 600; font-size: 14px; padding: 14px 32px; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,47,108,0.25); }
+                .footer { background-color: #f8fafc; padding: 20px 32px; text-align: center; border-top: 1px solid #e2e8f0; font-size: 12px; color: #64748b; }
+            </style>
+        </head>
+        <body>
+            <div class='wrapper'>
+                <div class='header'>
+                    <h1>FM Logistics &bull; NC Review Reminder</h1>
+                    <p>Automated Action Reminder for Cluster Manager, Account Manager &amp; Auditor</p>
+                </div>
+                <div class='alert-bar'>
+                    &#9888; Action Required: NC #{$ref} has been awaiting <b>{$status}</b> for <b>{$hours} hours</b> (&ge; 24h SLA).
+                </div>
+                <div class='content'>
+                    <div class='lead'>
+                        Dear Team,<br><br>
+                        This is an automated review reminder. The following Non-Conformance under <b>{$module}</b> has remained in <b>{$status}</b> without approval for more than 24 hours. Please review and take prompt action to maintain audit compliance.
+                    </div>
+
+                    <table class='details-table'>
+                        <tr>
+                            <td class='label'>Module</td>
+                            <td class='value'><span class='badge'>{$module}</span></td>
+                        </tr>
+                        <tr>
+                            <td class='label'>Audit Reference</td>
+                            <td class='value'><b>{$auditRef}</b></td>
+                        </tr>
+                        <tr>
+                            <td class='label'>NC Reference / ID</td>
+                            <td class='value'><b>{$ref}</b></td>
+                        </tr>
+                        <tr>
+                            <td class='label'>Current Review Stage</td>
+                            <td class='value'><span class='badge badge-urgent'>{$status}</span></td>
+                        </tr>
+                        <tr>
+                            <td class='label'>Client / Category</td>
+                            <td class='value'>{$client}</td>
+                        </tr>
+                        <tr>
+                            <td class='label'>Site / Location</td>
+                            <td class='value'>{$site}</td>
+                        </tr>
+                        <tr>
+                            <td class='label'>Assigned Cluster Manager</td>
+                            <td class='value'>{$cm}</td>
+                        </tr>
+                        <tr>
+                            <td class='label'>Assigned Account Manager</td>
+                            <td class='value'>{$am}</td>
+                        </tr>
+                        <tr>
+                            <td class='label'>Assigned Auditor</td>
+                            <td class='value'>{$auditor}</td>
+                        </tr>
+                        <tr>
+                            <td class='label'>Status Entry Time</td>
+                            <td class='value'>{$enteredAt}</td>
+                        </tr>
+                        <tr>
+                            <td class='label'>Pending Duration</td>
+                            <td class='value'><b>{$hours} hours</b></td>
+                        </tr>
+                        <tr>
+                            <td class='label'>Finding / Observation</td>
+                            <td class='value'>{$finding}</td>
+                        </tr>
+                    </table>
+
+                    <div class='btn-container'>
+                        <a href='{$url}' class='btn-cta' target='_blank'>Review NC &amp; Take Action &rarr;</a>
+                    </div>
+                </div>
+                <div class='footer'>
+                    &copy; " . date('Y') . " FM Logistics India. Automated Quality &amp; Safety Compliance System.<br>
+                    Higher Authority leadership is included in copy.
+                </div>
+            </div>
+        </body>
+        </html>
+        ";
+    }
+
 }
+

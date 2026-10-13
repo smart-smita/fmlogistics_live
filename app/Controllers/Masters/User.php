@@ -417,6 +417,10 @@ class User extends BaseController
                 $postData['user_password'] = '';
             }
         }
+                // Ensure audit_type is set; default to Both for existing records
+                if (!isset($postData['audit_type']) || empty($postData['audit_type'])) {
+                    $postData['audit_type'] = 'Both';
+                }
 
         // Convert region/cluster/location names to IDs for new structure
         if (isset($postData['user_region']) && !empty($postData['user_region'])) {

@@ -1676,6 +1676,14 @@ class GembaNcTracker extends BaseController
 
         $db->table('alert_gemba_audits')->where('gemba_sr_no', $gembaSrNo)->update($gembaUpdate);
 
+        // Record transition cycle for 24-hour reminder tracking
+        if (isset($gembaUpdate['nc_status'])) {
+            try {
+                helper('nc_transition');
+                recordNcStatusTransition('GEMBA', (int)$gembaSrNo, (int)$gembaUpdate['nc_status']);
+            } catch (\Throwable $e) {}
+        }
+
         return [
             'status' => 1, 
             'message' => 'NC updated successfully', 
