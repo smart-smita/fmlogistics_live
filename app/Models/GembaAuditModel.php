@@ -179,6 +179,8 @@ class GembaAuditModel extends Model
                 $costMult = 3;
             elseif ($costStr === 'opex')
                 $costMult = 1;
+            elseif ($costStr === 'operational action' || $costStr === 'operatiol action')
+                $costMult = 1;
         }
 
         $row['final_rating'] = $sev * $prob * $timesRepeated * $colorMult * $costMult;
@@ -222,26 +224,27 @@ class GembaAuditModel extends Model
             $row['month_closed'] = null;
             $row['year_month_closed'] = null;
             $row['weeknum_yearmonth_closed'] = null;
-            if (isset($row['point_status']) && $row['point_status'] === 'Open') {
-                $row['closed_date'] = null; // Clear closed date if open
+            $row['closed_date'] = null; // Clear closed date if not closed
+            
+            // Ageing days for non-closed points
+            if (isset($row['audit_report_date']) && !empty($row['audit_report_date'])) {
+                $reportDate = strtotime($row['audit_report_date']);
+                $diff = time() - $reportDate;
+                $days = floor($diff / (60 * 60 * 24));
+                $row['ageing_days'] = $days >= 0 ? (int)$days : 0;
                 
-                // Ageing days for open points
-                if (isset($row['audit_report_date']) && !empty($row['audit_report_date'])) {
-                    $reportDate = strtotime($row['audit_report_date']);
-                    $diff = time() - $reportDate;
-                    $days = floor($diff / (60 * 60 * 24));
-                    $row['ageing_days'] = $days >= 0 ? $days : 0;
-                    
-                    if ($row['ageing_days'] <= 30) {
-                        $row['age_bracket'] = '<=30';
-                    } elseif ($row['ageing_days'] <= 60) {
-                        $row['age_bracket'] = '.31-60';
-                    } elseif ($row['ageing_days'] <= 90) {
-                        $row['age_bracket'] = '.61-90';
-                    } else {
-                        $row['age_bracket'] = '.>90';
-                    }
+                if ($row['ageing_days'] <= 30) {
+                    $row['age_bracket'] = '<=30';
+                } elseif ($row['ageing_days'] <= 60) {
+                    $row['age_bracket'] = '.31-60';
+                } elseif ($row['ageing_days'] <= 90) {
+                    $row['age_bracket'] = '.61-90';
+                } else {
+                    $row['age_bracket'] = '.>90';
                 }
+            } else {
+                $row['ageing_days'] = 0;
+                $row['age_bracket'] = '<=30';
             }
         }
 

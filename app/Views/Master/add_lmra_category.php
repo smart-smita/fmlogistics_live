@@ -11,7 +11,7 @@ $form_id= $button_id;
 
 <!--begin::Item-->
 	<li class="breadcrumb-item text-muted">
-		<a href="<?= current_url() ?>" class="text-muted text-hover-primary"><?=isset($title)?$title:"Client"?></a>
+		<a href="<?= current_url() ?>" class="text-muted text-hover-primary"><?=isset($title)?$title:"LMRA Reports"?></a>
 	</li>
 <!--end::Item-->
 <?php $this->endSection();?>	
@@ -143,9 +143,11 @@ var validator = FormValidation.formValidation(form,validation_object);
                     });
 
                 //ajax_call(url,data_to_send,button,success_function)
-                    ajax_call(url,formData,button,function(responce){
+                    ajax_call(url,data_to_send,button,function(responce){
                         try{
-                            responce = JSON.parse(responce);
+                            if (typeof responce === 'string') {
+                                responce = JSON.parse(responce);
+                            }
                             if(responce.status==1){
                                     toastr.success(responce.message);
                                     form.reset();
@@ -170,7 +172,9 @@ function edit_id(obj,id){
     var formData={"id":id};
     ajax_call(url,formData,$(obj),function(responce){
                         try{
-                            responce = JSON.parse(responce);
+                            if (typeof responce === 'string') {
+                                responce = JSON.parse(responce);
+                            }
                             if(responce.status==1){
                                     toastr.success(responce.message);
                                     //form.reset();
@@ -201,12 +205,16 @@ function delete_row(obj,id){
                 //Swal.fire('Saved!', '', 'success')
                 url_call_ajax($(obj).attr("data-ajax-url"),$(obj));
               } 
-            //   else if (result.isDenied) {
-            //     Swal.fire('Changes are not saved', '', 'info')
-            //   }
             });
-
 }
+
+$("#<?=$form_id?>").on('hidden.bs.modal', function () {
+    form.reset();
+    if(validator) {
+        validator.resetForm();
+    }
+    $("#<?=$form_id?>").find("#ajax_click").attr("data-ajax-url", $("#<?=$form_id?>").find("#ajax_click").attr("data-ajax-add-url"));
+});
 
 </script>
 <?php 				$this->endSection();?>

@@ -312,7 +312,7 @@
 													</span>
 													<span class="menu-title">LMRA Category Control</span>
 												</a>
-											</div>
+											</div> -->
 
 											<hr style="color: white;opacity: 100%;">
 
@@ -337,7 +337,7 @@
 													</span>
 													<span class="menu-title">Body Part</span>
 												</a>
-											</div> -->
+											</div>
 										
 										</div>
 									</div>
@@ -377,7 +377,7 @@
 								</div>
 								<?php } ?>
 
-								<!-- <div data-kt-menu-trigger="click" class="menu-item menu-accordion">
+								<div data-kt-menu-trigger="click" class="menu-item menu-accordion">
 									<span class="menu-link">
 										<span class="menu-icon">
 											<span class="fas fa-random"></span>
@@ -392,17 +392,17 @@
 												<span class="menu-title"> - Safety Audit</span>
 											</div>
 										</div>
-										<div class="menu-item">
+										<!-- <div class="menu-item">
 											<a class="menu-link" href="<?= base_url('Reports/Lmra_reports') ?>">
 												<span class="menu-bullet">
 													<span class="bullet bullet-dot"></span>
 												</span>
 												<span class="menu-title">LMRA Reports</span>
 											</a>
-										</div>
+										</div> -->
 
 										<div class="menu-item">
-											<a class="menu-link" href="<?= base_url('Reports/Near_miss_reports') ?>">
+											<a class="menu-link" href="<?= base_url('Reports/Near_miss_public') ?>">
 												<span class="menu-bullet">
 													<span class="bullet bullet-dot"></span>
 												</span>
@@ -413,27 +413,27 @@
 										<hr style="color: white;opacity: 100%;">
 										
 									<?php if (($_SESSION['admin_flag'] ?? 0) != 1) { ?>
-										<div class="menu-item">
+										<!-- <div class="menu-item">
 											<div class="menu-link">
 												<span class="menu-title"> - Other Audit</span>
 											</div>
-										</div>
+										</div> -->
 
 
 										
-										<div class="menu-item">
+										<!-- <div class="menu-item">
 											<a class="menu-link" href="<?= base_url('Masters/Sixs_audit') ?>">
 												<span class="menu-bullet">
 													<span class="bullet bullet-dot"></span>
 												</span>
 												<span class="menu-title">6s Audit Report</span>
 											</a>
-										</div>
+										</div> -->
 										<?php } ?>
 
 
 									</div>
-								</div> -->
+								</div>
 
 
 
@@ -790,7 +790,23 @@
 													<span class="menu-bullet">
 														<span class="bullet bullet-dot"></span>
 													</span>
-													<span class="menu-title">Mailing Reports</span></span>
+													<span class="menu-title">Mailing Reports</span>
+												</a>
+											</div>
+											<div class="menu-item">
+												<a class="menu-link" href="<?= base_url('Admin/UserFeedback') ?>">
+													<span class="menu-bullet">
+														<span class="bullet bullet-dot"></span>
+													</span>
+													<span class="menu-title">User Feedback</span>
+												</a>
+											</div>
+											<div class="menu-item">
+												<a class="menu-link" href="<?= base_url('Admin/AppStatusFeedback') ?>">
+													<span class="menu-bullet">
+														<span class="bullet bullet-dot"></span>
+													</span>
+													<span class="menu-title">Application Status Feedback</span>
 												</a>
 											</div>
 										</div>
@@ -1032,6 +1048,32 @@
 													<div class="separator my-2"></div>
 												<?php } ?>
 												<!--end::Menu item-->
+
+												<!--begin::Feedback Option-->
+												<?php
+												$feedbackUserId = (int)($_SESSION['user_id'] ?? 0);
+												$hasUserSubmittedAppStatus = false;
+												if ($feedbackUserId > 0) {
+													$feedbackDb = \Config\Database::connect();
+													$hasUserSubmittedAppStatus = ($feedbackDb->table('alert_app_status_feedback')->where('user_id', $feedbackUserId)->countAllResults() > 0);
+												}
+												?>
+												<div class="menu-item px-5" id="userFeedbackMenuItem">
+													<a href="javascript:void(0);" onclick="$('#userFeedbackModal').modal('show');" class="menu-link px-5 text-primary">
+														<i class="fas fa-star text-warning me-2 fs-7"></i> Give Feedback
+													</a>
+												</div>
+												<div class="separator my-2" id="userFeedbackMenuSeparator"></div>
+
+												<?php if (!$hasUserSubmittedAppStatus): ?>
+												<div class="menu-item px-5" id="appStatusFeedbackMenuItem">
+													<a href="javascript:void(0);" onclick="$('#appStatusFeedbackModal').modal('show');" class="menu-link px-5 text-success">
+														<i class="fas fa-clipboard-check text-success me-2 fs-7"></i> Verify App Status
+													</a>
+												</div>
+												<div class="separator my-2" id="appStatusFeedbackMenuSeparator"></div>
+												<?php endif; ?>
+												<!--end::Feedback Option-->
 
 												<!--begin::Menu item-->
 												<div class="menu-item px-5">
@@ -1667,6 +1709,9 @@
 		</script>
 
 		<?php $this->renderSection("javascript_section"); ?>
+
+		<?= view('Layout/user_feedback_modal') ?>
+		<?= view('Layout/app_status_feedback_modal') ?>
 
 	</body>
 	<!--end::Body-->

@@ -40,20 +40,21 @@
 <label class="required">Client Name</label>
 <input type="text" class="form-control form-control-solid" name="client_name" id="client_name">
 <div id="hse_client_name_edit_note" class="text-warning fs-7 mt-1 font-weight-bold" style="display: none;">
-    <strong>Note:</strong> Changing the Client Name, Location, Account Manager, or Cluster Manager may update the corresponding details in dependent audit records.
+    <strong>Note:</strong> Changing the Client Name will update dependent HSE audit records and backup pre-rename audit history.
 </div>
+<div class="invalid-feedback"></div>
+</div>
+
+<div class="col-md-6 fv-row mb-5" id="hse_rename_remarks_group" style="display: none;">
+<label class="text-primary"><i class="fa fa-info-circle text-primary me-1"></i>Reason / Remarks for Renaming Site (Optional)</label>
+<input type="text" class="form-control form-control-solid border border-primary" name="rename_remarks" id="hse_rename_remarks" placeholder="Enter reason for renaming (e.g. Facility name change)">
+<div class="form-text text-muted fs-7">Recorded in HSE rename audit history.</div>
 <div class="invalid-feedback"></div>
 </div>
 
 <div class="col-md-6 fv-row mb-5">
 <label>Email</label>
 <input type="text" class="form-control form-control-solid" name="email" id="email">
-</div>
-
-<div class="col-md-6 fv-row mb-5">
-<label class="required">Location</label>
-<input type="text" class="form-control form-control-solid" name="location" id="location">
-<div class="invalid-feedback"></div>
 </div>
 
 <div class="col-md-6 fv-row mb-5">
@@ -136,17 +137,15 @@ $("#ajax_click").on("click", function (e) {
         isValid = false;
     }
 
-    if ($("#client_name").val().trim().length < 3) {
+    let clientNameVal = $("#client_name").val();
+    let clientName = (clientNameVal !== null && clientNameVal !== undefined) ? String(clientNameVal).trim() : "";
+    if (clientName.length < 3) {
         setError("#client_name", "Client name must be at least 3 characters");
         isValid = false;
     }
 
-    if ($("#location").val().trim() === "") {
-        setError("#location", "Location is required");
-        isValid = false;
-    }
-
-    let email = $("#email").val().trim();
+    let emailVal = $("#email").val();
+    let email = (emailVal !== null && emailVal !== undefined) ? String(emailVal).trim() : "";
     if (email !== "" && !validateEmail(email)) {
         setError("#email", "Invalid email address");
         isValid = false;
@@ -154,11 +153,16 @@ $("#ajax_click").on("click", function (e) {
 
     if (!isValid) return;
 
-    function performSubmit() {
+    function performSubmit(extraRemarks = '') {
         // Disable button
         button.prop("disabled", true).text("Please wait...");
 
-        ajax_call(url, form.serialize(), button, function (res) {
+        let postDataStr = form.serialize();
+        if (extraRemarks) {
+            postDataStr += '&rename_remarks=' + encodeURIComponent(extraRemarks);
+        }
+
+        ajax_call(url, postDataStr, button, function (res) {
             if (res.status == 1) {
                 toastr.success(res.message);
                 form[0].reset();
@@ -180,30 +184,30 @@ $("#ajax_click").on("click", function (e) {
     }
 
     let isChanged = false;
+    let isNameChanged = false;
     if (originalHseData) {
-        let curName = $("#client_name").val().trim();
-        let curLoc = $("#location").val().trim();
-        let curCluster = $("#cluster").val();
-        let curAm = $("#account_manager").val();
+        let curNameVal = $("#client_name").val();
+        let curName = (curNameVal !== null && curNameVal !== undefined) ? String(curNameVal).trim() : "";
 
-        if ((originalHseData.client_name || '') !== curName ||
-            (originalHseData.location || '') !== curLoc ||
-            (originalHseData.cluster || '') !== curCluster ||
-            (originalHseData.account_manager || '') !== curAm) {
+        if ((originalHseData.client_name || '').trim() !== curName) {
             isChanged = true;
+            isNameChanged = true;
         }
     }
 
-    // Confirmation if metadata was changed during edit
     if (isChanged) {
-        let confirmMsg = "This change will update the corresponding details in dependent audit records. Do you want to continue?";
+        let confirmTitle = isNameChanged ? 'Rename HSE Site Confirmation' : 'Are you sure?';
+        let confirmMsg = isNameChanged
+            ? "Are you sure you want to rename HSE site '" + (originalHseData.client_name || '') + "' to '" + $("#client_name").val().trim() + "'? Dependent HSE audit records will be updated and an audit backup will be created."
+            : "This change will update the corresponding details in dependent audit records. Do you want to continue?";
+
         if (typeof Swal !== 'undefined') {
             Swal.fire({
-                title: 'Are you sure?',
+                title: confirmTitle,
                 text: confirmMsg,
                 icon: 'warning',
                 showCancelButton: true,
-                confirmButtonText: 'Yes, Update',
+                confirmButtonText: isNameChanged ? 'Yes, Rename' : 'Yes, Update',
                 cancelButtonText: 'Cancel'
             }).then((result) => {
                 if (result.isConfirmed) {
@@ -281,8 +285,9 @@ function edit_id(obj,id){
         };
         $("#client_name").val(res.data.client_name);
         $("#hse_client_name_edit_note").show();
+        $("#hse_rename_remarks_group").hide();
+        $("#hse_rename_remarks").val('');
         $("#email").val(res.data.email);
-        $("#location").val(res.data.location);
         $("#region").val(res.data.region);
         $("#cluster").val(res.data.cluster);
         $("#account_manager").val(res.data.account_manager);
@@ -294,10 +299,26 @@ function edit_id(obj,id){
     });
 }
 
+// Dynamically display remarks field when site name is modified in edit modal
+$(document).on("input change", "#client_name", function() {
+    if (originalHseData && originalHseData.client_name) {
+        let cur = $(this).val().trim();
+        if (cur !== "" && cur !== originalHseData.client_name.trim()) {
+            $("#hse_rename_remarks_group").slideDown();
+        } else {
+            $("#hse_rename_remarks_group").slideUp();
+        }
+    } else {
+        $("#hse_rename_remarks_group").hide();
+    }
+});
+
 // Reset form correctly on click of add button handled outside or standard reset
 $('[data-bs-target="#<?=$button_id?>"]').on('click', function() {
     originalHseData = null;
     $("#hse_client_name_edit_note").hide();
+    $("#hse_rename_remarks_group").hide();
+    $("#hse_rename_remarks").val('');
     $("#<?=$button_id?>_form")[0].reset();
     $("#sub_category").html('<option value="">Select Sub Category</option>');
     $("#ajax_click").attr("data-ajax-url", $("#ajax_click").attr("data-ajax-add-url"));

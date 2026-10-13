@@ -16,18 +16,20 @@
 <?php
 
 $details=$details['0'];
-$pending_message = '<span class="badge badge-warning">Pending</span>';
-$verified_message = '<span class="badge badge-info">Verified</span>';
-$active_message = '<span class="badge badge-success">Active</span>';
 $pending_message_nm = '<span class="badge badge-danger">Pending</span>';
-    $Requested_message = '<span class="badge badge-warning">Request required</span>';
-    $open_message = '<span class="badge badge-warning">Open</span>';
-    $close_message = '<span class="badge badge-success">Close</span>';
-    $cancle_message = '<span class="badge badge-secondary">Cancle</span>';
-        
-        
-$status= ($details ['status'] == 0) ? $pending_message : ($details ['status'] == 1 ? $verified_message: ($details ['status'] == 2 ? $active_message : ($details ['status'] == 3 ? $deactivated_message : "")));
-$near_miss_status= ($details ['status'] == 0) ? $pending_message_nm : ($details ['status'] == 1 ? $open_message: ($details ['status'] == 2 ? $Requested_message : ($details ['status'] == 3 ? $close_message :$cancle_message)));
+$verified_message = '<span class="badge badge-success">Verified</span>';
+$open_message = '<span class="badge badge-warning">Open</span>';
+$cancel_message = '<span class="badge badge-secondary">Cancel</span>';
+$Requested_message = '<span class="badge badge-warning">Request required</span>';
+$close_message = '<span class="badge badge-success">Close</span>';
+
+
+$near_miss_status = ($details['status'] == 0) ? $pending_message_nm : 
+                   ($details['status'] == 1 ? $verified_message : 
+                   ($details['status'] == 2 ? $open_message : 
+                   ($details['status'] == 3 ? $cancel_message : 
+                   ($details['status'] == 4 ? $Requested_message : 
+                   ($details['status'] == 5 ? $close_message : "")))));
 ?>
 <div class="row">
 	<div class="col-sm-12">
@@ -306,7 +308,7 @@ if(isset($near_miss_json_data['future_occurrence']) && count($near_miss_json_dat
 
                                                     <?php 
                                                         //$near_miss_json_data=$near_miss_json_data['future_occurrence']['0']
-                                                        if(is_array($near_miss_json_data['future_occurrence']))
+                                                        if(isset($near_miss_json_data['future_occurrence']) && is_array($near_miss_json_data['future_occurrence']))
                                                         foreach($near_miss_json_data['future_occurrence'] as $near_miss_json_data){
                                                           ?>
 

@@ -151,8 +151,15 @@
                                     <li class="mb-1"><strong>Insert Rule</strong>: Every row in the uploaded Excel file will be inserted as a new record.</li>
                                     <li class="mb-1"><strong>Mandatory columns</strong>: `region`, `auditor_name`,
                                         `audit_category`, `audit_type`, `site_name`, `audit_report_date`,
-                                        `observation_point`, `risks_details`, `action_recommendation`, `point_status`,
-                                        `point_category`.</li>
+                                        `checklist_category`, `nc_recommendation`, `observation_point`, `risks_details`,
+                                        `action_recommendation`, `point_status`, `color_code`, `cost_type`.</li>
+                                    <li class="mb-1"><strong>Allowed Values</strong>:
+                                        <br>&bull; <em>NC/Recommendation</em>: <code>NC</code>, <code>RECOMMENDATION</code>, <code>Point Closed</code>
+                                        <br>&bull; <em>Point Status</em>: <code>Open</code>, <code>WIP</code>, <code>Closed</code>, <code>Excluded</code>, <code>Hold-review with Client</code>
+                                        <br>&bull; <em>Risk Severity &amp; Probability</em>: <code>Low</code>, <code>Medium</code>, <code>High</code>
+                                        <br>&bull; <em>Color Code</em>: <code>Red</code>, <code>Yellow</code>, <code>Black</code>, <code>Green</code>
+                                        <br>&bull; <em>Cost Type</em>: <code>Capex</code>, <code>Opex</code>, <code>Operational Action</code>
+                                    </li>
                                     <li><strong>Data types</strong>: Numeric columns must be numbers, and dates must be
                                         in valid date formats.</li>
                                 </ul>

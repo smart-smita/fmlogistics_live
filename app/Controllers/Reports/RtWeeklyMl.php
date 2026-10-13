@@ -102,12 +102,12 @@ class RtWeeklyMl extends BaseController
         $titleStyle = [
             'font' => ['bold' => true, 'size' => 16, 'color' => ['argb' => 'FFFFFFFF']],
             'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['argb' => 'FF2B3D51']],
-            'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER, 'vertical' => Alignment::VERTICAL_CENTER]
+            'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER, 'vertical' => Alignment::VERTICAL_CENTER, 'wrapText' => true]
         ];
         $subBannerStyle = [
             'font' => ['italic' => true, 'size' => 11, 'color' => ['argb' => 'FF333333']],
             'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['argb' => 'FFEBF1F5']],
-            'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER]
+            'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER, 'wrapText' => true]
         ];
         $sectionHeaderStyle = [
             'font' => ['bold' => true, 'size' => 13, 'color' => ['argb' => 'FF1E293B']],
@@ -323,7 +323,10 @@ class RtWeeklyMl extends BaseController
             $sheet->setTitle('RT-WeeklyML');
             $sheet->setCellValue('A1', 'RT-WeeklyML – Weekly Gemba Update for Management Team Monthly Call');
             $sheet->mergeCells('A1:H2');
-            $sheet->getStyle('A1')->getFont()->setBold(true)->setSize(14);
+            $sheet->getStyle('A1:H2')->getFont()->setBold(true)->setSize(14);
+            $sheet->getStyle('A1:H2')->getAlignment()->setWrapText(true);
+            $sheet->getStyle('A1:H2')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+            $sheet->getStyle('A1:H2')->getAlignment()->setVertical(Alignment::VERTICAL_CENTER);
 
             $currentRow = 4;
             $cols = ['HO', 'North', 'South', 'TPT', 'West-1', 'West-2', 'Total'];

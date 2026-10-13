@@ -56,9 +56,11 @@ $form_id= $button_id;
 									<!--begin::Col-->
 
 
+<?php $isEngineerOnly = (isEngineer() && !isAdmin()); ?>
+
 <div class="col-md-12 fv-row fv-plugins-icon-container">
   <label class="required fs-5 fw-bold mb-2">Location</label>
-  	<select class="form-select form-select-solid"  id="location" name="location" onchange="update_div_dep(this)">
+  	<select class="form-select form-select-solid"  id="location" name="location" onchange="update_div_dep(this)" <?=$isEngineerOnly ? 'disabled' : ''?>>
 		<option value="">Select Location</option>
 		<?php foreach($location_list as $row){ ?>
 		<option value="<?=$row['location_name']?>" data-location-id="<?=$row['location_id']?>"><?=$row['location_name']?></option>
@@ -69,7 +71,7 @@ $form_id= $button_id;
 
 <div class="col-md-12 fv-row fv-plugins-icon-container">
   <label class="required fs-5 fw-bold mb-2">Div Dep</label>
-  	<select class="form-select form-select-solid"  id="devision_dept" name="devision_dept">
+  	<select class="form-select form-select-solid"  id="devision_dept" name="devision_dept" <?=$isEngineerOnly ? 'disabled' : ''?>>
 		<option value="">Select Action</option>
 		<?php foreach($location_list_dep as $row){ ?>
 		<option class="locations location_id_<?=$row['location_id']?>" value="<?=$row['department_name']?>"><?=$row['department_name']?></option>
@@ -80,7 +82,7 @@ $form_id= $button_id;
 
 	<div class="col-md-12 fv-row fv-plugins-icon-container">
   <label class="required fs-5 fw-bold mb-2">Sixs Category</label>
-  <select class="form-select form-select-solid"  id="sixs_category" name="sixs_category">
+  <select class="form-select form-select-solid"  id="sixs_category" name="sixs_category" <?=$isEngineerOnly ? 'disabled' : ''?>>
 		<option value="">Select Category</option>
 		<?php foreach($location_list_cat as $row){ ?>
 		<option value="<?=$row['name']?>"><?=$row['name']?></option>
@@ -96,18 +98,24 @@ $form_id= $button_id;
     id="nc_description"
     placeholder="Enter Nc Description"
     name="nc_description"
+    <?=$isEngineerOnly ? 'readonly' : ''?>
   />
 </div>
 
 <div class="col-md-12 fv-row fv-plugins-icon-container">
   <label class="required fs-5 fw-bold mb-2">Nc Photo</label>
+  <div class="mb-2">
+      <img id="nc_photo_preview" src="" style="max-height: 100px; display: none;" />
+  </div>
+  <?php if(!$isEngineerOnly): ?>
   <input type="file" class="form-control" id="nc_photo" placeholder="Add Nc Photo" name="nc_photo" accept=".jpg,.jpeg,.png,.gif,.pdf" onchange="validateFileType(this)" />
+  <?php endif; ?>
     <input type="hidden" name="nc_photo_url" id="nc_photo_url">
 </div>
 
 <div class="col-md-12 fv-row fv-plugins-icon-container">
   <label class="required fs-5 fw-bold mb-2">Action Required Dep</label>
-  	<select class="form-select form-select-solid"  id="action_required_dep" name="action_required_dep">
+  	<select class="form-select form-select-solid"  id="action_required_dep" name="action_required_dep" <?=$isEngineerOnly ? 'disabled' : ''?>>
 		<option value="">Select Action</option>
 		<?php foreach($location_list_dep as $row){ ?>
 		<option value="<?=$row['department_name']?>"><?=$row['department_name']?></option>
@@ -124,6 +132,7 @@ $form_id= $button_id;
     id="responsibilty"
     placeholder="Enter Responsibilty"
     name="responsibilty"
+    <?=$isEngineerOnly ? 'readonly' : ''?>
   />
 </div>
 
@@ -135,6 +144,7 @@ $form_id= $button_id;
     id="target_date"
     placeholder="Enter Target Date"
     name="target_date"
+    <?=$isEngineerOnly ? 'readonly' : ''?>
   />
 </div>
 
@@ -153,14 +163,17 @@ $form_id= $button_id;
 
 	<div class="col-md-12 fv-row fv-plugins-icon-container">
   <label class="required fs-5 fw-bold mb-2">After Photo</label>
+  <div class="mb-2">
+      <img id="after_photo_preview" src="" style="max-height: 100px; display: none;" />
+  </div>
   <input type="file" class="form-control" id="after_photo" placeholder="Enter After Photo" name="after_photo" accept=".jpg,.jpeg,.png,.gif,.pdf" onchange="validateFileType(this)"/>
       <input type="hidden" name="after_photo_url" id="after_photo_url">
 
 </div>
 
 
-	<div class="col-md-12 fv-row fv-plugins-icon-container">
-  <label class="required fs-5 fw-bold mb-2">Final Status Soi</label>
+	<div class="col-md-12 fv-row fv-plugins-icon-container" style="display:none;">
+  <label class="fs-5 fw-bold mb-2">Final Status Soi</label>
   <input
     type="text"
     class="form-control"
@@ -255,8 +268,11 @@ var validation_object  = {
             }
             ,'nc_photo':{
                  validators: {
-                    notEmpty: {
-                        message: 'Nc Photo is required'
+                    callback: {
+                        message: 'Nc Photo is required',
+                        callback: function(input) {
+                            return document.getElementById('nc_photo').value !== '' || document.getElementById('nc_photo_url').value !== '';
+                        }
                     }
                 }
             }
@@ -292,23 +308,14 @@ var validation_object  = {
                 }
             },'after_photo':{
                  validators: {
-                    notEmpty: {
-                        message: 'After Photo is required'
+                    callback: {
+                        message: 'After Photo is required',
+                        callback: function(input) {
+                            return document.getElementById('after_photo').value !== '' || document.getElementById('after_photo_url').value !== '';
+                        }
                     }
                 }
-            },'department_status':{
-                 validators: {
-                    notEmpty: {
-                        message: 'Department Status is required'
-                    }
-                }
-            },'final_status_soi':{
-                 validators: {
-                    notEmpty: {
-                        message: 'Final Status Soi is required'
-                    }
-                }
-            },
+            }
         },
 
 
@@ -386,18 +393,25 @@ function edit_id(obj,id){
                                     $("#<?=$form_id?>").find("#location").val(responce.data.location);
                                     $("#<?=$form_id?>").find("#nc_description").val(responce.data.nc_description);
                                     $("#<?=$form_id?>").find("#devision_dept").val(responce.data.devision_dept);
-                                    $("#<?=$form_id?>").find("#nc_photo").attr("src",responce.data.nc_photo);
-                                    // $("#<?=$form_id?>").find("#nc_photo").val(responce.data.nc_photo);
+                                    if(responce.data.nc_photo){
+                                        $("#<?=$form_id?>").find("#nc_photo_preview").attr("src", "<?=base_url('/')?>" + responce.data.nc_photo).show();
+                                    } else {
+                                        $("#<?=$form_id?>").find("#nc_photo_preview").hide();
+                                    }
                                     $("#<?=$form_id?>").find("#action_required_dep").val(responce.data.action_required_dep);
                                     $("#<?=$form_id?>").find("#responsibilty").val(responce.data.responsibilty);
                                     $("#<?=$form_id?>").find("#target_date").val(responce.data.target_date);
                                     $("#<?=$form_id?>").find("#sixs_category").val(responce.data.sixs_category);
                                     $("#<?=$form_id?>").find("#details_of_ca_pa").val(responce.data.details_of_ca_pa);
-                                    $("#<?=$form_id?>").find("#after_photo").attr("src",responce.data.after_photo);
+                                    if(responce.data.after_photo){
+                                        $("#<?=$form_id?>").find("#after_photo_preview").attr("src", "<?=base_url('/')?>" + responce.data.after_photo).show();
+                                    } else {
+                                        $("#<?=$form_id?>").find("#after_photo_preview").hide();
+                                    }
                                     $("#<?=$form_id?>").find("#department_status").val(responce.data.department_status);
                                     $("#<?=$form_id?>").find("#final_status_soi").val(responce.data.final_status_soi);
                                     $("#<?=$form_id?>").find("#nc_photo_url").val(responce.data.nc_photo);
-                                    $("#<?=$form_id?>").find("#after_photo_url").val(responce.data.after_photo_url);
+                                    $("#<?=$form_id?>").find("#after_photo_url").val(responce.data.after_photo);
 
 
 

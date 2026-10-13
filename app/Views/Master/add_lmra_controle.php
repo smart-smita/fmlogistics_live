@@ -11,7 +11,7 @@ $form_id= $button_id;
 
 <!--begin::Item-->
 	<li class="breadcrumb-item text-muted">
-		<a href="<?= current_url() ?>" class="text-muted text-hover-primary"><?=isset($title)?$title:"Client"?></a>
+		<a href="<?= current_url() ?>" class="text-muted text-hover-primary"><?=isset($title)?$title:"LMRA Reports"?></a>
 	</li>
 <!--end::Item-->
 <?php $this->endSection();?>	
@@ -32,7 +32,7 @@ $form_id= $button_id;
 					<!--begin::Modal header-->
 					<div class="modal-header">
 						<!--begin::Modal title-->
-						<h2>Client Details</h2>
+						<h2>LMRA Control</h2>
 						<!--end::Modal title-->
 						<!--begin::Close-->
 						<div class="btn btn-sm btn-icon btn-active-color-primary" data-bs-dismiss="modal">
@@ -55,39 +55,30 @@ $form_id= $button_id;
 								<div class="row mb-12">
 									<!--begin::Col-->
 									<div class="col-md-12 fv-row fv-plugins-icon-container">
-										<label class="required fs-5 fw-bold mb-2">Category text  </label>
-										<input type="text" class="form-control form-control-solid" placeholder="Please enter Category text" id="lmra_category_text" name="lmra_category_text">
+										<label class="required fs-5 fw-bold mb-2">Category  </label>
+										<select class="form-control form-control-solid" id="lmra_category_id" name="lmra_category_id">
+                                            <option value="">Select Category</option>
+                                            <?php foreach ($active_categories as $cat) { ?>
+                                                <option value="<?=$cat['category_id']?>"><?=$cat['category_name']?></option>
+                                            <?php } ?>
+                                        </select>
 										<div class="fv-plugins-message-container invalid-feedback"></div>
 									</div>
 									<div class="col-md-12 fv-row fv-plugins-icon-container">
-										<label class="required fs-5 fw-bold mb-2">lmra text  </label>
+										<label class="required fs-5 fw-bold mb-2">LMRA text  </label>
 										<input type="text" class="form-control form-control-solid" placeholder="Please enter lmra text" id="lmra_text" name="lmra_text">
 										<div class="fv-plugins-message-container invalid-feedback"></div>
 									</div>
-									<!--<div class="col-md-12 fv-row fv-plugins-icon-container">-->
-									<!--	<label class="required fs-5 fw-bold mb-2">lmra_options  </label>-->
-									<!--	<input type="text" class="form-control form-control-solid" placeholder="Please enter lmra options" id="lmra_options" name="lmra_options">-->
-									<!--	<div class="fv-plugins-message-container invalid-feedback"></div>-->
-									<!--</div>-->
-							
-							<div  class="col-md-12 fv-row fv-plugins-icon-container">
-							    <?php foreach ($lmra_options as $row){ ?>
-                               	<label>
-                                    <input type="checkbox" name="options[]" value="<?=$row?>"> <?=$row?>
-                                </label>
-                               <?php } ?>
-                        		 </div>
-                        		 
-							
-							<!--<div class="form-check" id="checkbox-container">-->
-                                    <!-- Checkboxes will be generated here by JavaScript -->
-       <!--                         </div>		-->
-                            									<!--end::Col-->
-							<!--	</div>-->
-								
-								
-								
-								<!--end::Input group-->
+									<div  class="col-md-12 fv-row fv-plugins-icon-container">
+                                        <label class="required fs-5 fw-bold mb-2">Options  </label><br>
+							            <?php foreach ($lmra_options as $row){ ?>
+                               	        <label class="me-3">
+                                            <input type="checkbox" name="options[]" value="<?=$row?>"> <?=$row?>
+                                        </label>
+                                        <?php } ?>
+                                        <div class="fv-plugins-message-container invalid-feedback"></div>
+                        		    </div>
+								</div>
 							</div>
 					</div>
 					<!--end::Modal body-->
@@ -128,16 +119,23 @@ $form_id= $button_id;
 const form = document.getElementById('<?=$form_id?>_form');
 var validation_object  = {
         fields: {
-            'lmra_category_text': {
+            'lmra_category_id': {
                 validators: {
                     notEmpty: {
-                        message: 'Lmra Category Name is required'
+                        message: 'Category is required'
                     }
                 }
             },'lmra_text':{
                  validators: {
                     notEmpty: {
-                        message: 'Lmra Text  Name is required'
+                        message: 'Lmra Text is required'
+                    }
+                }
+            },'options[]':{
+                 validators: {
+                    choice: {
+                        min: 1,
+                        message: 'At least one option is required'
                     }
                 }
             }
@@ -182,7 +180,9 @@ var validator = FormValidation.formValidation(form,validation_object);
                 //ajax_call(url,data_to_send,button,success_function)
                     ajax_call(url,formData,button,function(responce){
                         try{
-                            responce = JSON.parse(responce);
+                            if (typeof responce === 'string') {
+                                responce = JSON.parse(responce);
+                            }
                             if(responce.status==1){
                                     toastr.success(responce.message);
                                     form.reset();
@@ -207,21 +207,22 @@ function edit_id(obj,id){
     var formData={"id":id};
     ajax_call(url,formData,$(obj),function(responce){
                         try{
-                            responce = JSON.parse(responce);
+                            if (typeof responce === 'string') {
+                                responce = JSON.parse(responce);
+                            }
                             if(responce.status==1){
                                     toastr.success(responce.message);
-                                    //form.reset();
                                     // to update value 
                                     $('input[name="options[]"]').prop('checked', false);
 
-                                    $("#<?=$form_id?>").find("#lmra_category_text").val(responce.data.lmra_category_text);
+                                    $("#<?=$form_id?>").find("#lmra_category_id").val(responce.data.lmra_category_id);
                                     $("#<?=$form_id?>").find("#lmra_text").val(responce.data.lmra_text);
-                                    $("#<?=$form_id?>").find("#lmra_options").val(responce.data.lmra_options);
+                                    
                                     var valuesToCheck = responce.data.lmra_options.split(",");
 
                                     // Iterate over the array and check the corresponding checkboxes
                                     valuesToCheck.forEach(function(value) {
-                                        $('input[name="options[]"][value="' + value + '"]').prop('checked', true);
+                                        $('input[name="options[]"][value="' + value.trim() + '"]').prop('checked', true);
                                     });
                                                                 
                                     $("#<?=$form_id?>").find("#ajax_click").attr("data-ajax-url",$("#<?=$form_id?>").find("#ajax_click").attr("data-ajax-add-url")+"/"+id);
@@ -237,22 +238,22 @@ function edit_id(obj,id){
 function delete_row(obj,id){
     Swal.fire({
               title: 'Do you want delete?',
-              //showDenyButton: true,
               showCancelButton: true,
               confirmButtonText: 'Save',
-              //denyButtonText: `Don't delete`,
             }).then((result) => {
-              /* Read more about isConfirmed, isDenied below */
               if (result.isConfirmed) {
-                //Swal.fire('Saved!', '', 'success')
                 url_call_ajax($(obj).attr("data-ajax-url"),$(obj));
               } 
-            //   else if (result.isDenied) {
-            //     Swal.fire('Changes are not saved', '', 'info')
-            //   }
             });
-
 }
+
+$("#<?=$form_id?>").on('hidden.bs.modal', function () {
+    form.reset();
+    if(validator) {
+        validator.resetForm();
+    }
+    $("#<?=$form_id?>").find("#ajax_click").attr("data-ajax-url", $("#<?=$form_id?>").find("#ajax_click").attr("data-ajax-add-url"));
+});
  
 
 

@@ -200,7 +200,7 @@ class GembaAudit extends BaseController
     {
         $db = \Config\Database::connect();
 
-        $data['db_regions'] = $db->query("SELECT region_name FROM alert_hse_region_master WHERE status = 1")->getResultArray();
+        $data['db_regions'] = $db->query("SELECT region_name FROM alert_hse_region_master WHERE status = 1 ORDER BY region_name ASC")->getResultArray();
         $data['db_auditors'] = $db->query("
     SELECT 
         user_id,
@@ -213,9 +213,9 @@ class GembaAudit extends BaseController
     AND status = 1
     ORDER BY user_designation, user_name
 ")->getResultArray();
-        $data['db_followups'] = $db->query("SELECT DISTINCT user_designation as designation FROM alert_users WHERE status = 1 AND user_designation IS NOT NULL")->getResultArray();
+        $data['db_followups'] = $db->query("SELECT DISTINCT user_designation as designation FROM alert_users WHERE status = 1 AND user_designation IS NOT NULL ORDER BY user_designation ASC")->getResultArray();
 
-        // Fetch distinct categories from database and merge with hardcoded defaults
+        // Fetch distinct categories from database and merge with standard defaults
         $dbCats = $db->query("
             SELECT DISTINCT audit_category 
             FROM alert_gemba_audits 
@@ -225,13 +225,46 @@ class GembaAudit extends BaseController
             ORDER BY audit_category ASC
         ")->getResultArray();
         
-        $catsList = ['ISO Audit', 'HSE Audit', 'GIA Audit', 'Electric Audit', 'Fire Audit', 'Leadership Visit'];
+        $catsList = ['ISO Audit', 'HSE Audit', 'GIA Audit', 'Electric Audit', 'Fire Audit', 'Leadership Visit', 'France Corporate Audit', 'Pre Golive Audit'];
         foreach ($dbCats as $row) {
             $catsList[] = $row['audit_category'];
         }
-        $catsList = array_unique(array_map('trim', $catsList));
-        sort($catsList);
-        $data['db_categories'] = $catsList;
+        $catsList = array_values(array_unique(array_filter(array_map('trim', $catsList))));
+        natcasesort($catsList);
+        $data['db_categories'] = array_values($catsList);
+
+        // Checklist Categories from DB merged with standard defaults
+        $dbChecklists = $db->query("
+            SELECT DISTINCT checklist_category 
+            FROM alert_gemba_audits 
+            WHERE status != 2 
+              AND checklist_category != '' 
+              AND checklist_category IS NOT NULL 
+            ORDER BY checklist_category ASC
+        ")->getResultArray();
+        $chkDefaults = ['HSE Audit', 'Electric Audit', 'Fire Audit', 'GIA audit', 'GEMBA', 'Review of Infrastructural points'];
+        $chkList = array_merge($chkDefaults, array_column($dbChecklists, 'checklist_category'));
+        $chkList = array_values(array_unique(array_filter(array_map('trim', $chkList))));
+        natcasesort($chkList);
+        $data['db_checklist_categories'] = array_values($chkList);
+
+        // Whose Scope from DB merged with defaults
+        $dbScopes = $db->query("
+            SELECT DISTINCT whose_scope 
+            FROM alert_gemba_audits 
+            WHERE status != 2 
+              AND whose_scope != '' 
+              AND whose_scope IS NOT NULL 
+            ORDER BY whose_scope ASC
+        ")->getResultArray();
+        $scopeDefaults = ['Operation', 'Landlord Scope', 'Project Team', 'FM Scope', 'Client Scope', 'HSE', 'Management', 'HR', 'Procurement'];
+        $scopeList = array_merge($scopeDefaults, array_column($dbScopes, 'whose_scope'));
+        $scopeList = array_values(array_unique(array_filter(array_map('trim', $scopeList))));
+        natcasesort($scopeList);
+        $data['db_whose_scope'] = array_values($scopeList);
+
+        // Cost Types including Operational Action
+        $data['db_cost_types'] = ['Capex', 'Opex', 'Operational Action'];
 
         // Site details from alert_gemba_sites
         $data['db_sites'] = [];
@@ -239,10 +272,10 @@ class GembaAudit extends BaseController
         $data['db_site_type_2'] = [];
         $data['db_site_category'] = [];
         if ($db->tableExists('alert_gemba_sites')) {
-            $data['db_sites'] = $db->query("SELECT * FROM alert_gemba_sites WHERE status = 1")->getResultArray();
-            $data['db_site_type_1'] = $db->query("SELECT DISTINCT site_type_1 FROM alert_gemba_sites WHERE status = 1 AND site_type_1 IS NOT NULL AND site_type_1 != ''")->getResultArray();
-            $data['db_site_type_2'] = $db->query("SELECT DISTINCT site_type_2 FROM alert_gemba_sites WHERE status = 1 AND site_type_2 IS NOT NULL AND site_type_2 != ''")->getResultArray();
-            $data['db_site_category'] = $db->query("SELECT DISTINCT site_category FROM alert_gemba_sites WHERE status = 1 AND site_category IS NOT NULL AND site_category != ''")->getResultArray();
+            $data['db_sites'] = $db->query("SELECT * FROM alert_gemba_sites WHERE status = 1 ORDER BY site_name ASC")->getResultArray();
+            $data['db_site_type_1'] = $db->query("SELECT DISTINCT site_type_1 FROM alert_gemba_sites WHERE status = 1 AND site_type_1 IS NOT NULL AND site_type_1 != '' ORDER BY site_type_1 ASC")->getResultArray();
+            $data['db_site_type_2'] = $db->query("SELECT DISTINCT site_type_2 FROM alert_gemba_sites WHERE status = 1 AND site_type_2 IS NOT NULL AND site_type_2 != '' ORDER BY site_type_2 ASC")->getResultArray();
+            $data['db_site_category'] = $db->query("SELECT DISTINCT site_category FROM alert_gemba_sites WHERE status = 1 AND site_category IS NOT NULL AND site_category != '' ORDER BY site_category ASC")->getResultArray();
         }
 
         $data['db_cluster_managers'] = $db->query("SELECT user_id, user_name, user_cluster, user_region FROM alert_users WHERE (user_designation = 'Cluster Manager' OR user_designation = 'Cluster manager' OR user_designation LIKE '%\"Cluster Manager\"%' OR user_designation LIKE '%\"Cluster manager\"%') AND status = 1 ORDER BY user_name ASC")->getResultArray();
@@ -251,11 +284,69 @@ class GembaAudit extends BaseController
         return $data;
     }
 
+    private function processOtherInputs(array $postData, \CodeIgniter\Database\BaseConnection $db)
+    {
+        // 1. Audit Category Other
+        if (($postData['audit_category'] ?? '') === '__other__') {
+            $customCategory = trim((string)($postData['audit_category_other'] ?? ''));
+            if ($customCategory !== '') {
+                $postData['audit_category'] = $customCategory;
+            }
+        }
+
+        // 2. Audit Type Other
+        if (($postData['audit_type'] ?? '') === '__other__') {
+            $customType = trim((string)($postData['audit_type_other'] ?? ''));
+            if ($customType !== '') {
+                $postData['audit_type'] = $customType;
+            }
+        }
+
+        // 3. Audit Doc Type Other
+        if (($postData['audit_doc_type'] ?? '') === '__other__') {
+            $customDocType = trim((string)($postData['audit_doc_type_other'] ?? ''));
+            if ($customDocType !== '') {
+                $postData['audit_doc_type'] = $customDocType;
+            }
+        }
+
+        // 4. Checklist Category Other
+        if (($postData['checklist_category'] ?? '') === '__other__') {
+            $customChecklist = trim((string)($postData['checklist_category_other'] ?? ''));
+            if ($customChecklist !== '') {
+                $postData['checklist_category'] = $customChecklist;
+            }
+        }
+
+        // 6. Whose Scope Other
+        if (($postData['whose_scope'] ?? '') === '__other__') {
+            $customScope = trim((string)($postData['whose_scope_other'] ?? ''));
+            if ($customScope !== '') {
+                $postData['whose_scope'] = $customScope;
+            }
+        }
+
+        // Clean up helper _other keys
+        unset(
+            $postData['audit_category_other'],
+            $postData['audit_type_other'],
+            $postData['audit_doc_type_other'],
+            $postData['site_name_other'],
+            $postData['checklist_category_other'],
+            $postData['whose_scope_other']
+        );
+
+        return $postData;
+    }
+
     public function create()
     {
         gemba_require_write_access();
+        $db = \Config\Database::connect();
+
         if ($this->request->getMethod() === 'post') {
             $postData = $this->request->getVar();
+            $postData = $this->processOtherInputs($postData, $db);
             $postData['status'] = 1; // 1: active
 
             if (empty($postData['unique_no'])) {
@@ -293,40 +384,19 @@ class GembaAudit extends BaseController
             if ($this->validate($rules)) {
                 $postData['account_manager'] = $postData['account_manager'] ?? null;
                 $postData['source_module'] = 'manual';
-                $postData['created_by'] = session()->get('user_name');
+                $postData['created_by'] = session()->get('user_name') ?? 'System';
                 $postData['action_category'] = (!empty($postData['action_category'])) ? $postData['action_category'] : 'Not Categorized';
                 $postData['default_date'] = date('Y-m-d H:i:s');
 
                 if ($postData['point_status'] === 'Closed' || !empty($postData['closed_date'])) {
                     $postData['nc_status'] = 3;
-                    $postData['nc_closed_by'] = session()->get('user_name');
+                    $postData['nc_closed_by'] = session()->get('user_name') ?? 'System';
                     $postData['nc_closed_date'] = date('Y-m-d H:i:s');
                 } else {
                     $postData['nc_status'] = 0;
                 }
 
-                $postData['snapshot_account_manager_name'] = $postData['account_manager'] ?? '';
-                $postData['snapshot_cluster_manager_name'] = $postData['cluster_manager_spoc'] ?? '';
-                $postData['snapshot_created_by_user_id'] = session()->get('user_id');
-                $postData['snapshot_created_by_user_name'] = session()->get('user_name');
-                $postData['snapshot_created_at'] = date('Y-m-d H:i:s');
-
                 $this->model->insert($postData);
-                $gembaInsertId = $this->model->getInsertID();
-
-                helper(['designation_acl']);
-                logNcActionHistory(
-                    'GEMBA',
-                    (int)$gembaInsertId,
-                    'CREATED',
-                    null,
-                    (string)($postData['nc_status'] ?? '0'),
-                    $postData['observation_point'] ?? 'Gemba audit point created',
-                    $postData['working_uploaded_file'] ?? null,
-                    (int)($postData['hse_audit_id'] ?? 0),
-                    $postData['site_name'] ?? null
-                );
-
                 return redirect()->to('/gemba-audit')->with('success', 'Gemba Audit created successfully.');
             } else {
                 return redirect()->back()->withInput()->with('errors', $this->validator->getErrors());
@@ -341,13 +411,22 @@ class GembaAudit extends BaseController
     public function edit($id = null)
     {
         gemba_require_write_access();
+        $db = \Config\Database::connect();
         $data['audit'] = $this->model->find($id);
         if (!$data['audit']) {
             return redirect()->to('/gemba-audit')->with('error', 'Record not found.');
         }
 
+        // Security Check: Protect HSE-managed audits from manual tampering
+        $isHseMapped = (!empty($data['audit']['hse_audit_id']) && strtolower(trim($data['audit']['audit_category'] ?? '')) == 'hse audit');
+        if ($isHseMapped) {
+            return redirect()->to('/gemba-audit')->with('error', 'This audit record is managed in the HSE module and cannot be modified directly in Gemba Audit.');
+        }
+
         if ($this->request->getMethod() === 'post') {
             $postData = $this->request->getVar();
+            $postData = $this->processOtherInputs($postData, $db);
+
             $rules = [
                 'region' => 'required',
                 'auditor_name' => 'required',
@@ -366,24 +445,53 @@ class GembaAudit extends BaseController
                 'point_status' => 'required'
             ];
 
-            if ($postData['point_status'] === 'Closed' || !empty($postData['closed_date'])) {
-                $rules['closed_date'] = 'required|valid_date';
+            $wasClosed = (($data['audit']['point_status'] ?? '') === 'Closed');
+            if ($wasClosed) {
+                // Dependency check: If already closed, it cannot be changed back to Open; managers are preserved and locked
+                $postData['point_status'] = 'Closed';
+                $postData['closed_date'] = !empty($data['audit']['closed_date']) ? $data['audit']['closed_date'] : ($postData['closed_date'] ?? date('Y-m-d'));
+                $postData['point_category'] = !empty($data['audit']['point_category']) ? $data['audit']['point_category'] : 'Closed Category';
+                $postData['closure_status'] = !empty($data['audit']['closure_status']) ? $data['audit']['closure_status'] : 'Closed';
+                $postData['cluster_manager_spoc'] = !empty($data['audit']['cluster_manager_spoc']) ? $data['audit']['cluster_manager_spoc'] : ($postData['cluster_manager_spoc'] ?? '');
+                $postData['account_manager'] = !empty($data['audit']['account_manager']) ? $data['audit']['account_manager'] : ($postData['account_manager'] ?? '');
+            } else {
+                if (($postData['point_status'] ?? '') === 'Closed' || !empty($postData['closed_date'])) {
+                    $rules['closed_date'] = 'required|valid_date';
 
-                if (!empty($postData['closed_date'])) {
-                    $postData['point_status'] = 'Closed';
-                    $postData['point_category'] = 'Closed Category';
-                    $postData['closure_status'] = 'Closed';
+                    if (!empty($postData['closed_date'])) {
+                        $postData['point_status'] = 'Closed';
+                        $postData['point_category'] = !empty($postData['point_category']) ? $postData['point_category'] : 'Closed Category';
+                        $postData['closure_status'] = !empty($postData['closure_status']) ? $postData['closure_status'] : 'Closed';
+                    }
                 }
             }
 
+            // Always ensure cluster and account manager don't get lost if disabled in form
+            if (empty($postData['cluster_manager_spoc']) && !empty($data['audit']['cluster_manager_spoc'])) {
+                $postData['cluster_manager_spoc'] = $data['audit']['cluster_manager_spoc'];
+            }
+            if (empty($postData['account_manager']) && !empty($data['audit']['account_manager'])) {
+                $postData['account_manager'] = $data['audit']['account_manager'];
+            }
+
             if ($this->validate($rules)) {
-                $postData['updated_by'] = session()->get('user_name');
+                // Protect immutable system and workflow fields from payload tampering
+                unset(
+                    $postData['unique_no'],
+                    $postData['hse_audit_id'],
+                    $postData['hse_detail_id'],
+                    $postData['source_module'],
+                    $postData['created_by'],
+                    $postData['default_date']
+                );
+
+                $postData['updated_by'] = session()->get('user_name') ?? 'System';
                 $postData['update_date'] = date('Y-m-d H:i:s');
 
                 if ($postData['point_status'] === 'Closed' || !empty($postData['closed_date'])) {
                     $postData['nc_status'] = 3;
                     if (empty($data['audit']['nc_closed_by'])) {
-                        $postData['nc_closed_by'] = session()->get('user_name');
+                        $postData['nc_closed_by'] = session()->get('user_name') ?? 'System';
                         $postData['nc_closed_date'] = date('Y-m-d H:i:s');
                     }
                 }
@@ -415,6 +523,11 @@ class GembaAudit extends BaseController
         gemba_require_write_access();
         $audit = $this->model->find($id);
         if ($audit) {
+            $isHseMapped = (!empty($audit['hse_audit_id']) && strtolower(trim($audit['audit_category'] ?? '')) == 'hse audit');
+            if ($isHseMapped) {
+                return redirect()->to('/gemba-audit')->with('error', 'This audit record is managed in the HSE module and cannot be deleted here.');
+            }
+
             $this->model->update($id, ['status' => 2, 'updated_by' => session()->get('user_name'), 'update_date' => date('Y-m-d H:i:s')]);
             return redirect()->to('/gemba-audit')->with('success', 'Gemba Audit deleted successfully.');
         }
@@ -423,13 +536,14 @@ class GembaAudit extends BaseController
 
     public function cascadingDropdown()
     {
-        $category = $this->request->getGet('audit_category');
+        $request = service('request');
+        $category = trim((string)$request->getGet('audit_category'));
         $db = \Config\Database::connect();
 
         $auditTypes = [];
         $docTypes = [];
 
-        if (!empty($category)) {
+        if (!empty($category) && $category !== '__other__') {
             // Fetch distinct audit types for this category
             $typesResult = $db->table('alert_gemba_audits')
                 ->select('DISTINCT(audit_type) as type')
@@ -440,7 +554,7 @@ class GembaAudit extends BaseController
                 ->orderBy('audit_type', 'ASC')
                 ->get()
                 ->getResultArray();
-            $auditTypes = array_column($typesResult, 'type');
+            $auditTypes = array_filter(array_map('trim', array_column($typesResult, 'type')));
 
             // Fetch distinct doc types for this category
             $docsResult = $db->table('alert_gemba_audits')
@@ -452,9 +566,9 @@ class GembaAudit extends BaseController
                 ->orderBy('audit_doc_type', 'ASC')
                 ->get()
                 ->getResultArray();
-            $docTypes = array_column($docsResult, 'doc');
+            $docTypes = array_filter(array_map('trim', array_column($docsResult, 'doc')));
         } else {
-            // Default
+            // Default list across all categories
             $typesResult = $db->table('alert_gemba_audits')
                 ->select('DISTINCT(audit_type) as type')
                 ->where('audit_type !=', '')
@@ -463,7 +577,7 @@ class GembaAudit extends BaseController
                 ->orderBy('audit_type', 'ASC')
                 ->get()
                 ->getResultArray();
-            $auditTypes = array_column($typesResult, 'type');
+            $auditTypes = array_filter(array_map('trim', array_column($typesResult, 'type')));
 
             $docsResult = $db->table('alert_gemba_audits')
                 ->select('DISTINCT(audit_doc_type) as doc')
@@ -473,24 +587,72 @@ class GembaAudit extends BaseController
                 ->orderBy('audit_doc_type', 'ASC')
                 ->get()
                 ->getResultArray();
-            $docTypes = array_column($docsResult, 'doc');
+            $docTypes = array_filter(array_map('trim', array_column($docsResult, 'doc')));
         }
 
-        return $this->response->setJSON([
-            'audit_types' => $auditTypes,
-            'doc_types' => $docTypes
+        $auditTypes = array_values(array_unique($auditTypes));
+        $docTypes = array_values(array_unique($docTypes));
+        natcasesort($auditTypes);
+        natcasesort($docTypes);
+
+        $response = $this->response ?? service('response');
+        return $response->setJSON([
+            'audit_types' => array_values($auditTypes),
+            'doc_types' => array_values($docTypes)
         ]);
     }
 
     public function getSiteDetails()
     {
-        $siteName = $this->request->getGet('site_name');
+        $request = service('request');
+        $siteName = trim((string)$request->getGet('site_name'));
         $db = \Config\Database::connect();
         $site = [];
-        if ($db->tableExists('alert_gemba_sites')) {
-            $site = $db->table('alert_gemba_sites')->where('site_name', $siteName)->where('status', 1)->get()->getRowArray();
+
+        if (!empty($siteName) && $siteName !== '__other__' && $db->tableExists('alert_gemba_sites')) {
+            $site = $db->table('alert_gemba_sites')
+                ->where('site_name', $siteName)
+                ->where('status', 1)
+                ->get()
+                ->getRowArray();
+            
+            // Also cross-reference alert_hse_client_master and alert_client to retrieve cluster manager and account manager
+            $clientMasterRow = $db->query("
+                SELECT cluster, account_manager, region
+                FROM alert_hse_client_master
+                WHERE (
+                    LOWER(TRIM(client_name)) = ?
+                    OR LOWER(TRIM(location)) = ?
+                )
+                AND status = 1
+                LIMIT 1
+            ", [strtolower($siteName), strtolower($siteName)])->getRowArray();
+
+            if (!$clientMasterRow && $db->tableExists('alert_client')) {
+                $clientMasterRow = $db->query("
+                    SELECT cluster, account_manager, region
+                    FROM alert_client
+                    WHERE LOWER(TRIM(client_name)) = ?
+                      AND status != 2
+                    LIMIT 1
+                ", [strtolower($siteName)])->getRowArray();
+            }
+
+            if ($clientMasterRow) {
+                if (!empty($clientMasterRow['cluster'])) {
+                    $site['cluster_manager_spoc'] = $clientMasterRow['cluster'];
+                }
+                if (!empty($clientMasterRow['account_manager'])) {
+                    $site['account_manager'] = $clientMasterRow['account_manager'];
+                }
+                if (empty($site['region']) && !empty($clientMasterRow['region'])) {
+                    $site['region'] = $clientMasterRow['region'];
+                }
+            }
         }
-        return $this->response->setJSON($site ?: []);
+
+        $response = $this->response ?? service('response');
+        return $response->setJSON($site ?: []);
     }
 
     public function gemba_export()
@@ -760,6 +922,51 @@ class GembaAudit extends BaseController
             $currentUser = session()->get('user_name') ?? 'System';
             $now = date('Y-m-d H:i:s');
 
+            // Pre-fetch Master Data for strict validation against master tables
+            $dbSitesList = $db->query("SELECT site_name, site_type_1, site_type_2, site_category, region FROM alert_gemba_sites WHERE status = 1")->getResultArray();
+            $gembaSitesMap = [];
+            foreach ($dbSitesList as $s) {
+                $gembaSitesMap[strtolower(trim($s['site_name']))] = $s;
+            }
+
+            $dbRegionsList = $db->query("SELECT region_name FROM alert_hse_region_master WHERE status = 1")->getResultArray();
+            $regionMasterMap = [];
+            foreach ($dbRegionsList as $r) {
+                $regionMasterMap[strtolower(trim($r['region_name']))] = $r['region_name'];
+            }
+
+            $dbAuditorsList = $db->query("SELECT user_name FROM alert_users WHERE status = 1 AND (user_designation = 'Auditor' OR user_designation = 'Higher authority' OR user_designation LIKE '%\"Auditor\"%' OR user_designation LIKE '%\"Higher authority\"%' OR user_designation = 'Admin' OR user_designation LIKE '%\"Admin\"%')")->getResultArray();
+            $auditorMasterMap = [];
+            foreach ($dbAuditorsList as $u) {
+                $auditorMasterMap[strtolower(trim($u['user_name']))] = $u['user_name'];
+            }
+
+            $allowedSeverities = ['low' => 'Low', 'medium' => 'Medium', 'high' => 'High'];
+            $allowedProbabilities = ['low' => 'Low', 'medium' => 'Medium', 'high' => 'High'];
+            $allowedColorCodes = ['red' => 'Red', 'yellow' => 'Yellow', 'black' => 'Black', 'green' => 'Green'];
+            $allowedCostTypes = [
+                'capex' => 'Capex',
+                'opex' => 'Opex',
+                'operational action' => 'Operational Action',
+                'operatiol action' => 'Operational Action'
+            ];
+            $allowedPointStatuses = [
+                'open' => 'Open',
+                'wip' => 'WIP',
+                'closed' => 'Closed',
+                'excluded' => 'Excluded',
+                'hold-review with client' => 'Hold-review with Client'
+            ];
+            $allowedNcRecommendations = [
+                'nc' => 'NC',
+                'recommendation' => 'RECOMMENDATION',
+                'point closed' => 'Point Closed',
+                'point_closed' => 'Point Closed',
+                'pointclosed' => 'Point Closed',
+                'point-closed' => 'Point Closed',
+                'recommendations' => 'RECOMMENDATION'
+            ];
+
             $db->transStart();
 
             $rowNumber = 1; // header was row 1
@@ -787,25 +994,29 @@ class GembaAudit extends BaseController
                     return null;
                 };
 
-                $siteName = $getVal('site_name');
+                $rowErrors = [];
 
-                // Master Site details mapping
+                $siteName = $getVal('site_name');
+                $siteMasterRow = null;
                 $region = $getVal('region');
                 $siteType1 = $getVal('site_type_1');
                 $siteType2 = $getVal('site_type_2');
                 $siteCategory = $getVal('site_category');
+                $clusterManagerSpoc = $getVal('cluster_manager_spoc');
+                $accountManager = $getVal('account_manager');
 
-                if (!empty($siteName)) {
-                    $cleanSiteName = strtolower(trim($siteName));
-                    $siteMasterRow = $db->query("
-                        SELECT site_type_1, site_type_2, site_category, region
-                        FROM alert_gemba_sites
-                        WHERE LOWER(TRIM(site_name)) = ?
-                          AND status = 1
-                        LIMIT 1
-                    ", [$cleanSiteName])->getRowArray();
-                    
-                    if ($siteMasterRow) {
+                // 1. Strict Site Master Validation
+                if (empty($siteName)) {
+                    $rowErrors[] = "Mandatory column 'site_name' cannot be empty.";
+                } else {
+                    $cleanSiteKey = strtolower(trim($siteName));
+                    if (!isset($gembaSitesMap[$cleanSiteKey])) {
+                        $rowErrors[] = "Site '{$siteName}' is not available in Gemba Site Master. Please first add the site details into Gemba Site Master (gemba-sites).";
+                    } else {
+                        $siteMasterRow = $gembaSitesMap[$cleanSiteKey];
+                        $siteName = $siteMasterRow['site_name']; // normalize canonical site name
+
+                        // Default master site values
                         if (empty($region) && !empty($siteMasterRow['region'])) {
                             $region = $siteMasterRow['region'];
                         }
@@ -821,11 +1032,8 @@ class GembaAudit extends BaseController
                     }
                 }
 
-                // Client Master mapping
-                $clusterManagerSpoc = $getVal('cluster_manager_spoc');
-                $accountManager = $getVal('account_manager');
-
-                if (!empty($siteName)) {
+                // Client Master fallback for managers if still empty
+                if (!empty($siteName) && (empty($clusterManagerSpoc) || empty($accountManager))) {
                     $cleanSiteName = strtolower(trim($siteName));
                     $clientMasterRow = $db->query("
                         SELECT cluster, account_manager, region
@@ -839,10 +1047,10 @@ class GembaAudit extends BaseController
                     ", [$cleanSiteName, $cleanSiteName])->getRowArray();
                     
                     if ($clientMasterRow) {
-                        if (!empty($clientMasterRow['cluster'])) {
+                        if (empty($clusterManagerSpoc) && !empty($clientMasterRow['cluster'])) {
                             $clusterManagerSpoc = $clientMasterRow['cluster'];
                         }
-                        if (!empty($clientMasterRow['account_manager'])) {
+                        if (empty($accountManager) && !empty($clientMasterRow['account_manager'])) {
                             $accountManager = $clientMasterRow['account_manager'];
                         }
                         if (empty($region) && !empty($clientMasterRow['region'])) {
@@ -851,20 +1059,141 @@ class GembaAudit extends BaseController
                     }
                 }
 
-                // Validate mandatory fields (using resolved master values for region and site_name)
-                $rowErrors = [];
-                foreach ($mandatoryColumns as $col) {
-                    if ($col === 'region') {
-                        $val = $region;
+                // 2. Strict Region Master Validation
+                if (!empty($region)) {
+                    $cleanReg = strtolower(trim($region));
+                    if (!isset($regionMasterMap[$cleanReg])) {
+                        $rowErrors[] = "Region '{$region}' is not registered in Region Master.";
                     } else {
-                        $val = $getVal($col);
+                        $region = $regionMasterMap[$cleanReg];
+                        if ($siteMasterRow && !empty($siteMasterRow['region'])) {
+                            if (strcasecmp(trim($region), trim($siteMasterRow['region'])) !== 0) {
+                                $rowErrors[] = "Site '{$siteName}' belongs to region '{$siteMasterRow['region']}', but uploaded row specified '{$region}'.";
+                            }
+                        }
                     }
-                    if ($val === null || $val === '') {
-                        $rowErrors[] = "Mandatory column '{$col}' cannot be empty.";
-                    }
+                } else {
+                    $rowErrors[] = "Mandatory column 'region' cannot be empty.";
                 }
 
+                // 3. Strict Auditor Master Validation
+                $auditorName = $getVal('auditor_name');
+                if (!empty($auditorName)) {
+                    $cleanAuditor = strtolower(trim($auditorName));
+                    if (!isset($auditorMasterMap[$cleanAuditor])) {
+                        $rowErrors[] = "Auditor '{$auditorName}' is not registered in User Master.";
+                    } else {
+                        $auditorName = $auditorMasterMap[$cleanAuditor];
+                    }
+                } else {
+                    $rowErrors[] = "Mandatory column 'auditor_name' cannot be empty.";
+                }
 
+                // 4. Strict Severity Validation
+                $riskSeverityRaw = $getVal('risk_severity');
+                $riskSeverity = null;
+                if (!empty($riskSeverityRaw)) {
+                    $cleanSev = strtolower(trim($riskSeverityRaw));
+                    if (!isset($allowedSeverities[$cleanSev])) {
+                        $rowErrors[] = "Invalid Risk Severity '{$riskSeverityRaw}'. Allowed values: Low, Medium, High.";
+                    } else {
+                        $riskSeverity = $allowedSeverities[$cleanSev];
+                    }
+                } else {
+                    $rowErrors[] = "Mandatory column 'risk_severity' cannot be empty.";
+                }
+
+                // 5. Strict Probability Validation
+                $riskProbRaw = $getVal('risk_probability');
+                $riskProbability = null;
+                if (!empty($riskProbRaw)) {
+                    $cleanProb = strtolower(trim($riskProbRaw));
+                    if (!isset($allowedProbabilities[$cleanProb])) {
+                        $rowErrors[] = "Invalid Risk Probability '{$riskProbRaw}'. Allowed values: Low, Medium, High.";
+                    } else {
+                        $riskProbability = $allowedProbabilities[$cleanProb];
+                    }
+                } else {
+                    $rowErrors[] = "Mandatory column 'risk_probability' cannot be empty.";
+                }
+
+                // 6. Strict Color Code Validation
+                $colorCodeRaw = $getVal('color_code');
+                $colorCode = null;
+                if (!empty($colorCodeRaw)) {
+                    $cleanColor = strtolower(trim($colorCodeRaw));
+                    if (!isset($allowedColorCodes[$cleanColor])) {
+                        $rowErrors[] = "Invalid Color Code '{$colorCodeRaw}'. Allowed values: Red, Yellow, Black.";
+                    } else {
+                        $colorCode = $allowedColorCodes[$cleanColor];
+                    }
+                } else {
+                    $rowErrors[] = "Mandatory column 'color_code' cannot be empty.";
+                }
+
+                // 7. Strict Cost Type Validation
+                $costTypeRaw = $getVal('cost_type');
+                $costType = null;
+                if (!empty($costTypeRaw)) {
+                    $cleanCost = strtolower(trim($costTypeRaw));
+                    if (!isset($allowedCostTypes[$cleanCost])) {
+                        $rowErrors[] = "Invalid Cost Type '{$costTypeRaw}'. Allowed values: Capex, Opex, Operational Action.";
+                    } else {
+                        $costType = $allowedCostTypes[$cleanCost];
+                    }
+                } else {
+                    $rowErrors[] = "Mandatory column 'cost_type' cannot be empty.";
+                }
+
+                // 8. Strict Point Status Validation
+                $pointStatusRaw = $getVal('point_status');
+                $pointStatus = null;
+                if (!empty($pointStatusRaw)) {
+                    $cleanStatus = strtolower(trim($pointStatusRaw));
+                    if (!isset($allowedPointStatuses[$cleanStatus])) {
+                        $rowErrors[] = "Invalid Point Status '{$pointStatusRaw}'. Allowed values: Open, WIP, Closed, Excluded, Hold-review with Client.";
+                    } else {
+                        $pointStatus = $allowedPointStatuses[$cleanStatus];
+                    }
+                } else {
+                    $rowErrors[] = "Mandatory column 'point_status' cannot be empty.";
+                }
+
+                // 9. Strict NC/Recommendation Validation
+                $ncRecRaw = $getVal('nc_recommendation');
+                $ncRecommendation = null;
+                if (!empty($ncRecRaw)) {
+                    $cleanNc = preg_replace('/\s+/', ' ', strtolower(trim($ncRecRaw)));
+                    if (!isset($allowedNcRecommendations[$cleanNc])) {
+                        $rowErrors[] = "Invalid NC/Recommendation '{$ncRecRaw}'. Allowed values: NC, RECOMMENDATION, Point Closed.";
+                    } else {
+                        $ncRecommendation = $allowedNcRecommendations[$cleanNc];
+                    }
+                } else {
+                    $rowErrors[] = "Mandatory column 'nc_recommendation' cannot be empty.";
+                }
+
+                // 10. Observation Point & Other Mandatory Text Fields
+                $obsPoint = $getVal('observation_point');
+                if (empty($obsPoint)) {
+                    $rowErrors[] = "Mandatory column 'observation_point' cannot be empty.";
+                }
+                $auditCat = $getVal('audit_category');
+                if (empty($auditCat)) {
+                    $rowErrors[] = "Mandatory column 'audit_category' cannot be empty.";
+                }
+                $auditType = $getVal('audit_type');
+                if (empty($auditType)) {
+                    $rowErrors[] = "Mandatory column 'audit_type' cannot be empty.";
+                }
+                $chkCat = $getVal('checklist_category');
+                if (empty($chkCat)) {
+                    $rowErrors[] = "Mandatory column 'checklist_category' cannot be empty.";
+                }
+                $auditDocType = $getVal('audit_doc_type');
+                if (empty($auditDocType)) {
+                    $auditDocType = 'NA';
+                }
 
                 // Date Fields validation & parsing
                 $dateFields = [
@@ -889,6 +1218,10 @@ class GembaAudit extends BaseController
                     } else {
                         $parsedDates[$df] = null;
                     }
+                }
+
+                if (empty($parsedDates['audit_report_date'])) {
+                    $rowErrors[] = "Mandatory column 'audit_report_date' must be a valid date.";
                 }
 
                 // Numeric Fields validation
@@ -918,6 +1251,13 @@ class GembaAudit extends BaseController
                     }
                 }
 
+                // Validate closed date if status is closed
+                if ($pointStatus === 'Closed') {
+                    if (empty($parsedDates['closed_date'])) {
+                        $rowErrors[] = "Closed Date is mandatory when Point Status is Closed.";
+                    }
+                }
+
                 // If row has validation errors, count as failed and skip processing
                 if (!empty($rowErrors)) {
                     $failedCount++;
@@ -933,13 +1273,13 @@ class GembaAudit extends BaseController
 
 
 
-                // Construct baseline array of excel fields
+                // Construct baseline array of excel fields using normalized and validated values
                 $mappedRow = [
                     'region' => $region,
-                    'auditor_name' => $getVal('auditor_name'),
-                    'audit_category' => $getVal('audit_category'),
-                    'audit_type' => $getVal('audit_type'),
-                    'audit_doc_type' => $getVal('audit_doc_type'),
+                    'auditor_name' => $auditorName,
+                    'audit_category' => $auditCat,
+                    'audit_type' => $auditType,
+                    'audit_doc_type' => $auditDocType,
                     'site_name' => $siteName,
                     'site_type_1' => $siteType1,
                     'site_type_2' => $siteType2,
@@ -950,18 +1290,18 @@ class GembaAudit extends BaseController
                     'month_raised' => $parsedDates['month_raised'],
                     'year_month_raised' => $getVal('year_month_raised'),
                     'year_raised' => $parsedNumerics['year_raised'],
-                    'checklist_category' => $getVal('checklist_category'),
-                    'nc_recommendation' => $getVal('nc_recommendation'),
+                    'checklist_category' => $chkCat,
+                    'nc_recommendation' => $ncRecommendation,
                     'qhse_remarks' => $getVal('qhse_remarks'),
-                    'observation_point' => $getVal('observation_point'),
+                    'observation_point' => $obsPoint,
                     'risks_details' => $getVal('risks_details'),
                     'action_recommendation' => $getVal('action_recommendation'),
                     'specifications' => $getVal('specifications'),
                     'ua_uc_type' => $getVal('ua_uc_type'),
-                    'risk_severity' => $getVal('risk_severity'),
-                    'risk_probability' => $getVal('risk_probability'),
-                    'color_code' => $getVal('color_code'),
-                    'cost_type' => $getVal('cost_type'),
+                    'risk_severity' => $riskSeverity,
+                    'risk_probability' => $riskProbability,
+                    'color_code' => $colorCode,
+                    'cost_type' => $costType,
                     'remarks_wm' => $getVal('remarks_wm'),
                     'whose_scope' => $getVal('whose_scope'),
                     'remarks_corporate' => $getVal('remarks_corporate'),
@@ -969,7 +1309,7 @@ class GembaAudit extends BaseController
                     'age_bracket' => $getVal('age_bracket'),
                     'target_date' => $parsedDates['target_date'],
                     'closed_date' => $parsedDates['closed_date'],
-                    'point_status' => $getVal('point_status'),
+                    'point_status' => $pointStatus,
                     'point_category' => $getVal('point_category'),
                     'closure_status' => $getVal('closure_status'),
                     'weeknum_closed' => $parsedNumerics['weeknum_closed'],
@@ -1143,15 +1483,22 @@ class GembaAudit extends BaseController
         gemba_require_write_access();
         $db = \Config\Database::connect();
 
-        // 1. Query active client names from alert_hse_client_master
-        $clients = $db->query("
-            SELECT DISTINCT client_name 
+        // 1. Query active site names from alert_gemba_sites and alert_hse_client_master
+        $sites1 = $db->query("
+            SELECT DISTINCT site_name 
+            FROM alert_gemba_sites 
+            WHERE status = 1 AND site_name IS NOT NULL AND site_name != ''
+        ")->getResultArray();
+        $sites2 = $db->query("
+            SELECT DISTINCT client_name as site_name
             FROM alert_hse_client_master 
             WHERE status = 1 AND client_name IS NOT NULL AND client_name != ''
-            ORDER BY client_name
         ")->getResultArray();
 
-        $clientNames = array_column($clients, 'client_name');
+        $allSites = array_merge(array_column($sites1, 'site_name'), array_column($sites2, 'site_name'));
+        $clientNames = array_values(array_unique(array_filter(array_map('trim', $allSites))));
+        natcasesort($clientNames);
+        $clientNames = array_values($clientNames);
         $clientCount = count($clientNames);
 
         // 2. Columns list
@@ -1269,6 +1616,22 @@ class GembaAudit extends BaseController
             }
         }
 
+        // Add dropdown validation to nc_recommendation column (M) for rows 2 to 100
+        for ($row = 2; $row <= 100; $row++) {
+            $validation = $sheet->getCell('M' . $row)->getDataValidation();
+            $validation->setType(\PhpOffice\PhpSpreadsheet\Cell\DataValidation::TYPE_LIST);
+            $validation->setErrorStyle(\PhpOffice\PhpSpreadsheet\Cell\DataValidation::STYLE_STOP);
+            $validation->setAllowBlank(true);
+            $validation->setShowInputMessage(true);
+            $validation->setShowErrorMessage(true);
+            $validation->setShowDropDown(true);
+            $validation->setErrorTitle('Input Error');
+            $validation->setError('Value is not allowed. Allowed values: NC, RECOMMENDATION, Point Closed.');
+            $validation->setPromptTitle('Select NC/Recommendation');
+            $validation->setPrompt('Please choose NC, RECOMMENDATION, or Point Closed.');
+            $validation->setFormula1('"NC,RECOMMENDATION,Point Closed"');
+        }
+
         // Auto-fit columns
         foreach ($sheet->getColumnIterator() as $column) {
             $sheet->getColumnDimension($column->getColumnIndex())->setAutoSize(true);
@@ -1326,36 +1689,43 @@ class GembaAudit extends BaseController
 
     private function calculateComputedFields(array $row)
     {
-        // Severity rating
+        // 1. Severity rating
         $sev = 1;
         if (!empty($row['risk_severity'])) {
-            $sevStr = strtolower($row['risk_severity']);
+            $sevStr = strtolower(trim($row['risk_severity']));
             if ($sevStr === 'low') $sev = 1;
             elseif ($sevStr === 'medium') $sev = 3;
             elseif ($sevStr === 'high') $sev = 4;
             $row['risk_severity_rating'] = $sev;
         } else {
-            $sev = isset($row['risk_severity_rating']) ? (int)$row['risk_severity_rating'] : 1;
+            $sev = (!empty($row['risk_severity_rating']) && is_numeric($row['risk_severity_rating'])) ? (int)$row['risk_severity_rating'] : 1;
+            $row['risk_severity_rating'] = $sev;
         }
 
-        // Probability rating
+        // 2. Probability rating
         $prob = 1;
         if (!empty($row['risk_probability'])) {
-            $probStr = strtolower($row['risk_probability']);
+            $probStr = strtolower(trim($row['risk_probability']));
             if ($probStr === 'low') $prob = 1;
             elseif ($probStr === 'medium') $prob = 3;
             elseif ($probStr === 'high') $prob = 4;
             $row['risk_probability_rating'] = $prob;
         } else {
-            $prob = isset($row['risk_probability_rating']) ? (int)$row['risk_probability_rating'] : 1;
+            $prob = (!empty($row['risk_probability_rating']) && is_numeric($row['risk_probability_rating'])) ? (int)$row['risk_probability_rating'] : 1;
+            $row['risk_probability_rating'] = $prob;
         }
 
-        // Combined ratings
+        // 3. Combined risk rating
         $row['combined_risk_rating'] = $sev * $prob;
-        $timesRepeated = isset($row['times_repeated']) ? (int)$row['times_repeated'] : 1;
+
+        // 4. Times repeated (minimum 1)
+        $timesRepeated = (!empty($row['times_repeated']) && is_numeric($row['times_repeated']) && (int)$row['times_repeated'] > 0) ? (int)$row['times_repeated'] : 1;
+        $row['times_repeated'] = $timesRepeated;
+
+        // 5. Combined risk freq
         $row['combined_risk_freq'] = $sev * $prob * $timesRepeated;
 
-        // Color multiplier
+        // 6. Color multiplier
         $colorMult = 1;
         if (!empty($row['color_code'])) {
             $row['color_code'] = ucfirst(strtolower(trim($row['color_code'])));
@@ -1366,18 +1736,19 @@ class GembaAudit extends BaseController
             elseif ($colorStr === 'green') $colorMult = 1;
         }
 
-        // Cost multiplier
+        // 7. Cost multiplier
         $costMult = 1;
         if (!empty($row['cost_type'])) {
-            $costStr = strtolower($row['cost_type']);
+            $costStr = strtolower(trim($row['cost_type']));
             if ($costStr === 'capex') $costMult = 3;
             elseif ($costStr === 'opex') $costMult = 1;
+            elseif ($costStr === 'operational action' || $costStr === 'operatiol action') $costMult = 1;
         }
 
-        // Final Rating
+        // 8. Final Rating
         $row['final_rating'] = $sev * $prob * $timesRepeated * $colorMult * $costMult;
 
-        // Dates & Computed Week/Month/Year logic
+        // 9. Dates & Computed Week/Month/Year logic
         if (!empty($row['audit_report_date'])) {
             $reportDate = strtotime($row['audit_report_date']);
             $row['weeknum_raised'] = date('W', $reportDate);
@@ -1387,8 +1758,15 @@ class GembaAudit extends BaseController
             $row['weeknum_yearmonth_raised'] = date('Y-m', $reportDate) . '-W' . date('W', $reportDate);
         }
 
-        // Point Closure logic
-        if (isset($row['point_status']) && $row['point_status'] === 'Closed' && !empty($row['closed_date'])) {
+        // 10. Point Closure logic
+        $isClosed = (isset($row['point_status']) && strtolower(trim($row['point_status'])) === 'closed');
+        if ($isClosed) {
+            $row['point_status'] = 'Closed';
+            $row['point_category'] = 'Closed Category';
+            
+            if (empty($row['closed_date'])) {
+                $row['closed_date'] = !empty($row['audit_report_date']) ? $row['audit_report_date'] : date('Y-m-d');
+            }
             $closedDate = strtotime($row['closed_date']);
             $row['weeknum_closed'] = date('W', $closedDate);
             $row['month_closed'] = date('Y-m-01', $closedDate);
@@ -1400,45 +1778,51 @@ class GembaAudit extends BaseController
                 $reportDate = strtotime($row['audit_report_date']);
                 $diff = $closedDate - $reportDate;
                 $days = floor($diff / (60 * 60 * 24));
-                $row['ageing_days'] = $days >= 0 ? $days : 0;
-                
-                if ($row['ageing_days'] <= 30) {
-                    $row['age_bracket'] = '<=30';
-                } elseif ($row['ageing_days'] <= 60) {
-                    $row['age_bracket'] = '.31-60';
-                } elseif ($row['ageing_days'] <= 90) {
-                    $row['age_bracket'] = '.61-90';
+                $row['ageing_days'] = $days >= 0 ? (int)$days : 0;
+            } else {
+                $row['ageing_days'] = 0;
+            }
+
+            if (empty($row['closure_status']) || $row['closure_status'] === 'NA') {
+                if (!empty($row['target_date'])) {
+                    $targetDate = strtotime($row['target_date']);
+                    $row['closure_status'] = ($closedDate <= $targetDate) ? 'On-Time' : 'Delayed';
                 } else {
-                    $row['age_bracket'] = '.>90';
+                    $row['closure_status'] = 'Closed';
                 }
             }
         } else {
+            $row['closed_date'] = null;
             $row['weeknum_closed'] = null;
             $row['month_closed'] = null;
             $row['year_month_closed'] = null;
             $row['weeknum_yearmonth_closed'] = null;
-            
-            if (isset($row['point_status']) && $row['point_status'] === 'Open') {
-                $row['closed_date'] = null; // Clear closed date if open
-                
-                // Ageing days for open points
-                if (!empty($row['audit_report_date'])) {
-                    $reportDate = strtotime($row['audit_report_date']);
-                    $diff = time() - $reportDate;
-                    $days = floor($diff / (60 * 60 * 24));
-                    $row['ageing_days'] = $days >= 0 ? $days : 0;
-                    
-                    if ($row['ageing_days'] <= 30) {
-                        $row['age_bracket'] = '<=30';
-                    } elseif ($row['ageing_days'] <= 60) {
-                        $row['age_bracket'] = '.31-60';
-                    } elseif ($row['ageing_days'] <= 90) {
-                        $row['age_bracket'] = '.61-90';
-                    } else {
-                        $row['age_bracket'] = '.>90';
-                    }
-                }
+            $row['closure_status'] = 'NA';
+            if (empty($row['point_category'])) {
+                $row['point_category'] = 'Open Category';
             }
+            
+            // Ageing days for open points
+            if (!empty($row['audit_report_date'])) {
+                $reportDate = strtotime($row['audit_report_date']);
+                $diff = time() - $reportDate;
+                $days = floor($diff / (60 * 60 * 24));
+                $row['ageing_days'] = $days >= 0 ? (int)$days : 0;
+            } else {
+                $row['ageing_days'] = 0;
+            }
+        }
+
+        // 11. Age bracket calculation
+        $ageing = (int)($row['ageing_days'] ?? 0);
+        if ($ageing <= 30) {
+            $row['age_bracket'] = '<=30';
+        } elseif ($ageing <= 60) {
+            $row['age_bracket'] = '.31-60';
+        } elseif ($ageing <= 90) {
+            $row['age_bracket'] = '.61-90';
+        } else {
+            $row['age_bracket'] = '.>90';
         }
 
         return $row;

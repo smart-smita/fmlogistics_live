@@ -89,51 +89,62 @@ $form_id= $button_id;
    <div class="card-body ">
       <form class="POST_AJAX" action="<?php echo isset($action)?$action:" "?>" method="post" >
          <div class ="row">
-            <?php if($_SESSION['role'] != 'Engineer'){?>
             <!-- change on 29/09/25 by darsh: user prefill select with session defaults -->
-            <div class="col-md-6 ">
-               <label class="control-label"><b>User</b> </label>
-               <select  class="form-control" name="engineer" id="engineer" required onchange='$("#user_id").val(this.value);$("#fcm_id").val($("#engineer option:selected").attr("fcm"));'>
-                  <option value=" ">Select</option>
-                  <?php if($_SESSION['role'] == 'Higher authority'){?>
-                  <option value="<?=$_SESSION['login_id'] ?>"  <?= isset($user_id) && $user_id==$_SESSION['login_id']?" selected='selected'":''?> fcm="<?=$_SESSION['fcm_id']?>">Self</option>
-                  <?php }?>
-                  <?php foreach($engineer_list as $engineer){?>
-                  <option value="<?=$engineer['user_id'] ?>"  <?= isset($user_id) && $user_id==$engineer['user_id']?" selected='selected'":''?> fcm="<?=$engineer['fcm_id'] ?>" ><?=$engineer['user_name'] ?></option>
-                  <?php }?>
+            <div class="col-md-6">
+                <label class="control-label"><b>Assessment For</b> <span class="text-danger">*</span></label><br>
+                <div class="form-check form-check-inline mt-2">
+                    <input class="form-check-input" type="radio" name="self_other" id="self_radio" value="0" checked onchange="toggleOtherEngineer()">
+                    <label class="form-check-label" for="self_radio">Self</label>
+                </div>
+                <div class="form-check form-check-inline mt-2">
+                    <input class="form-check-input" type="radio" name="self_other" id="other_radio" value="1" onchange="toggleOtherEngineer()">
+                    <label class="form-check-label" for="other_radio">Other Engineer</label>
+                </div>
+            </div>
+
+            <div class="col-md-6" id="other_engineer_div" style="display: none;">
+               <label class="control-label"><b>Other Engineer</b> <span class="text-danger">*</span></label>
+               <select class="form-control" name="other_engineer_id" id="other_engineer_id">
+                  <option value="">Select Engineer</option>
+                  <?php if(isset($all_engineers)) { 
+                      $loggedInUser = $_SESSION['login_id'] ?? 0;
+                      foreach($all_engineers as $engineer){
+                          if ((int)$engineer['user_id'] === (int)$loggedInUser) continue;
+                  ?>
+                  <option value="<?=$engineer['user_id'] ?>"><?=$engineer['user_name'] ?></option>
+                  <?php } } ?>
                </select>
             </div>
-            <?php } ?>
             <div class="col-md-6">
-               <label class="control-label"><b>Project Name</b></label>
+               <label class="control-label"><b>Project Name</b> <span class="text-danger">*</span></label>
                <input type="text" name="lmra_project_name" id="lmra_project_name" class="form-control" 
                   value="<?php echo isset($lmra_project_name)?$lmra_project_name:" "?>" required>
             </div>
             <div class="col-md-6">
-               <label class="control-label"><b>Job No</b></label>
+               <label class="control-label"><b>Job No</b> <span class="text-danger">*</span></label>
                <input type="text" name="lmra_job_no" id="lmra_job_no" class="form-control" 
                   value="<?php echo isset($lmra_job_no)?$lmra_job_no:" "?>" required>
             </div>
             <div class="col-md-6">
-                <label class="control-label"><b>Location</b></label>
+                <label class="control-label"><b>Location</b> <span class="text-danger">*</span></label>
                 <input type="text" name="lmra_location" id="lmra_location" class="form-control" placeholder="Search Location..." autocomplete="off"
                   value="<?php echo isset($lmra_location)?$lmra_location:""?>" required>
                    <!--<input type="text" id="lmra_location" placeholder="Search Location..." autocomplete="off">-->
                     <div id="result"></div>
             </div>
             <div class="col-md-6">
-               <label class="control-label"><b>Visit Date</b></label>
+               <label class="control-label"><b>Visit Date</b> <span class="text-danger">*</span></label>
                <input type="date" name="lmra_visit_date" id="lmra_visit_date"class="form-control" 
                   value="<?php echo isset($lmra_visit_date)?$lmra_visit_date:" "?>" required>
             </div>
             <div class="col-md-6">
-               <label class="control-label"><b>Time</b></label>
+               <label class="control-label"><b>Time</b> <span class="text-danger">*</span></label>
                <input type="time" name="lmra_visit_time" id="lmra_visit_time" class="form-control" 
                   value="<?php echo isset($lmra_visit_time)?$lmra_visit_time:" "?>" required>
             </div>
             <div class="col-md-6">
-               <label class="control-label"><b>Task to be perform</b></label>
-               <input type="text" name="task_to_be_perform" id="task_to_be_perform"class="form-control" 
+               <label class="control-label"><b>Task to be perform</b> <span class="text-danger">*</span></label>
+               <input type="text" name="task_to_be_perform" id="task_to_be_perform" class="form-control" autocomplete="off" 
                   value="<?php echo isset($task_to_be_perform)?$task_to_be_perform:" "?>" required>
                <input type="hidden" name="lmra_json_data" class="form-control"  id="lmra_json_data"
                   value="<?php echo isset($lmra_json_data)?$lmra_json_data:" "?>" >
@@ -148,6 +159,7 @@ $form_id= $button_id;
                <!--<label class="control-label"><b>Quotations</b></label>-->
                <!--<input type="text" name="sta_data" class="form-control" -->
                <!--   value="<?php echo isset($sta_data)?$sta_data:" "?>" required>-->
+               <div class="table-responsive">
                <table class="table">
                   <!--<thead>-->
                      <th>Quotations</th>
@@ -157,57 +169,38 @@ $form_id= $button_id;
                   <tbody class="dont_hide">
                      <tr value="do_i_have_the_right_ppes">
                         <td>Do i have right PPE'S?</td>
-                        <td><input type="checkbox" name="row1" id="row1" class="row1"
-                           value="yes" id="" onclick="check_if_selected(this);">
-                        </td>
-                        <td><input type="checkbox" name="row1" id="row1" class="row1"
-                           value="no" id="" onclick="check_if_selected(this);">
-                        </td>
+                        <td><input type="radio" name="sta_row1" value="yes" onchange="make_sda_json()"></td>
+                        <td><input type="radio" name="sta_row1" value="no" onchange="make_sda_json()"></td>
                      </tr>
                      <tr value="do_i_have_the_right_tools_and_parts">
                         <td>Do i have right tool and parts?</td>
-                        <td><input type="checkbox" name="row2" id="row2" class="row2"
-                           value="yes" id="" onclick="check_if_selected(this);">
-                        </td>
-                        <td><input type="checkbox" name="row2" id="row2" class="row2"
-                           value="no" id="" onclick="check_if_selected(this);">
-                        </td>
+                        <td><input type="radio" name="sta_row2" value="yes" onchange="make_sda_json()"></td>
+                        <td><input type="radio" name="sta_row2" value="no" onchange="make_sda_json()"></td>
                      </tr>
                      <tr value="look_around_you_is_it_safe">
                         <td>Look Around you, is it safe?</td>
-                        <td><input type="checkbox" name="row3" id="row3" class="row3"
-                           value="yes" id="">
-                        </td>
-                        <td><input type="checkbox" name="row3" name="row3" class="row3"
-                           value="no" id="" onclick="check_if_selected(this);">
-                        </td>
+                        <td><input type="radio" name="sta_row3" value="yes" onchange="make_sda_json()"></td>
+                        <td><input type="radio" name="sta_row3" value="no" onchange="make_sda_json()"></td>
                      </tr>
                      <tr value="do_i_know_what_to_do_if_things_go_wrong">
                         <td>Do you know what to do if things go wrong?</td>
-                        <td><input type="checkbox" name="row4" id="row4" class="row4"
-                           value="yes" id="" onclick="check_if_selected(this);">
-                        </td>
-                        <td><input type="checkbox" name="row4" id="row4" class="row4"
-                           value="no" id="" onclick="check_if_selected(this);">
-                        </td>
+                        <td><input type="radio" name="sta_row4" value="yes" onchange="make_sda_json()"></td>
+                        <td><input type="radio" name="sta_row4" value="no" onchange="make_sda_json()"></td>
                      </tr>
                      <tr value="what_are_the_biggest_risk_that_can_result_in_an_injury">
                         <td>what are the biggest risk that can result in an injury?</td>
-                        <td><input type="checkbox" name="row5" id="row5" class="row5"
-                           value="yes" id="" onclick="check_if_selected(this);">
-                        </td>
-                        <td><input type="checkbox" name="row5" id="row5" class="row5"
-                           value="no" id="" onclick="check_if_selected(this);">
-                        </td>
+                        <td><input type="radio" name="sta_row5" value="yes" onchange="make_sda_json()"></td>
+                        <td><input type="radio" name="sta_row5" value="no" onchange="make_sda_json()"></td>
                      </tr>
                   </tbody>
                </table>
+               </div>
             </div>
-            <div class="col-md-12 table-responsive">
+            <div class="col-md-12 table-responsive" id="lmra_dynamic_container">
                <?php  foreach($lmra_data as $key=>$lmra_head){ ?>
                <table class="table lmra_table">
                   <thead>
-                     <th><input type="checkbox"  onclick="main(this)"></th>
+                     <th><input type="checkbox"></th>
                      <th style="width: 500px;"><?=$lmra_head['lmra_category_text']?></th>
                      <th><?=$lmra_head['title1']?></th>
                      <th><?=$lmra_head['title2']?></th>
@@ -220,14 +213,14 @@ $form_id= $button_id;
                      <tr>
                         <td><?=$data_key+1 ?></td>
                         <td style="width: 500px;" ><?=$data_text['lmra_text'] ?></td>
-                        <td><input type="checkbox" name="lmra_cat_id_<?=$data_text['lmra_id']?>" value="<?=$data_text['title1'] ?>" id="" onclick="check_if_selected(this);"></td>
-                        <td><input type="checkbox" name="lmra_cat_id_<?=$data_text['lmra_id']?>" value="<?=$data_text['titlew'] ?>" id="" onclick="check_if_selected(this);"></td>
-                        <td><input type="checkbox" name="lmra_cat_id_<?=$data_text['lmra_id']?>" value="<?=$data_text['title3'] ?>" id="" onclick="check_if_selected(this);"></td>
-                        <?php $lmra_option=explode(',', $data_text['lmra_options'])?>
+                        <td><input type="radio" name="lmra_cat_id_<?=$data_text['lmra_id']?>" value="<?=$data_text['title1'] ?>" onchange="make_lmra_json()"></td>
+                        <td><input type="radio" name="lmra_cat_id_<?=$data_text['lmra_id']?>" value="<?=$data_text['titlew'] ?>" onchange="make_lmra_json()"></td>
+                        <td><input type="radio" name="lmra_cat_id_<?=$data_text['lmra_id']?>" value="<?=$data_text['title3'] ?>" onchange="make_lmra_json()"></td>
+                        <?php $lmra_option_vals=explode(',', $data_text['lmra_options'])?>
                         <td>
-                           <select name="" value="" id="" onchange="make_lmra_json()">
-                              <?php foreach($lmra_option as $key_cont=> $option) { ?>
-                              <option value="<?=$key_cont?>"><?=$option?></option>
+                           <select name="lmra_sev_<?=$data_text['lmra_id']?>" onchange="make_lmra_json()" class="form-select">
+                              <?php foreach($lmra_option_vals as $key_cont=> $option) { ?>
+                              <option value="<?=trim($option)?>"><?=trim($option)?></option>
                               <?php } ?>
                            </select>
                         </td>
@@ -316,10 +309,22 @@ var validator = FormValidation.formValidation(form,validation_object);
         $("#ajax_click").on("click",function(){
                 var button = $(this);
                 var url = $(this).attr("data-ajax-url");
-        if (validator) {
-        validator.validate().then(function (status) {
-            if (status == 'Valid') {
-                var data_to_send =$("#<?=$form_id?>_form").serializeArray();
+                
+                // Custom Validation
+                $('.error-msg').remove();
+                $("#<?=$form_id?>_form").find('.is-invalid').removeClass('is-invalid');
+                var isValid = true;
+                
+                $("#<?=$form_id?>_form").find('[required]').each(function(){
+                    if($(this).val() === null || $(this).val().trim() === ""){
+                        isValid = false;
+                        $(this).addClass('is-invalid');
+                        $(this).after('<div class="text-danger error-msg mt-1" style="font-size: 0.85rem;">This field is required</div>');
+                    }
+                });
+
+                if (isValid) {
+                    var data_to_send =$("#<?=$form_id?>_form").serializeArray();
                     var formData = {};
                     $.each(data_to_send, function(i, field){
                         if(field.value.trim() != ""){
@@ -327,35 +332,35 @@ var validator = FormValidation.formValidation(form,validation_object);
                         }
                     });
 
-                //ajax_call(url,data_to_send,button,success_function)
                     ajax_call(url,formData,button,function(responce){
                         try{
-                            responce = JSON.parse(responce);
-                            if(responce.status==1){
-                                    toastr.success(responce.message);
-                                    form.reset();
-                                    $("#<?=$form_id?>").modal("hide");
-                                    reload_data_table();
-                            }else{
-                                    toastr.warning(responce.message);
-                                }
-                            }catch(error){
-                                toastr.error(error);
+                            if (typeof responce === 'string') {
+                                responce = JSON.parse(responce);
                             }
+                            if(responce.status==1){
+                                toastr.success(responce.message);
+                                form.reset();
+                                $("#<?=$form_id?>").modal("hide");
+                                reload_data_table();
+                            }else{
+                                toastr.warning(responce.message);
+                            }
+                        }catch(error){
+                            toastr.error(error);
+                        }
                     });
-                }else{
-                    // not validate 
+                } else {
+                    toastr.warning("Please fill all mandatory fields");
                 }
-        });
-        }
-    
 });
 function edit_id(obj,id){
     var url = $(obj).attr("data-ajax-url");
     var formData={"id":id};
     ajax_call(url,formData,$(obj),function(responce){
                         try{
-                            responce = JSON.parse(responce);
+                            if (typeof responce === 'string') {
+                                responce = JSON.parse(responce);
+                            }
                             if(responce.status==1){
                                     toastr.success(responce.message);
                                     //form.reset();
@@ -379,7 +384,7 @@ function edit_id(obj,id){
                                         $("#<?=$form_id?>").find('.dont_hide tr').each(function(){
                                             var key = $(this).attr('value');
                                             var val = sda[key];
-                                            var name = $(this).find('input[type="checkbox"]').first().attr('name');
+                                            var name = $(this).find('input').first().attr('name');
                                             if(val === true){
                                                 $("#<?=$form_id?>").find('input[name="'+name+'"][value="yes"]').prop('checked', true);
                                             }else if(val === false){
@@ -391,28 +396,79 @@ function edit_id(obj,id){
                                     }catch(e){}
                                     // change on 29/09/25 by darsh: prefill LMRA table selections from lmra_json_data
                                     try{
+                                        
+                                        // Handle self/other engineer logic
+                                        if (responce.data.self_other !== null && responce.data.self_other !== undefined) {
+                                            if (responce.data.self_other == "1") {
+                                                $("#other_radio").prop("checked", true);
+                                                $("#other_engineer_div").show();
+                                                $("#other_engineer_id").val(responce.data.other_engineer_id);
+                                            } else {
+                                                $("#self_radio").prop("checked", true);
+                                                $("#other_engineer_div").hide();
+                                                $("#other_engineer_id").val("");
+                                            }
+                                        } else {
+                                            // Legacy data without self_other, default to self
+                                            $("#self_radio").prop("checked", true);
+                                            $("#other_engineer_div").hide();
+                                            $("#other_engineer_id").val("");
+                                        }
+                                        
                                         var lmra = responce.data.lmra_json_data ? JSON.parse(responce.data.lmra_json_data) : [];
-                                        $("#<?=$form_id?>").find('.lmra_table').each(function(tIndex){
-                                            var body = $(this).find('tbody tr');
-                                            var header = lmra[tIndex] || {};
-                                            var items = header.lmrsFooterForms || [];
-                                            body.each(function(rIndex){
-                                                var it = items[rIndex] || {};
-                                                // three checkboxes appear in order: Yes, No, NA
-                                                var cbs = $(this).find('input[type="checkbox"][name^="lmra_cat_id_"]');
-                                                if(cbs.length >= 3){
-                                                    $(cbs[0]).prop('checked', !!it.cb_1_footer);
-                                                    $(cbs[1]).prop('checked', !!it.cb_2_footer);
-                                                    $(cbs[2]).prop('checked', !!it.cb_3_footer);
-                                                }
-                                                var sel = $(this).find('select');
-                                                if(sel.length){ sel.val(it.selected_string_3 != null ? it.selected_string_3 : sel.val()); }
+                                        if (lmra.length > 0) {
+                                            var newHtml = "";
+                                            lmra.forEach(function(header, tIndex) {
+                                                newHtml += '<div class="table-responsive">';
+                                                newHtml += '<table class="table lmra_table">';
+                                                newHtml += '<thead><tr>';
+                                                var headerChecked = header.header ? "checked" : "";
+                                                newHtml += '<th><input type="checkbox" ' + headerChecked + '></th>';
+                                                newHtml += '<th style="width: 500px;">' + (header.title_1_header || "") + '</th>';
+                                                newHtml += '<th>' + (header.title_2_header || "") + '</th>';
+                                                newHtml += '<th>' + (header.title_3_header || "") + '</th>';
+                                                newHtml += '<th>' + (header.title_4_header || "") + '</th>';
+                                                newHtml += '<th>' + (header.title_5_header || "") + '</th>';
+                                                newHtml += '</tr></thead>';
+                                                
+                                                var tbodyClass = header.header ? "show_data" : "hide_data";
+                                                newHtml += '<tbody class="' + tbodyClass + '">';
+                                                var items = header.lmrsFooterForms || [];
+                                                items.forEach(function(it, rIndex) {
+                                                    newHtml += '<tr>';
+                                                    newHtml += '<td>' + (it.id_footer || "") + '</td>';
+                                                    newHtml += '<td style="width: 500px;">' + (it.title_1_footer || "") + '</td>';
+                                                    
+                                                    var rName = "lmra_cat_id_hist_" + tIndex + "_" + rIndex;
+                                                    var c1 = it.cb_1_footer ? "checked" : "";
+                                                    var c2 = it.cb_2_footer ? "checked" : "";
+                                                    var c3 = it.cb_3_footer ? "checked" : "";
+                                                    
+                                                    newHtml += '<td><input type="radio" name="'+rName+'" value="'+(header.title_2_header || "")+'" '+c1+' onchange="make_lmra_json()"></td>';
+                                                    newHtml += '<td><input type="radio" name="'+rName+'" value="'+(header.title_3_header || "")+'" '+c2+' onchange="make_lmra_json()"></td>';
+                                                    newHtml += '<td><input type="radio" name="'+rName+'" value="'+(header.title_4_header || "")+'" '+c3+' onchange="make_lmra_json()"></td>';
+                                                    
+                                                    newHtml += '<td><select class="form-select" onchange="make_lmra_json()">';
+                                                    var opts = it.strings_3 || [];
+                                                    opts.forEach(function(opt) {
+                                                        var sel = (opt.string === it.selected_string_3) ? "selected" : "";
+                                                        newHtml += '<option value="'+opt.string+'" '+sel+'>'+opt.string+'</option>';
+                                                    });
+                                                    newHtml += '</select></td>';
+                                                    newHtml += '</tr>';
+                                                });
+                                                newHtml += '</tbody></table></div>';
                                             });
-                                        });
+                                            $("#<?=$form_id?>").find("#lmra_dynamic_container").html(newHtml);
+                                        } else {
+                                            // Fallback to default structure
+                                            $("#<?=$form_id?>").find("#lmra_dynamic_container").html(default_lmra_html);
+                                        }
+
                                         // also restore hidden json fields so subsequent saves preserve state
                                         $("#<?=$form_id?>").find('#lmra_json_data').val(responce.data.lmra_json_data || '');
                                         $("#<?=$form_id?>").find('#sta_data').val(responce.data.sta_data || '');
-                                    }catch(e){}
+                                    }catch(e){ console.error(e); }
 
                                 
                                     $("#<?=$form_id?>").find("#ajax_click").attr("data-ajax-url",$("#<?=$form_id?>").find("#ajax_click").attr("data-ajax-add-url")+"/"+id);
@@ -443,6 +499,66 @@ function delete_row(obj,id){
             //   }
             });
 
+}
+
+function change_lmra_status(url, title, button) {
+    Swal.fire({
+        title: 'Confirm ' + title,
+        text: 'Are you sure you want to ' + title.toLowerCase() + ' this LMRA?',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Yes, ' + title,
+    }).then((result) => {
+        if (result.isConfirmed) {
+            url_call_ajax(url, button);
+        }
+    });
+}
+
+function change_lmra_status_with_comment(url, title, placeholder, button) {
+    Swal.fire({
+        title: title,
+        text: 'Please provide ' + placeholder,
+        input: 'textarea',
+        inputPlaceholder: placeholder,
+        showCancelButton: true,
+        confirmButtonText: 'Submit',
+        preConfirm: (comment) => {
+            if (!comment || comment.trim() === '') {
+                Swal.showValidationMessage('Comment is required');
+                return false;
+            }
+            return comment;
+        }
+    }).then((result) => {
+        if (result.isConfirmed) {
+            var formData = { rejection_comment: result.value };
+            ajax_call(url, formData, button, function(responce) {
+                try {
+                    if (typeof responce === 'string') {
+                        responce = JSON.parse(responce);
+                    }
+                    if (responce.status == 1) {
+                        toastr.success(responce.message);
+                        reload_data_table();
+                    } else {
+                        toastr.warning(responce.message);
+                    }
+                } catch(error) {
+                    toastr.error(error);
+                }
+            });
+        }
+    });
+}
+
+function toggleOtherEngineer() {
+    if ($("#other_radio").is(":checked")) {
+        $("#other_engineer_div").show();
+    } else {
+        $("#other_engineer_div").hide();
+        $("#other_engineer_id").val("");
+    }
 }
 
         $(document).ready(function() {
@@ -581,70 +697,65 @@ function delete_row(obj,id){
        var sda_body=$(".dont_hide");
        var sda_json={};
        sda_body.find('tr').each(function(){
-           var input_cheked=$(this).find('td:eq(1) > input').attr('name');
-           var final_value=false;
-           $("."+input_cheked).each(function(){
-               if($(this).prop('checked')==true && $(this).val()!="no" ){      
-                final_value=true;
-               }
-           });
-           
-          sda_json[$(this).attr('value')]=final_value;
+           var input_name=$(this).find('td:eq(1) > input').attr('name');
+           var selected_val = $("input[name='"+input_name+"']:checked").val();
+           var final_value = null;
+           if (selected_val === 'yes') {
+               final_value = true;
+           } else if (selected_val === 'no') {
+               final_value = false;
+           }
+           sda_json[$(this).attr('value')]=final_value;
        });
        $("#sta_data").val(JSON.stringify(sda_json));
    }
    
    
 
+    // Removed old check_if_selected as radio buttons are now used for mutually exclusive selection
    
-   function check_if_selected(obj){
-     $(obj).on('change', function() {
-   $('input[name="'+$(obj).attr('name')+'"]').not(this).prop('checked', false);
-   });
-       make_lmra_json();
-       
-       setTimeout(function() {
-          make_sda_json();
-            }, 100);
-       
-   } 
-   
-   function main(obj){
-       
-       obj = $(obj).parent().parent();
-      var chcck_box=$(obj).find("th:eq(0)").find('input');
-      var tbody=$(obj).parents("table").find("tbody");
-      if(chcck_box.prop("checked")==false){
-          chcck_box.prop("checked",true);
-          tbody.removeClass('hide_data').addClass('show_data');
+   $(document).on("click", "table.lmra_table thead", function(e) {
+      var chcck_box = $(this).find("th:eq(0) input[type='checkbox']");
+      var tbody = $(this).parents("table").find("tbody");
+      
+      // If the user clicked the thead but NOT the checkbox itself, toggle the checkbox manually
+      if(e.target !== chcck_box[0]) {
+          chcck_box.prop("checked", !chcck_box.prop("checked"));
       }
-      else{
-          chcck_box.prop("checked",false);
+      
+      if(chcck_box.prop("checked") == true){
+          tbody.removeClass('hide_data').addClass('show_data');
+      } else {
           tbody.removeClass('show_data').addClass("hide_data");
       }
-
-   
-   }
-
-   $("thead").on("click", function() {
-      var chcck_box=$(this).find("th:eq(0)").find('input');
-      var tbody=$(this).parents("table").find("tbody");
-      if(chcck_box.prop("checked")==false){
-          chcck_box.prop("checked",true);
-        //   tbody.addClass('show_data');
-          tbody.removeClass('hide_data').addClass('show_data');
-      }
-      else{
-          chcck_box.prop("checked",false);
-        //   tbody.removeClass('show_data');
-                  tbody.removeClass('show_data').addClass("hide_data");
-
-      }
-    ;
    });
    
+   var default_lmra_html = "";
+   $(document).ready(function(){
+       default_lmra_html = $("#lmra_dynamic_container").html();
+       make_lmra_json();
+   });
    
-   $(document).ready(main,make_lmra_json());
+   $("#<?=$form_id?>").on('hidden.bs.modal', function () {
+       try {
+           if (form && typeof form.reset === 'function') {
+               form.reset();
+           }
+       } catch(e) {}
+       try {
+           if (typeof validator !== 'undefined' && validator && typeof validator.resetForm === 'function') {
+               validator.resetForm(true);
+           }
+       } catch(e) {}
+       $('.error-msg').remove();
+       $("#<?=$form_id?>_form").find('.is-invalid').removeClass('is-invalid');
+       // Reset HTML structure to active masters for new entries
+       $("#<?=$form_id?>").find("#lmra_dynamic_container").html(default_lmra_html);
+       $("#<?=$form_id?>").find('#lmra_json_data').val('');
+       $("#<?=$form_id?>").find('#sta_data').val('');
+       $("#<?=$form_id?>").find("#ajax_click").attr("data-ajax-url", $("#<?=$form_id?>").find("#ajax_click").attr("data-ajax-add-url"));
+   });
+
    
 </script>
 <style>

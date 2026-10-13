@@ -11,28 +11,6 @@ class ClientSiteDependencySyncService
     public function __construct()
     {
         $this->db = Database::connect();
-        $this->ensureSchema();
-    }
-
-    /**
-     * Ensures audit log table exists for dependency sync tracking.
-     */
-    private function ensureSchema()
-    {
-        if (!$this->db->tableExists('alert_client_dependency_sync_logs')) {
-            $sql = "CREATE TABLE IF NOT EXISTS alert_client_dependency_sync_logs (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                module VARCHAR(50) NOT NULL,
-                entity_name VARCHAR(255) NOT NULL,
-                updated_by_user_id INT NULL,
-                updated_by_user_name VARCHAR(255) NULL,
-                affected_records INT DEFAULT 0,
-                changes_json TEXT NULL,
-                affected_tables_json TEXT NULL,
-                created_at DATETIME NOT NULL
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;";
-            $this->db->query($sql);
-        }
     }
 
     /**
@@ -78,8 +56,10 @@ class ClientSiteDependencySyncService
 
         // First handle rename via ClientSiteRenameService if client_name changed
         if (!empty($newClientName) && !empty($oldClientName) && $newClientName !== $oldClientName) {
+            $clientId = !empty($oldData['client_id']) ? (int)$oldData['client_id'] : (!empty($oldData['id']) ? (int)$oldData['id'] : (!empty($newData['client_id']) ? (int)$newData['client_id'] : (!empty($newData['id']) ? (int)$newData['id'] : null)));
+            $renameRemarks = trim($newData['rename_remarks'] ?? $newData['reassignment_reason'] ?? $newData['remarks'] ?? '');
             $renameService = new ClientSiteRenameService();
-            $renameRes = $renameService->renameOeClient($oldClientName, $newClientName, $userId, $userName);
+            $renameRes = $renameService->renameOeClient($oldClientName, $newClientName, $userId, $userName, $clientId, $renameRemarks);
             if ($renameRes['status'] === 0) {
                 return $renameRes;
             }
@@ -181,17 +161,6 @@ class ClientSiteDependencySyncService
             }
         }
 
-        // Log operation
-        $this->db->table('alert_client_dependency_sync_logs')->insert([
-            'module' => 'oe_client',
-            'entity_name' => $effectiveClientName,
-            'updated_by_user_id' => $userId,
-            'updated_by_user_name' => $userName,
-            'affected_records' => $totalAffected,
-            'changes_json' => json_encode($changes),
-            'affected_tables_json' => json_encode($affectedCounts),
-            'created_at' => date('Y-m-d H:i:s')
-        ]);
 
         $this->db->transComplete();
 
@@ -241,8 +210,10 @@ class ClientSiteDependencySyncService
 
         // First handle rename via ClientSiteRenameService if client_name changed
         if (!empty($newClientName) && !empty($oldClientName) && $newClientName !== $oldClientName) {
+            $clientId = !empty($oldData['client_id']) ? (int)$oldData['client_id'] : (!empty($oldData['id']) ? (int)$oldData['id'] : (!empty($newData['client_id']) ? (int)$newData['client_id'] : (!empty($newData['id']) ? (int)$newData['id'] : null)));
+            $renameRemarks = trim($newData['rename_remarks'] ?? $newData['reassignment_reason'] ?? $newData['remarks'] ?? '');
             $renameService = new ClientSiteRenameService();
-            $renameRes = $renameService->renameHseClient($oldClientName, $newClientName, $userId, $userName);
+            $renameRes = $renameService->renameHseClient($oldClientName, $newClientName, $userId, $userName, $clientId, $renameRemarks);
             if ($renameRes['status'] === 0) {
                 return $renameRes;
             }
@@ -344,7 +315,6 @@ class ClientSiteDependencySyncService
         // 4. Sync Gemba Audits (alert_gemba_audits)
         if ($this->db->tableExists('alert_gemba_audits')) {
             $gembaAuditData = [];
-            if (isset($changes['location'])) $gembaAuditData['site_name'] = $newLocation;
             if (isset($changes['region'])) $gembaAuditData['region'] = $newRegion;
 
             $gembaAuditData = $this->filterExistingFields('alert_gemba_audits', $gembaAuditData);
@@ -365,17 +335,6 @@ class ClientSiteDependencySyncService
             }
         }
 
-        // Log operation
-        $this->db->table('alert_client_dependency_sync_logs')->insert([
-            'module' => 'hse_client',
-            'entity_name' => $effectiveClientName,
-            'updated_by_user_id' => $userId,
-            'updated_by_user_name' => $userName,
-            'affected_records' => $totalAffected,
-            'changes_json' => json_encode($changes),
-            'affected_tables_json' => json_encode($affectedCounts),
-            'created_at' => date('Y-m-d H:i:s')
-        ]);
 
         $this->db->transComplete();
 
@@ -602,17 +561,6 @@ class ClientSiteDependencySyncService
             }
         }
 
-        // Log operation
-        $this->db->table('alert_client_dependency_sync_logs')->insert([
-            'module' => 'location_master',
-            'entity_name' => $effectiveLocName,
-            'updated_by_user_id' => $userId,
-            'updated_by_user_name' => $userName,
-            'affected_records' => $totalAffected,
-            'changes_json' => json_encode($changes),
-            'affected_tables_json' => json_encode($affectedCounts),
-            'created_at' => date('Y-m-d H:i:s')
-        ]);
 
         $this->db->transComplete();
 

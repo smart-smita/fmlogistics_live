@@ -14,25 +14,20 @@
 <?php $this->section("main_body"); ?>
 
 <?php
-//print_r($details['0']);
 $details=$details['0'];
-$pending_message = '<span class="badge badge-danger">Pending</span>';
-$verified_message = 'Verified';
-$active_message = '<span class="badge badge-success">Active</span>';
-$pending_message_nm = '<span class="badge badge-danger">Pending</span>';
-
-    $Requested_message = '<span class="badge badge-warning">Request required</span>';
-    $open_message = '<span class="badge badge-warning">Open</span>';
-    $close_message = '<span class="badge badge-success">Close</span>';
-    $cancle_message = '<span class="badge badge-secondary">Cancle</span>';
-
-   $status= ($details ['status'] == 0) ? $pending_message : ($details ['status'] == 1 ? $verified_message: ($details ['status'] == 2 ? $active_message : ($details ['status'] == 3 ? $deactivated_message : "")));
-
+$status_num = (int)$details['status'];
+if ($status_num == 0) { $status = '<span class="badge badge-warning">Pending</span>'; }
+elseif ($status_num == 1) { $status = '<span class="badge badge-info">Verify</span>'; }
+elseif ($status_num == 2) { $status = '<span class="badge badge-primary">Inprogress</span>'; }
+elseif ($status_num == 3) { $status = '<span class="badge badge-success">Close</span>'; }
+elseif ($status_num == 4) { $status = '<span class="badge badge-danger">Reject</span>'; }
+else { $status = '<span class="badge badge-secondary">Unknown</span>'; }
 ?>
 
-<div class="row">
-	<div class="col-sm-12">
-		<h4 class="page-title"><?=(isset($page_title))?$page_title:""?></h4>
+<div class="row mb-4">
+	<div class="col-sm-12 d-flex justify-content-between align-items-center">
+		<h4 class="page-title m-0"><?=(isset($page_title))?$page_title:""?></h4>
+		<a href="<?=base_url('Masters/Sixs_audit')?>" class="btn btn-secondary"><i class="fa fa-arrow-left me-2"></i> Back</a>
 	</div>
 </div>
 
@@ -46,7 +41,8 @@ $pending_message_nm = '<span class="badge badge-danger">Pending</span>';
                                 <div class="col-md-6">
                                     <h4 class="card-title">Reporting Location</h4>
                                     <blockquote class="blockquote">
-                                    <table class="table table-hover">
+                                    <div class="table-responsive">
+                                    <table class="table table-hover table-bordered mb-0">
                                                     <tbody>
                                                         <tr>
                                                             <th class="table-secondary ">Location</th>
@@ -63,7 +59,11 @@ $pending_message_nm = '<span class="badge badge-danger">Pending</span>';
                                                          <tr>
                                                             <th class="table-secondary">Nc Photo</th>
                                                             <td>
-                                                           <?=$details['nc_photo']?>
+                                                                <?php if(!empty($details['nc_photo'])) { ?>
+                                                                    <a href="<?=base_url($details['nc_photo'])?>" target="_blank">
+                                                                        <img src="<?=base_url($details['nc_photo'])?>" class="img-thumbnail" style="max-height:100px; max-width:100%;">
+                                                                    </a>
+                                                                <?php } else { echo "N/A"; } ?>
                                                             </td>
                                                         </tr>
                                                           <tr>
@@ -97,56 +97,60 @@ $pending_message_nm = '<span class="badge badge-danger">Pending</span>';
                                                             <?=$details['target_date']?>
                                                             </td>
                                                         </tr>
-                                                         
                                                         <tr>
                                                             <th class="table-secondary">Status</th>
                                                             <td>
-                                                            <?=$details['status']?>
+                                                            <?=$status?>
                                                             </td>
                                                         </tr>
 
                                                       
                                                     </tbody>
-                                    </table>			
-                                <!-- <footer>Someone famous in <cite title="Source Title">Source Title</cite></footer> -->
+                                    </table>
+                                    </div>
 									</blockquote>
                                     </div>
                                 <div class="col-md-6">
                                 <h4 class="card-title">Repoter Details</h4>
                                 <blockquote class="blockquote">
-                                    <table class="table table-hover">
+                                    <div class="table-responsive">
+                                    <table class="table table-hover table-bordered mb-0">
                                                     <tbody>
                                                         <tr>
                                                             <th class="table-secondary ">Name</th>
                                                             <td >
-                                                                <?=$details['user_name']?>
+                                                                <?=($details['user_id'] == 0) ? "Super Admin" : $details['user_name']?>
                                                             </td>
                                                         </tr>
                                                         <tr>
-                                                            <th class="table-secondary">Eamil</th>
+                                                            <th class="table-secondary">Email</th>
                                                             <td>
-                                                            <?=$details['user_email']?>
+                                                            <?=($details['user_id'] == 0) ? "admin@fmlogistic.com" : $details['user_email']?>
                                                             </td>
                                                         </tr>
 
                                                         <tr>
                                                             <th class="table-secondary">Contact</th>
                                                             <td>
-                                                            <?=$details['user_contact']?>
+                                                            <?=($details['user_id'] == 0) ? "-" : $details['user_contact']?>
                                                             </td>
                                                         </tr>
 
                                                         <tr>
                                                             <th class="table-secondary">Designation</th>
                                                             <td>
-                                                            <?=$details['user_designation']?>
+                                                            <?=($details['user_id'] == 0) ? "Administrator" : $details['user_designation']?>
                                                             </td>
                                                         </tr>
                                                         
                                                           <tr>
                                                             <th class="table-secondary">After Photo</th>
                                                             <td>
-                                                            <?=$details['after_photo']?>
+                                                                <?php if(!empty($details['after_photo'])) { ?>
+                                                                    <a href="<?=base_url($details['after_photo'])?>" target="_blank">
+                                                                        <img src="<?=base_url($details['after_photo'])?>" class="img-thumbnail" style="max-height:100px; max-width:100%;">
+                                                                    </a>
+                                                                <?php } else { echo "N/A"; } ?>
                                                             </td>
                                                         </tr>
                                                          <tr>
@@ -155,28 +159,11 @@ $pending_message_nm = '<span class="badge badge-danger">Pending</span>';
                                                             <?=$details['details_of_ca_pa']?>
                                                             </td>
                                                         </tr>
-                                                         <tr>
-                                                            <th class="table-secondary">Department Status</th>
-                                                            <td>
-                                                            <?=$details['department_status']?>
-                                                            </td>
-                                                        </tr>
-                                                         <tr>
-                                                            <th class="table-secondary">Final Status Soi</th>
-                                                            <td>
-                                                            <?=$details['final_status_soi']?>
-                                                            </td>
-                                                        </tr>
-                                                        <tr>
-                                                            <th class="table-secondary">Status</th>
-                                                            <td>
-                                                            <?=$status?>
-                                                            </td>
-                                                        </tr>
+
                                                     
                                                     </tbody>
-                                    </table>			
-                                <!-- <footer>Someone famous in <cite title="Source Title">Source Title</cite></footer> -->
+                                    </table>
+                                    </div>
 									</blockquote>
                                     </div>
                                    
@@ -221,7 +208,7 @@ $pending_message_nm = '<span class="badge badge-danger">Pending</span>';
                         <a class="btn btn-primary btn-block btn-gradient waves-effect waves-light" href="#">
                             <span class="gradient">
                                 <i class="batch-icon batch-icon-user-alt-2"></i>
-                                <?=$details['user_name']?>
+                                <?=($details['user_id'] == 0) ? "Super Admin" : $details['user_name']?>
                             </span>
                         </a>
                     </div>
@@ -249,6 +236,7 @@ $pending_message_nm = '<span class="badge badge-danger">Pending</span>';
 </div>
 
 <div class="col-md-9 col-lg-9 col-xl-9 mb-5" style="background-color: #fff; padding: 20px; border-radius: 5px;">
+    <?php if($details['status'] != 3 && $details['status'] != 5): ?>
     <h1 class="card-user-profile-name">Write Comment</h1>
     <form action="<?=$form_action?>" method="post">
         <div class="comment-block">
@@ -262,34 +250,45 @@ $pending_message_nm = '<span class="badge badge-danger">Pending</span>';
         <input type="text" style="visibility:hidden" value="<?=$details['audit_id']?>" name="audit_id">
         <input type="text" style="visibility:hidden" value="<?=$login_id?>" name="user_id">
     </form>
+    <?php else: ?>
+    <div class="text-center p-4 bg-light rounded mb-4">
+        <span class="text-muted fw-bold"><i class="fa fa-lock me-2"></i> Chat is disabled for this closed record.</span>
+    </div>
+    <?php endif; ?>
 
     <hr>
     <ul class="list-unstyled mt-5">
         <?php foreach ($sixs_comments as $rows) { ?>
-            <li class="media mb-3">
-                <div class="row">
-                <div class="col-md-2 col-lg-2 col-xl-2 ">
-                <div class="profile-picture ">
-                    <img src="<?=base_url('assets/images/profile.png')?>" width="50" height="50">
-                </div>
-                </div>
-            <div class="col-md-10 col-lg-10 col-xl-10 mb-5">
-                <div class="media-body">
-                    <div class="media-title mt-0 mb-1">
-                        <a href="#"><?=$rows['user_name']?></a><br><?=$rows['user_designation']?> <small><?=$rows['default_date']?></small>
+            <?php 
+                $c_name = ($rows['user_id'] == 0) ? "Super Admin" : $rows['user_name'];
+                $c_desig = ($rows['user_id'] == 0) ? "Administrator" : $rows['user_designation'];
+            ?>
+            <li class="media mb-4 p-3" style="border: 1px solid #e1e1e1; border-radius: 8px; background: #f9f9f9;">
+                <div class="row w-100">
+                    <div class="col-md-1 text-center">
+                        <div class="profile-picture">
+                            <img src="<?=base_url('assets/images/profile.png')?>" width="45" height="45" class="rounded-circle">
+                        </div>
                     </div>
-                    <?php if ($rows['comment_type'] == 1) { ?>
-                        <a href="<?=$rows['comment_text']?>">
-                            <img src="<?=$rows['comment_text']?>" class="img-fluid img-thumbnail">
-                        </a>
-                    <?php } else { ?>
-                        <?=$rows['comment_text']?>
-                    <?php } ?>
-                </div>
-                </div>
+                    <div class="col-md-11">
+                        <div class="media-body">
+                            <div class="media-title mt-0 mb-2">
+                                <strong class="text-primary"><?=$c_name?></strong> <span class="badge badge-light text-muted"><?=$c_desig?></span>
+                                <small class="float-right text-muted"><?=$rows['default_date']?></small>
+                            </div>
+                            <div class="comment-content mt-2" style="font-size: 14px; color: #333;">
+                                <?php if ($rows['comment_type'] == 1) { ?>
+                                    <a href="<?=base_url($rows['comment_text'])?>" target="_blank">
+                                        <img src="<?=base_url($rows['comment_text'])?>" class="img-fluid img-thumbnail" style="max-height: 150px;">
+                                    </a>
+                                <?php } else { ?>
+                                    <?=nl2br(htmlspecialchars($rows['comment_text']))?>
+                                <?php } ?>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </li>
-            <hr>
         <?php } ?>
     </ul>
 </div>

@@ -22,7 +22,6 @@ $form_id = $button_id;
 <?php $this->endSection(); ?>
 
 <?php $this->section("modals_section"); ?>
-<?= view('Master/nc_action_history_modal'); ?>
 
 <!--begin::Modal - Create App-->
 <div class="modal fade" id="<?= $button_id ?>" tabindex="-1" aria-hidden="true">

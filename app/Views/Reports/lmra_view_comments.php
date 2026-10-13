@@ -18,17 +18,21 @@
 if(isset($details) && !empty($details))
 	$details=$details[0];
 
-$pending_message = '<span class="badge badge-warning">Pending</span>';
-$verified_message = '<span class="badge badge-info">Verified</span>';
-$active_message = '<span class="badge badge-success">Active</span>';
-$deactivated_message='<span class="badge badge-danger">Deactive</span>';
-$status= ($details ['status'] == 0) ? $pending_message : ($details ['status'] == 1 ? $verified_message: ($details ['status'] == 2 ? $active_message : ($details ['status'] == 3 ? $deactivated_message : "")));
-$lmra_status= ($details ['status'] == 0) ? $pending_message : ($details ['status'] == 1 ? $verified_message: ($details ['status'] == 2 ? $active_message : ($details ['status'] == 3 ? $deactivated_message : "")));
+$status_map = [
+    0 => '<span class="badge badge-warning">Pending</span>',
+    1 => '<span class="badge badge-info">Verified</span>',
+    2 => '<span class="badge badge-primary">Open</span>',
+    3 => '<span class="badge badge-danger">Cancelled</span>',
+    4 => '<span class="badge badge-warning">Requested</span>',
+    5 => '<span class="badge badge-success">Close</span>'
+];
+$lmra_status = isset($status_map[$details['status']]) ? $status_map[$details['status']] : '';
 
 ?>
-<div class="row">
-	<div class="col-sm-12">
-		<h4 class="page-title"><?=(isset($page_title))?$page_title:""?></h4>
+<div class="row mb-4">
+	<div class="col-sm-12 d-flex justify-content-between align-items-center">
+		<h4 class="page-title m-0"><?=(isset($page_title))?$page_title:""?></h4>
+		<a href="<?=base_url('Reports/Lmra_reports')?>" class="btn btn-secondary"><i class="fa fa-arrow-left me-2"></i> Back</a>
 	</div>
 </div>
 
@@ -94,9 +98,23 @@ $lmra_status= ($details ['status'] == 0) ? $pending_message : ($details ['status
                                                             </td>
                                                         </tr>
                                                         <tr>
+                                                            <th class="table-secondary">Assessment For</th>
+                                                            <td>
+                                                                <?=(isset($details['self_other']) && $details['self_other'] == '1') ? 'Other Engineer' : 'Self'?>
+                                                            </td>
+                                                        </tr>
+                                                        <?php if(isset($details['self_other']) && $details['self_other'] == '1') { ?>
+                                                        <tr>
+                                                            <th class="table-secondary">Engineer Name</th>
+                                                            <td>
+                                                                <?=$details['other_engineer_name']?>
+                                                            </td>
+                                                        </tr>
+                                                        <?php } ?>
+                                                        <tr>
                                                             <th class="table-secondary">Email Id</th>
                                                             <td>
-                                                            <?=$details['user_name']?>
+                                                            <?=$details['user_email']?>
                                                             </td>
                                                         </tr>
 
@@ -113,12 +131,7 @@ $lmra_status= ($details ['status'] == 0) ? $pending_message : ($details ['status
                                                             <?=$details['user_designation']?>
                                                             </td>
                                                         </tr>
-                                                        <tr>
-                                                            <th class="table-secondary">Status</th>
-                                                            <td>
-                                                            <?=$status?>
-                                                            </td>
-                                                        </tr>
+
                                                     
                                                     </tbody>
                                     </table>			
@@ -276,19 +289,25 @@ $sta_json_data =json_decode($details['sta_data'],true);
 </div>
 
 <div class="col-md-9 col-lg-9 col-xl-9 mb-5" style="background-color: #fff; padding: 20px; border-radius: 5px;">
-    <h1 class="card-user-profile-name">Write Comment</h1>
-    <form action="<?=$form_action?>" method="post">
-        <div class="comment-block">
-            <div class="form-group">
-                <textarea name="comment_text" class="form-control" id="comment-textarea" rows="3" placeholder="Enter your comment here..." required style="width: 100%;"></textarea>
-                <div class="media-feed-control clearfix mt-3">
-                    <button type="submit" class="btn btn-primary btn-sm float-right waves-effect waves-light">Post</button>
-                </div>
-            </div>
+    <?php if($details['status'] != 5): ?>
+    <h3 class="fw-bold text-dark mb-4"><i class="fa fa-comments text-primary me-2"></i> Write Comment</h3>
+    <form action="<?=$form_action?>" method="post" class="mb-4">
+        <div class="mb-3">
+            <textarea name="comment_text" class="form-control form-control-solid border border-gray-300 rounded-3 p-3 fs-6" id="comment-textarea" rows="3" placeholder="Enter your comment here..." required style="resize: vertical; min-height: 80px; width: 100%; max-height: 250px; overflow-y: auto;"></textarea>
+        </div>
+        <div class="d-flex justify-content-end">
+            <button type="submit" class="btn btn-primary px-4 py-2 rounded-3 shadow-sm fw-bold d-inline-flex align-items-center">
+                <i class="fa fa-paper-plane me-2"></i> Post Comment
+            </button>
         </div>
         <?php // changes on 9/10/25 by darsh: ensure hidden fields post only lmra_id; user_id is taken server-side from session ?>
         <input type="hidden" value="<?=$details['lmra_details_id']?>" name="lmra_id">
     </form>
+    <?php else: ?>
+    <div class="text-center p-4 bg-light rounded mb-4">
+        <span class="text-muted fw-bold"><i class="fa fa-lock me-2"></i> Chat is disabled for this closed record.</span>
+    </div>
+    <?php endif; ?>
 
     <hr>
     <?php // changes on 9/10/25 by darsh: render as vertical list matching theme ?>

@@ -233,3 +233,22 @@ if (!function_exists('getUserRegionInfo')) {
         ];
     }
 }
+
+if (!function_exists('is_near_miss_master_authorized')) {
+    /**
+     * Check if current user is authorized to manage Near Miss Master (Injury & Body Part).
+     * Requirement: Granted if Super Admin (login_id = 0) OR alert_users table admin_flag = 1.
+     * 
+     * @return bool
+     */
+    function is_near_miss_master_authorized() {
+        $adminFlag = $_SESSION['admin_flag'] ?? (function_exists('session') ? session()->get('admin_flag') : 0);
+        $loginId = (string)($_SESSION['login_id'] ?? (function_exists('session') ? session()->get('login_id') : ''));
+
+        if (($adminFlag == 1 || $adminFlag === '1') || $loginId === '0') {
+            return true;
+        }
+
+        return false;
+    }
+}

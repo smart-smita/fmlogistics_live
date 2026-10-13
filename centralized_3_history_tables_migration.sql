@@ -1,0 +1,286 @@
+-- ====================================================================
+-- FM LOGISTICS: CENTRALIZED 3-HISTORY & 3-AUDIT-BACKUP TABLES SCHEMA
+-- 
+-- 1. CENTRALIZED HISTORY TABLES:
+--    - OE_history: OE client master changes (name, category, CM, AM, status)
+--    - HSE_history: HSE client master changes (name, category, CM, AM, status)
+--    - Gemba_history: Gemba sites master changes (name, category, details, allocations)
+--
+-- 2. EXACT-COLUMN AUDIT BACKUP TABLES (For Direct Export/Import & Disaster Recovery):
+--    - OE_audit_backup: 100% identical columns to alert_final_structured_audit + history_id, backed_up_at
+--    - HSE_audit_backup: 100% identical columns to alert_hse_audit_master + history_id, backed_up_at
+--    - Gemba_audit_backup: 100% identical columns to alert_gemba_audits + history_id, backed_up_at
+-- ====================================================================
+
+-- --------------------------------------------------------------------
+-- 1. Create the 3 Centralized History Tables
+-- --------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `OE_history` (
+  `history_id` INT AUTO_INCREMENT PRIMARY KEY,
+  `client_id` INT NOT NULL,
+  `site_id` INT NULL,
+  `change_type` VARCHAR(100) NOT NULL COMMENT 'RENAME | ALLOCATION | DETAILS_UPDATE',
+  `remark` VARCHAR(255) NOT NULL COMMENT 'Site Name Changed | Cluster Manager Changed | Account Manager Changed | etc.',
+  `reason` TEXT NULL COMMENT 'User-provided justification/remarks',
+  `prev_client_name` VARCHAR(255) NOT NULL,
+  `prev_location` VARCHAR(255) NULL,
+  `prev_region` VARCHAR(100) NULL,
+  `prev_cluster` VARCHAR(100) NULL,
+  `prev_account_manager` VARCHAR(100) NULL,
+  `prev_email` VARCHAR(255) NULL,
+  `prev_status` INT NULL,
+  `new_client_name` VARCHAR(255) NOT NULL,
+  `new_location` VARCHAR(255) NULL,
+  `new_region` VARCHAR(100) NULL,
+  `new_cluster` VARCHAR(100) NULL,
+  `new_account_manager` VARCHAR(100) NULL,
+  `new_email` VARCHAR(255) NULL,
+  `new_status` INT NULL,
+  `affected_fields` VARCHAR(255) NOT NULL COMMENT 'Comma-separated list of fields changed',
+  `affected_audit_count` INT DEFAULT 0,
+  `affected_nc_count` INT DEFAULT 0,
+  `affected_audit_ids` TEXT NULL,
+  `changed_by_user_id` INT NULL,
+  `changed_by_user_name` VARCHAR(255) NULL,
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX `idx_oe_client_id` (`client_id`),
+  INDEX `idx_oe_created_at` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `HSE_history` (
+  `history_id` INT AUTO_INCREMENT PRIMARY KEY,
+  `client_id` INT NOT NULL,
+  `site_id` INT NULL,
+  `change_type` VARCHAR(100) NOT NULL COMMENT 'RENAME | CATEGORY_CHANGE | ALLOCATION | DETAILS_UPDATE',
+  `remark` VARCHAR(255) NOT NULL COMMENT 'Site Name Changed | Site Category Changed | Cluster Manager Changed | Account Manager Changed | etc.',
+  `reason` TEXT NULL COMMENT 'User-provided justification/remarks',
+  `prev_client_name` VARCHAR(255) NOT NULL,
+  `prev_category` VARCHAR(255) NULL,
+  `prev_sub_category` VARCHAR(255) NULL,
+  `prev_location` VARCHAR(255) NULL,
+  `prev_region` VARCHAR(100) NULL,
+  `prev_cluster` VARCHAR(100) NULL,
+  `prev_account_manager` VARCHAR(100) NULL,
+  `prev_email` VARCHAR(255) NULL,
+  `prev_status` INT NULL,
+  `new_client_name` VARCHAR(255) NOT NULL,
+  `new_category` VARCHAR(255) NULL,
+  `new_sub_category` VARCHAR(255) NULL,
+  `new_location` VARCHAR(255) NULL,
+  `new_region` VARCHAR(100) NULL,
+  `new_cluster` VARCHAR(100) NULL,
+  `new_account_manager` VARCHAR(100) NULL,
+  `new_email` VARCHAR(255) NULL,
+  `new_status` INT NULL,
+  `affected_fields` VARCHAR(255) NOT NULL,
+  `affected_audit_count` INT DEFAULT 0,
+  `affected_nc_count` INT DEFAULT 0,
+  `affected_audit_ids` TEXT NULL,
+  `changed_by_user_id` INT NULL,
+  `changed_by_user_name` VARCHAR(255) NULL,
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX `idx_hse_client_id` (`client_id`),
+  INDEX `idx_hse_created_at` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `Gemba_history` (
+  `history_id` INT AUTO_INCREMENT PRIMARY KEY,
+  `client_id` INT NULL COMMENT 'HSE Client ID if linked',
+  `site_id` INT NOT NULL COMMENT 'alert_gemba_sites.id',
+  `change_type` VARCHAR(100) NOT NULL COMMENT 'RENAME | CATEGORY_CHANGE | ALLOCATION | DETAILS_UPDATE',
+  `remark` VARCHAR(255) NOT NULL COMMENT 'Site Name Changed | Site Category Changed | Cluster Manager Changed | Account Manager Changed | etc.',
+  `reason` TEXT NULL COMMENT 'User-provided justification/remarks',
+  `prev_site_name` VARCHAR(255) NOT NULL,
+  `prev_site_category` VARCHAR(100) NULL,
+  `prev_site_type_1` VARCHAR(100) NULL,
+  `prev_site_type_2` VARCHAR(100) NULL,
+  `prev_region` VARCHAR(100) NULL,
+  `prev_cluster` VARCHAR(100) NULL,
+  `prev_account_manager` VARCHAR(100) NULL,
+  `prev_status` INT NULL,
+  `new_site_name` VARCHAR(255) NOT NULL,
+  `new_site_category` VARCHAR(100) NULL,
+  `new_site_type_1` VARCHAR(100) NULL,
+  `new_site_type_2` VARCHAR(100) NULL,
+  `new_region` VARCHAR(100) NULL,
+  `new_cluster` VARCHAR(100) NULL,
+  `new_account_manager` VARCHAR(100) NULL,
+  `new_status` INT NULL,
+  `affected_fields` VARCHAR(255) NOT NULL,
+  `affected_gemba_ids` TEXT NULL,
+  `changed_by_user_id` INT NULL,
+  `changed_by_user_name` VARCHAR(255) NULL,
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX `idx_gemba_site_id` (`site_id`),
+  INDEX `idx_gemba_created_at` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------------------
+-- 2. Create the 3 Exact-Column Audit Backup Tables (For Direct Export/Import)
+-- --------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `OE_audit_backup` (
+  `backup_id` INT AUTO_INCREMENT PRIMARY KEY,
+  `history_id` INT NULL COMMENT 'Links to OE_history.history_id',
+  `backed_up_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `structured_audit_id` int(11) NOT NULL,
+  `audit_no` text NOT NULL,
+  `audit_name` text NOT NULL,
+  `reaudit` int(11) NOT NULL,
+  `auditor_name` text NOT NULL,
+  `auditee_name` text NOT NULL,
+  `region` text NOT NULL,
+  `cluster_name` varchar(100) NOT NULL,
+  `client_manager_name` varchar(100) NOT NULL,
+  `audit_date` date NOT NULL,
+  `completion_date` date NOT NULL,
+  `next_date` date NOT NULL,
+  `report_date` date NOT NULL,
+  `client_name` text NOT NULL,
+  `audit_note` text NOT NULL,
+  `location` varchar(100) NOT NULL,
+  `zone` text NOT NULL,
+  `audit_score` float NOT NULL,
+  `audit_revision_no` text NOT NULL,
+  `final_remark` text NOT NULL,
+  `audit_template_id` int(11) NOT NULL,
+  `audit_by_user_id` int(11) NOT NULL,
+  `action_by_user_id` int(11) NOT NULL,
+  `status` int(1) NOT NULL,
+  `default_date` timestamp NOT NULL DEFAULT current_timestamp(),
+  `update_date` datetime NOT NULL,
+  INDEX `idx_oe_backup_hist` (`history_id`),
+  INDEX `idx_oe_backup_audit` (`structured_audit_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `HSE_audit_backup` (
+  `backup_id` INT AUTO_INCREMENT PRIMARY KEY,
+  `history_id` INT NULL COMMENT 'Links to HSE_history.history_id',
+  `backed_up_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `hse_audit_id` int(11) NOT NULL,
+  `audit_no` text NOT NULL,
+  `audit_name` text NOT NULL,
+  `audit_template_id` int(11) NOT NULL,
+  `auditor_name` text NOT NULL,
+  `auditee_name` text NOT NULL,
+  `client_name` text NOT NULL,
+  `audit_date` text NOT NULL,
+  `template_date` text NOT NULL,
+  `next_date` date NOT NULL,
+  `report_date` date NOT NULL,
+  `region` text NOT NULL,
+  `location` text NOT NULL,
+  `score` decimal(10,2) DEFAULT NULL,
+  `perform_audit_by` text NOT NULL,
+  `main_category` varchar(225) DEFAULT NULL,
+  `sub_category` varchar(225) DEFAULT NULL,
+  `cluster_name` text NOT NULL,
+  `account_manager` text NOT NULL,
+  `status` int(11) NOT NULL,
+  `default_date` timestamp NOT NULL DEFAULT current_timestamp(),
+  `update_date` datetime NOT NULL,
+  INDEX `idx_hse_backup_hist` (`history_id`),
+  INDEX `idx_hse_backup_audit` (`hse_audit_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `Gemba_audit_backup` (
+  `backup_id` INT AUTO_INCREMENT PRIMARY KEY,
+  `history_id` INT NULL COMMENT 'Links to Gemba_history.history_id',
+  `backed_up_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `gemba_sr_no` int(10) unsigned NOT NULL,
+  `unique_no` varchar(20) DEFAULT NULL,
+  `region` varchar(50) NOT NULL DEFAULT 'South',
+  `auditor_name` varchar(100) NOT NULL,
+  `audit_category` varchar(100) NOT NULL,
+  `audit_type` varchar(100) NOT NULL,
+  `audit_doc_type` varchar(100) NOT NULL,
+  `site_name` varchar(200) NOT NULL,
+  `site_type_1` varchar(50) NOT NULL,
+  `site_type_2` varchar(50) NOT NULL,
+  `site_category` varchar(50) NOT NULL DEFAULT 'Category-1',
+  `audit_mail_received_date` date DEFAULT NULL,
+  `audit_report_date` date NOT NULL,
+  `weeknum_raised` tinyint(3) unsigned DEFAULT NULL,
+  `month_raised` date DEFAULT NULL,
+  `year_month_raised` varchar(10) DEFAULT NULL,
+  `year_raised` smallint(5) unsigned DEFAULT NULL,
+  `checklist_category` varchar(100) NOT NULL,
+  `nc_recommendation` varchar(20) NOT NULL,
+  `qhse_remarks` text DEFAULT NULL,
+  `observation_point` text NOT NULL,
+  `risks_details` text DEFAULT NULL,
+  `action_recommendation` text DEFAULT NULL,
+  `specifications` text DEFAULT NULL,
+  `ua_uc_type` varchar(50) NOT NULL DEFAULT 'UA-UC',
+  `risk_severity` varchar(20) NOT NULL,
+  `risk_probability` varchar(20) NOT NULL,
+  `color_code` varchar(20) NOT NULL,
+  `cost_type` varchar(20) NOT NULL,
+  `remarks_wm` text DEFAULT NULL,
+  `whose_scope` varchar(100) DEFAULT NULL,
+  `remarks_corporate` text DEFAULT NULL,
+  `ageing_days` int(10) unsigned DEFAULT NULL,
+  `age_bracket` varchar(20) DEFAULT NULL,
+  `target_date` date DEFAULT NULL,
+  `closed_date` date DEFAULT NULL,
+  `point_status` varchar(50) NOT NULL DEFAULT 'Open',
+  `point_category` varchar(50) NOT NULL DEFAULT 'Open Category',
+  `closure_status` varchar(50) NOT NULL DEFAULT 'Delayed',
+  `weeknum_closed` tinyint(3) unsigned DEFAULT NULL,
+  `month_closed` date DEFAULT NULL,
+  `year_month_closed` varchar(10) DEFAULT NULL,
+  `risk_severity_rating` tinyint(3) unsigned NOT NULL DEFAULT 1,
+  `risk_probability_rating` tinyint(3) unsigned NOT NULL DEFAULT 1,
+  `combined_risk_rating` smallint(5) unsigned NOT NULL DEFAULT 1,
+  `times_repeated` tinyint(3) unsigned NOT NULL DEFAULT 1,
+  `combined_risk_freq` smallint(5) unsigned NOT NULL DEFAULT 1,
+  `final_rating` int(10) unsigned NOT NULL DEFAULT 1,
+  `followup_by` varchar(100) DEFAULT 'NA',
+  `weeknum_yearmonth_raised` varchar(20) DEFAULT NULL,
+  `weeknum_yearmonth_closed` varchar(100) DEFAULT NULL,
+  `cluster_manager_spoc` varchar(255) DEFAULT NULL,
+  `account_manager` varchar(255) DEFAULT NULL,
+  `created_by` varchar(255) DEFAULT NULL,
+  `updated_by` varchar(255) DEFAULT NULL,
+  `status` int(11) NOT NULL DEFAULT 0,
+  `default_date` timestamp NULL DEFAULT current_timestamp(),
+  `update_date` datetime DEFAULT current_timestamp(),
+  `hse_audit_id` int(11) DEFAULT NULL,
+  `hse_detail_id` int(11) DEFAULT NULL,
+  `source_module` varchar(50) DEFAULT 'manual',
+  `nc_status` int(11) NOT NULL DEFAULT 0,
+  `nc_remark` text DEFAULT NULL,
+  `working_remarks` text DEFAULT NULL,
+  `nc_worked_by` text DEFAULT NULL,
+  `working_date` datetime DEFAULT NULL,
+  `nc_after_photo` text DEFAULT NULL,
+  `working_uploaded_file` varchar(500) DEFAULT NULL,
+  `nc_cluster_reviewed_by` text DEFAULT NULL,
+  `nc_cluster_reviewed_date` datetime DEFAULT NULL,
+  `nc_auditor_reviewed_by` text DEFAULT NULL,
+  `nc_auditor_reviewed_date` datetime DEFAULT NULL,
+  `nc_closed_by` text DEFAULT NULL,
+  `nc_closed_date` date DEFAULT NULL,
+  `closed_remarks` text DEFAULT NULL,
+  `closed_uploaded_file` varchar(500) DEFAULT NULL,
+  `nc_rejected_by` text DEFAULT NULL,
+  `nc_rejected_date` datetime DEFAULT NULL,
+  `rejection_reason` text DEFAULT NULL,
+  `action_category` varchar(255) DEFAULT NULL,
+  INDEX `idx_gemba_backup_hist` (`history_id`),
+  INDEX `idx_gemba_backup_audit` (`gemba_sr_no`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------------------
+-- 3. Drop Unwanted Redundant Tables
+-- --------------------------------------------------------------------
+DROP TABLE IF EXISTS `alert_oe_site_rename_audit_backup`;
+DROP TABLE IF EXISTS `alert_hse_site_rename_audit_backup`;
+DROP TABLE IF EXISTS `alert_gemba_site_rename_audit_backup`;
+DROP TABLE IF EXISTS `alert_oe_site_rename_history`;
+DROP TABLE IF EXISTS `alert_hse_site_rename_history`;
+DROP TABLE IF EXISTS `alert_site_allocation_history`;
+DROP TABLE IF EXISTS `alert_gemba_allocation_history`;
+DROP TABLE IF EXISTS `alert_oe_audit_history`;
+DROP TABLE IF EXISTS `alert_hse_audit_history`;
+DROP TABLE IF EXISTS `alert_client_rename_logs`;
+DROP TABLE IF EXISTS `alert_client_dependency_sync_logs`;

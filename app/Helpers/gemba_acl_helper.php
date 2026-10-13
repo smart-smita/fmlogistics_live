@@ -21,9 +21,11 @@ if (!function_exists('gemba_can_write')) {
             return true;
         }
 
-        helper('designation_acl');
-        $role = strtolower(trim(session()->get('role') ?? ''));
-        $designation = getUserDesignation();
+        if (!session()->get('role')) {
+            return false;
+        }
+
+        $role = strtolower(trim(session()->get('role')));
 
         // Define roles that are allowed to perform write/modification actions
         $write_roles = [
@@ -31,12 +33,10 @@ if (!function_exists('gemba_can_write')) {
             'super admin',
             'admin',
             'auditor',
-            'cluster manager',
-            'account manager',
-            'wh manager'
+            'engineer'
         ];
 
-        return in_array($role, $write_roles, true) || in_array($designation, $write_roles, true);
+        return in_array($role, $write_roles, true);
     }
 }
 
@@ -82,20 +82,52 @@ if (!function_exists('apply_gemba_role_filters')) {
      */
     function apply_gemba_role_filters($builder, $tableName = 'alert_gemba_audits')
     {
-        helper('designation_acl');
-        $acl = getUserACL();
-        if ($acl['can_view_all']) {
+        if (!session()->get('role')) {
             return $builder;
         }
-        if ($acl['is_restricted']) {
-            $sites = getUserAllocatedSiteNames('GEMBA');
-            if (!empty($sites)) {
-                $col = ($tableName === 'alert_gemba_audits' || $tableName === 'alert_gemba_sites') ? "{$tableName}.site_name" : "{$tableName}.client_name";
-                $builder->whereIn($col, $sites);
-            } else {
-                $builder->where('1=0');
+
+        $role = strtolower(trim(session()->get('role')));
+        $userName = strtolower(trim(session()->get('user_name') ?? ''));
+        
+        $db = \Config\Database::connect();
+        $escapedUserName = $db->escape($userName);
+
+        if ($role === 'cluster manager' || $role === 'cluster_manager') {
+            $siteSubQuery = "(
+                SELECT DISTINCT client_name FROM alert_client
+                    WHERE LOWER(TRIM(cluster)) = {$escapedUserName} AND status != 2
+                UNION
+                SELECT DISTINCT client_name FROM alert_hse_client_master
+                    WHERE LOWER(TRIM(cluster)) = {$escapedUserName} AND status != 2
+            )";
+
+            if ($tableName === 'alert_gemba_audits') {
+                $builder->groupStart()
+                    ->where("{$tableName}.site_name IN {$siteSubQuery}", null, false)
+                    ->orWhere("LOWER(TRIM({$tableName}.cluster_manager_spoc))", $userName)
+                ->groupEnd();
+            } else if ($tableName === 'alert_gemba_sites') {
+                $builder->where("{$tableName}.site_name IN {$siteSubQuery}", null, false);
+            }
+        } elseif ($role === 'account manager' || $role === 'account_manager') {
+            $siteSubQuery = "(
+                SELECT DISTINCT client_name FROM alert_client
+                    WHERE LOWER(TRIM(account_manager)) = {$escapedUserName} AND status != 2
+                UNION
+                SELECT DISTINCT client_name FROM alert_hse_client_master
+                    WHERE LOWER(TRIM(account_manager)) = {$escapedUserName} AND status != 2
+            )";
+
+            if ($tableName === 'alert_gemba_audits') {
+                $builder->groupStart()
+                    ->where("{$tableName}.site_name IN {$siteSubQuery}", null, false)
+                    ->orWhere("LOWER(TRIM({$tableName}.account_manager))", $userName)
+                ->groupEnd();
+            } else if ($tableName === 'alert_gemba_sites') {
+                $builder->where("{$tableName}.site_name IN {$siteSubQuery}", null, false);
             }
         }
+
         return $builder;
     }
 }
@@ -116,10 +148,106 @@ if (!function_exists('apply_gemba_latest_filter')) {
                 ->where("{$tableName}.source_module !=", "hse_audit")
                 ->orGroupStart()
                     ->where("{$tableName}.source_module", "hse_audit")
-                    ->where("{$tableName}.hse_audit_id IN (SELECT MAX(hse_audit_id) FROM alert_hse_audit_master GROUP BY audit_no)")
+                    ->where("{$tableName}.hse_audit_id IN (SELECT MAX(hse_audit_id) FROM alert_hse_audit_master GROUP BY audit_no)", null, false)
                 ->groupEnd()
             ->groupEnd();
         }
         return $builder;
+    }
+}
+
+if (!function_exists('near_miss_get_authorized_locations')) {
+    /**
+     * Gets the list of authorized locations for the current user in Near Miss module.
+     * Returns TRUE if the user has access to all locations.
+     * Returns an array of location names if restricted.
+     * Returns an empty array if no locations are authorized.
+     */
+    function near_miss_get_authorized_locations() {
+        $role = strtolower(trim(session()->get('role') ?? ''));
+        $userName = strtolower(trim(session()->get('user_name') ?? ''));
+        $adminFlag = session()->get('admin_flag') ?? 0;
+        $loginId = session()->get('login_id');
+        
+        // Roles with full access
+        $full_access_roles = ['super admin', 'super_admin', 'admin', 'auditor', 'higher authority', 'higher_authority'];
+        
+        if ($adminFlag == 1 || in_array($role, $full_access_roles, true) || ($loginId == 0 && $loginId !== null)) {
+            return true;
+        }
+        
+        if (!$loginId) return [];
+        
+        $db = \Config\Database::connect();
+        $escapedUserName = $db->escape($userName);
+        $locations = [];
+        
+        // Fetch fresh user record for user_location
+        $userRecord = $db->table('alert_users')->select('user_location')->where('user_id', $loginId)->get()->getRowArray();
+        $userLoc = $userRecord ? trim($userRecord['user_location']) : '';
+        
+        if (in_array($role, ['cluster manager', 'cluster_manager'])) {
+            $results = $db->query("
+                SELECT DISTINCT client_name AS location_name FROM alert_client
+                    WHERE LOWER(TRIM(cluster)) = {$escapedUserName} AND status != 2
+                UNION
+                SELECT DISTINCT client_name AS location_name FROM alert_hse_client_master
+                    WHERE LOWER(TRIM(cluster)) = {$escapedUserName} AND status != 2
+            ")->getResultArray();
+            foreach ($results as $row) {
+                if (!empty($row['location_name'])) {
+                    $locations[] = trim($row['location_name']);
+                }
+            }
+        } elseif (in_array($role, ['account manager', 'account_manager'])) {
+            $results = $db->query("
+                SELECT DISTINCT client_name AS location_name FROM alert_client
+                    WHERE LOWER(TRIM(account_manager)) = {$escapedUserName} AND status != 2
+                UNION
+                SELECT DISTINCT client_name AS location_name FROM alert_hse_client_master
+                    WHERE LOWER(TRIM(account_manager)) = {$escapedUserName} AND status != 2
+            ")->getResultArray();
+            foreach ($results as $row) {
+                if (!empty($row['location_name'])) {
+                    $locations[] = trim($row['location_name']);
+                }
+            }
+            if (!empty($userLoc)) {
+                $locs = array_map('trim', explode(',', $userLoc));
+                foreach ($locs as $l) {
+                    if (!empty($l)) {
+                        $locations[] = $l;
+                    }
+                }
+            }
+        } elseif ($role === 'engineer') {
+            if (!empty($userLoc)) {
+                // Handle multiple locations if comma-separated
+                $locs = array_map('trim', explode(',', $userLoc));
+                foreach ($locs as $l) {
+                    if (!empty($l)) {
+                        $locations[] = $l;
+                    }
+                }
+            }
+        }
+        
+        return array_values(array_unique($locations));
+    }
+}
+
+if (!function_exists('near_miss_has_location_access')) {
+    function near_miss_has_location_access($locationName) {
+        $authorized = near_miss_get_authorized_locations();
+        if ($authorized === true) return true;
+        if (empty($locationName)) return false;
+        
+        $locationName = trim($locationName);
+        foreach ($authorized as $loc) {
+            if (strtolower(trim($loc)) === strtolower($locationName)) {
+                return true;
+            }
+        }
+        return false;
     }
 }

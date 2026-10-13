@@ -17,7 +17,7 @@ class Client extends BaseController
         helper("form");
      $db = null;
      $db['table']         = 'alert_client';
-     // changes on 1/11/25 by darsh: location field changed from dropdown (location_id) to manual text input
+     // reverted location field back to dropdown from manual text input
      // changes on 27/01/26: Added account_manager field
      $db['allowedFields'] = ['client_name','email', 'location','region','cluster','status', 'account_manager'];
      $db['primaryKey'] = "client_id";
@@ -83,7 +83,12 @@ class Client extends BaseController
 
         // 1. Calculate record counts for Active (status = 1) and All (status != 2) matching ACL permissions
         $countBuilder = $this->BaseModel->select("status")->where('alert_client.status !=', 2);
-        applySiteACLFilter($countBuilder, 'OE', 'client_name', 'client_id');
+        if (isClusterManager() || isWHManager()) {
+            $userClusters = getClusterManagerAssignedCluster();
+            if (!empty($userClusters)) {
+                $countBuilder->whereIn('cluster', $userClusters);
+            }
+        }
         $allRecords = $countBuilder->findAll();
         $allCount = count($allRecords);
         $activeCount = 0;
@@ -95,7 +100,12 @@ class Client extends BaseController
 
         // 2. Build filtered records for DataTables (always exclude soft deleted status = 2)
         $builder = $this->BaseModel->select("alert_client.*")->where('alert_client.status !=', 2);
-        applySiteACLFilter($builder, 'OE', 'client_name', 'client_id');
+        if (isClusterManager() || isWHManager()) {
+            $userClusters = getClusterManagerAssignedCluster();
+            if (!empty($userClusters)) {
+                $builder->whereIn('cluster', $userClusters);
+            }
+        }
 
         if ($statusFilter === 'active') {
             $builder->where('alert_client.status', 1);
@@ -243,7 +253,131 @@ class Client extends BaseController
                             }
                         }
 
+                    $db = \Config\Database::connect();
+                    $db->transStart();
+
+                    // Check for CM/AM reassignment and record history
+                    if (!isset($action) && (
+                        (isset($postData['cluster']) && $oldData['cluster'] != $postData['cluster']) ||
+                        (isset($postData['account_manager']) && $oldData['account_manager'] != $postData['account_manager'])
+                    )) {
+                        $reason = $postData['reassignment_reason'] ?? 'Reassigned via Client Master update';
+                        $cmChanged = (isset($postData['cluster']) && $oldData['cluster'] != $postData['cluster']);
+                        $amChanged = (isset($postData['account_manager']) && $oldData['account_manager'] != $postData['account_manager']);
+
+                        if ($cmChanged && $amChanged) {
+                            $remark = 'Cluster Manager & Account Manager Changed';
+                            $affectedFields = 'cluster,account_manager';
+                        } elseif ($cmChanged) {
+                            $remark = 'Cluster Manager Changed';
+                            $affectedFields = 'cluster';
+                        } else {
+                            $remark = 'Account Manager Changed';
+                            $affectedFields = 'account_manager';
+                        }
+
+                        $clientNameEscaped = $db->escape(trim($oldData['client_name']));
+                        $affectedAudits = $db->query("
+                            SELECT structured_audit_id FROM alert_final_structured_audit 
+                            WHERE TRIM(location) = TRIM({$clientNameEscaped}) OR TRIM(client_name) = TRIM({$clientNameEscaped})
+                        ")->getResultArray();
+                        $affectedAuditIds = array_column($affectedAudits, 'structured_audit_id');
+                        $affectedAuditCount = count($affectedAuditIds);
+
+                        $affectedNcCount = 0;
+                        if (!empty($affectedAuditIds)) {
+                            $affectedNcCount = $db->table('alert_final_structured_audit_details')
+                                ->whereIn('structured_audit_id', $affectedAuditIds)
+                                ->where('audit_finding', 'NO')
+                                ->countAllResults();
+                        }
+
+                        // 1. Centralized OE_history logging
+                        if ($db->tableExists('OE_history')) {
+                            $db->table('OE_history')->insert([
+                                'client_id'             => $id,
+                                'change_type'           => 'ALLOCATION',
+                                'remark'                => $remark,
+                                'reason'                => $reason,
+                                'prev_client_name'      => $oldData['client_name'],
+                                'prev_site_category'    => $oldData['site_category'] ?? null,
+                                'prev_region'           => $oldData['region'] ?? null,
+                                'prev_cluster'          => $oldData['cluster'] ?? null,
+                                'prev_account_manager'  => $oldData['account_manager'] ?? null,
+                                'prev_email'            => $oldData['email'] ?? null,
+                                'prev_status'           => isset($oldData['status']) ? (int)$oldData['status'] : null,
+                                'new_client_name'       => $oldData['client_name'],
+                                'new_site_category'     => $oldData['site_category'] ?? null,
+                                'new_region'            => $oldData['region'] ?? null,
+                                'new_cluster'           => $postData['cluster'] ?? $oldData['cluster'],
+                                'new_account_manager'   => $postData['account_manager'] ?? $oldData['account_manager'],
+                                'new_email'             => $oldData['email'] ?? null,
+                                'new_status'            => isset($oldData['status']) ? (int)$oldData['status'] : null,
+                                'affected_fields'       => $affectedFields,
+                                'affected_audit_count'  => $affectedAuditCount,
+                                'affected_nc_count'     => $affectedNcCount,
+                                'affected_audit_ids'    => !empty($affectedAuditIds) ? json_encode($affectedAuditIds) : null,
+                                'changed_by_user_id'    => session()->get('user_id') ?? 0,
+                                'changed_by_user_name'  => session()->get('user_name') ?? 'System',
+                                'created_at'            => date('Y-m-d H:i:s')
+                            ]);
+                            $oeHistId = $db->insertID();
+
+                            // Dump matching OE audits as-is into OE_audit_backup for direct export/restore
+                            $oeAudits = $db->query("
+                                SELECT * FROM alert_final_structured_audit 
+                                WHERE TRIM(location) = TRIM({$clientNameEscaped}) OR TRIM(client_name) = TRIM({$clientNameEscaped})
+                            ")->getResultArray();
+
+                            if (!empty($oeAudits) && $db->tableExists('OE_audit_backup')) {
+                                $now = date('Y-m-d H:i:s');
+                                foreach ($oeAudits as $oeRow) {
+                                    $backupRow = $oeRow;
+                                    $backupRow['history_id'] = $oeHistId;
+                                    $backupRow['backed_up_at'] = $now;
+                                    unset($backupRow['backup_id']);
+                                    $db->table('OE_audit_backup')->insert($backupRow);
+                                }
+                            }
+                        }
+
+                        // 3. Update Latest Active Audit if it has open NCs
+                        $latestAudit = $db->query("
+                            SELECT structured_audit_id 
+                            FROM alert_final_structured_audit 
+                            WHERE TRIM(location) = TRIM({$clientNameEscaped}) OR TRIM(client_name) = TRIM({$clientNameEscaped})
+                            ORDER BY structured_audit_id DESC LIMIT 1
+                        ")->getRowArray();
+
+                        if ($latestAudit) {
+                            $latestAuditId = $latestAudit['structured_audit_id'];
+                            
+                            $openNcCount = $db->query("
+                                SELECT COUNT(*) as cnt 
+                                FROM alert_final_structured_audit_details 
+                                WHERE structured_audit_id = ? AND audit_finding = 'NO' AND status IN (0, 1, 2, 6)
+                            ", [$latestAuditId])->getRowArray()['cnt'];
+
+                            if ($openNcCount > 0) {
+                                $updateData = [];
+                                if (isset($postData['cluster']) && $oldData['cluster'] != $postData['cluster']) {
+                                    $updateData['cluster_name'] = $postData['cluster'];
+                                }
+                                if (isset($postData['account_manager']) && $oldData['account_manager'] != $postData['account_manager']) {
+                                    $updateData['client_manager_name'] = $postData['account_manager'];
+                                }
+                                
+                                if (!empty($updateData)) {
+                                    $db->table('alert_final_structured_audit')
+                                        ->where('structured_audit_id', $latestAuditId)
+                                        ->update($updateData);
+                                }
+                            }
+                        }
+                    }
+
                     // Synchronize OE Client changes (client_name, location, cluster, account_manager, region, status) across all OE dependent tables
+                    $postData['client_id'] = $id;
                     $syncService = new \App\Services\ClientSiteDependencySyncService();
                     $syncRes = $syncService->syncOeClientChanges(
                         $oldData,
@@ -253,6 +387,7 @@ class Client extends BaseController
                     );
 
                     if ($syncRes['status'] === 0) {
+                        $db->transRollback();
                         $responce['status'] = "0";
                         $responce['message'] = $syncRes['message'];
                         echo json_encode($responce);
@@ -260,8 +395,16 @@ class Client extends BaseController
                     }
 
                     if($this->BaseModel->update($id,$postData)){
-                        $responce['status'] = "1";
-                        $responce['message'] = "Data saved successfully";
+                        $db->transComplete();
+                        if ($db->transStatus() === FALSE) {
+                            $responce['status'] = "0";
+                            $responce['message'] = "Transaction failed. Changes were rolled back.";
+                        } else {
+                            $responce['status'] = "1";
+                            $responce['message'] = "Data saved successfully";
+                        }
+                    } else {
+                        $db->transRollback();
                     }
                 }else{
                     $postData['status']="1";
@@ -458,142 +601,4 @@ class Client extends BaseController
         
         return $this->response->setJSON(['status' => 1, 'message' => 'Client deactivated and NCs closed successfully.']);
     }
-
-    /**
-     * Get site manager details (Cluster Manager, Account Manager, Region, Cluster)
-     * based on selected Site/Client across OE, HSE, and Gemba modules.
-     */
-    public function get_site_manager_info()
-    {
-        $request = service('request');
-        $site = trim((string)($request->getVar('site_identifier') ?? $request->getVar('site_name') ?? $request->getVar('client_name') ?? ''));
-        $module = strtoupper(trim((string)($request->getVar('module_type') ?? 'OE')));
-
-        if (empty($site)) {
-            return $this->response->setJSON(['status' => 0, 'message' => 'Site identifier required']);
-        }
-
-        $db = db_connect();
-        $info = [
-            'status' => 1,
-            'client_name' => $site,
-            'region_name' => '',
-            'cluster_name' => '',
-            'cluster_manager_name' => '',
-            'account_manager_name' => ''
-        ];
-
-        if ($module === 'HSE') {
-            $row = $db->table('alert_hse_client_master')
-                ->where('LOWER(TRIM(client_name))', strtolower($site))
-                ->orWhere('LOWER(TRIM(location))', strtolower($site))
-                ->where('status !=', 2)
-                ->get()
-                ->getRowArray();
-
-            if ($row) {
-                $info['client_name'] = $row['client_name'] ?? $site;
-                $info['region_name'] = $row['region'] ?? '';
-                $info['cluster_name'] = $row['cluster'] ?? '';
-                $info['cluster_manager_name'] = $row['cluster'] ?? '';
-                $info['account_manager_name'] = $row['account_manager'] ?? '';
-            }
-        } else if ($module === 'GEMBA') {
-            $row = $db->table('alert_gemba_sites')
-                ->where('LOWER(TRIM(site_name))', strtolower($site))
-                ->where('status', 1)
-                ->get()
-                ->getRowArray();
-
-            if ($row) {
-                $info['client_name'] = $row['site_name'] ?? $site;
-                $info['region_name'] = $row['region'] ?? '';
-                $info['cluster_name'] = $row['cluster_name'] ?? '';
-                $info['cluster_manager_name'] = $row['cluster_manager_spoc'] ?? ($row['cluster_name'] ?? '');
-                $info['account_manager_name'] = $row['account_manager'] ?? '';
-            }
-        } else {
-            // OE / Normal Audit
-            $row = $db->table('alert_client')
-                ->where('LOWER(TRIM(client_name))', strtolower($site))
-                ->orWhere('LOWER(TRIM(location))', strtolower($site))
-                ->where('status !=', 2)
-                ->get()
-                ->getRowArray();
-
-            if ($row) {
-                $info['client_name'] = $row['client_name'] ?? $site;
-                $info['region_name'] = $row['region'] ?? '';
-                $info['cluster_name'] = $row['cluster'] ?? '';
-                $info['cluster_manager_name'] = $row['cluster'] ?? '';
-                $info['account_manager_name'] = $row['account_manager'] ?? '';
-            }
-        }
-
-        // Additional lookup in alert_user_client_mapping if manager names are empty
-        if (empty($info['cluster_manager_name']) || empty($info['account_manager_name'])) {
-            $mappings = $db->table('alert_user_client_mapping m')
-                ->select('m.user_id, u.user_name, u.user_designation')
-                ->join('alert_users u', 'u.user_id = m.user_id', 'inner')
-                ->where('LOWER(TRIM(m.site_name))', strtolower($info['client_name']))
-                ->where('u.status', 1)
-                ->get()
-                ->getResultArray();
-
-            foreach ($mappings as $m) {
-                $desig = strtolower(trim($m['user_designation'] ?? ''));
-                if (empty($info['cluster_manager_name']) && strpos($desig, 'cluster manager') !== false) {
-                    $info['cluster_manager_name'] = $m['user_name'];
-                }
-                if (empty($info['account_manager_name']) && strpos($desig, 'account manager') !== false) {
-                    $info['account_manager_name'] = $m['user_name'];
-                }
-            }
-        }
-
-        return $this->response->setJSON($info);
-    }
-
-    /**
-     * Get NC Action History timeline for a specific NC detail ID and module.
-     * Includes IDOR / ACL site security verification.
-     */
-    public function get_nc_action_history()
-    {
-        $request = service('request');
-        $ncDetailId = (int)$request->getVar('nc_detail_id');
-        $moduleType = strtoupper(trim((string)($request->getVar('module_type') ?? 'OE')));
-        $siteName = trim((string)$request->getVar('site_name'));
-
-        if (empty($ncDetailId)) {
-            return $this->response->setJSON(['status' => 0, 'message' => 'NC Detail ID required', 'history' => []]);
-        }
-
-        helper(['designation_acl']);
-        if (!empty($siteName) && !verifySiteAccess($siteName, $moduleType)) {
-            return $this->response->setJSON(['status' => 0, 'message' => 'Access denied to this site history', 'history' => []]);
-        }
-
-        $db = db_connect();
-        if (!$db->tableExists('alert_nc_action_history')) {
-            return $this->response->setJSON(['status' => 0, 'message' => 'History table not found', 'history' => []]);
-        }
-
-        $history = $db->table('alert_nc_action_history')
-            ->where('nc_detail_id', $ncDetailId)
-            ->where('module_type', $moduleType)
-            ->orderBy('history_id', 'ASC')
-            ->get()
-            ->getResultArray();
-
-        return $this->response->setJSON([
-            'status' => 1,
-            'nc_detail_id' => $ncDetailId,
-            'module_type' => $moduleType,
-            'site_name' => $siteName,
-            'history' => $history
-        ]);
-    }
 }
-
-

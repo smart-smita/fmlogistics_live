@@ -320,7 +320,7 @@ class HseGembaSyncService
         $mappedRegion = $siteMapping ? $siteMapping['region'] : $record['hse_region'];
         $mappedSiteType1 = $siteMapping ? $siteMapping['site_type_1'] : 'NA';
         $mappedSiteType2 = $siteMapping ? $siteMapping['site_type_2'] : 'NA';
-        $mappedSiteCat = $siteMapping ? $siteMapping['site_category'] : ($record['sub_category'] ?? 'NA');
+        $mappedSiteCat = $siteMapping ? $siteMapping['site_category'] : 'NA';
 
         // Check for Existing Record
         $existing = null;

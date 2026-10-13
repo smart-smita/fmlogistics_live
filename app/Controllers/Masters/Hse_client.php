@@ -38,7 +38,6 @@ class Hse_client extends BaseController
             "sub_category"    => "Sub Category",
             "client_name"     => "Client Name",
             "email"           => "E-mail",
-            "location_name"   => "Location",
             "region"          => "Region",
             "cluster"         => "Cluster",
             "account_manager" => "Account Manager",
@@ -224,7 +223,6 @@ class Hse_client extends BaseController
                 $rules = [
                     'category'    => 'required',
                     'client_name' => 'required|min_length[3]',
-                    'location'    => 'required|min_length[2]',
                     'email'       => 'permit_empty|valid_email'
                 ];
 
@@ -253,7 +251,251 @@ class Hse_client extends BaseController
                 
                 $oldData = $this->BaseModel->find($id); // Get old data for sync
 
+                $db = \Config\Database::connect();
+                $db->transStart();
+
+                // Check for CM/AM reassignment and record history
+                if (!$action && (
+                    (isset($postData['cluster']) && $oldData['cluster'] != $postData['cluster']) ||
+                    (isset($postData['account_manager']) && $oldData['account_manager'] != $postData['account_manager'])
+                )) {
+                    $reason = $postData['reassignment_reason'] ?? 'Reassigned via HSE Client Master update';
+                    $cmChanged = (isset($postData['cluster']) && $oldData['cluster'] != $postData['cluster']);
+                    $amChanged = (isset($postData['account_manager']) && $oldData['account_manager'] != $postData['account_manager']);
+
+                    if ($cmChanged && $amChanged) {
+                        $remark = 'Cluster Manager & Account Manager Changed';
+                        $affectedFields = 'cluster,account_manager';
+                    } elseif ($cmChanged) {
+                        $remark = 'Cluster Manager Changed';
+                        $affectedFields = 'cluster';
+                    } else {
+                        $remark = 'Account Manager Changed';
+                        $affectedFields = 'account_manager';
+                    }
+
+                    $clientNameEscaped = $db->escape(trim($oldData['client_name']));
+                    $affectedHseAudits = $db->query("
+                        SELECT hse_audit_id FROM alert_hse_audit_master 
+                        WHERE TRIM(client_name) = TRIM({$clientNameEscaped}) OR TRIM(location) = TRIM({$clientNameEscaped})
+                    ")->getResultArray();
+                    $affectedHseAuditIds = array_column($affectedHseAudits, 'hse_audit_id');
+                    $affectedHseAuditCount = count($affectedHseAuditIds);
+
+                    $affectedHseNcCount = 0;
+                    if (!empty($affectedHseAuditIds)) {
+                        $affectedHseNcCount = $db->table('alert_hse_audit_details')
+                            ->whereIn('hse_audit_id', $affectedHseAuditIds)
+                            ->where('finding', 'NO')
+                            ->countAllResults();
+                    }
+
+                    // 1. Insert into centralized HSE_history
+                    if ($db->tableExists('HSE_history')) {
+                        $db->table('HSE_history')->insert([
+                            'client_id'             => $id,
+                            'change_type'           => 'ALLOCATION',
+                            'remark'                => $remark,
+                            'reason'                => $reason,
+                            'prev_client_name'      => $oldData['client_name'],
+                            'prev_category'         => $oldData['category'] ?? null,
+                            'prev_sub_category'     => $oldData['sub_category'] ?? null,
+                            'prev_location'         => $oldData['location'] ?? null,
+                            'prev_region'           => $oldData['region'] ?? null,
+                            'prev_cluster'          => $oldData['cluster'] ?? null,
+                            'prev_account_manager'  => $oldData['account_manager'] ?? null,
+                            'prev_email'            => $oldData['email'] ?? null,
+                            'prev_status'           => isset($oldData['status']) ? (int)$oldData['status'] : null,
+                            'new_client_name'       => $oldData['client_name'],
+                            'new_category'          => $postData['category'] ?? ($oldData['category'] ?? null),
+                            'new_sub_category'      => $postData['sub_category'] ?? ($oldData['sub_category'] ?? null),
+                            'new_location'          => $postData['location'] ?? ($oldData['location'] ?? null),
+                            'new_region'            => $postData['region'] ?? ($oldData['region'] ?? null),
+                            'new_cluster'           => $postData['cluster'] ?? $oldData['cluster'],
+                            'new_account_manager'   => $postData['account_manager'] ?? $oldData['account_manager'],
+                            'new_email'             => $postData['email'] ?? ($oldData['email'] ?? null),
+                            'new_status'            => isset($oldData['status']) ? (int)$oldData['status'] : null,
+                            'affected_fields'       => $affectedFields,
+                            'affected_audit_count'  => $affectedHseAuditCount,
+                            'affected_nc_count'     => $affectedHseNcCount,
+                            'affected_audit_ids'    => !empty($affectedHseAuditIds) ? json_encode($affectedHseAuditIds) : null,
+                            'changed_by_user_id'    => session()->get('user_id') ?? 0,
+                            'changed_by_user_name'  => session()->get('user_name') ?? 'System',
+                            'created_at'            => date('Y-m-d H:i:s')
+                        ]);
+                        $hseHistId = $db->insertID();
+
+                        // Dump matching HSE audits as-is into HSE_audit_backup for direct export/restore
+                        $hseAudits = $db->query("
+                            SELECT * FROM alert_hse_audit_master 
+                            WHERE TRIM(client_name) = TRIM({$clientNameEscaped}) OR TRIM(location) = TRIM({$clientNameEscaped})
+                        ")->getResultArray();
+
+                        if (!empty($hseAudits) && $db->tableExists('HSE_audit_backup')) {
+                            $now = date('Y-m-d H:i:s');
+                            foreach ($hseAudits as $hseRow) {
+                                $backupRow = $hseRow;
+                                $backupRow['history_id'] = $hseHistId;
+                                $backupRow['backed_up_at'] = $now;
+                                unset($backupRow['backup_id']);
+                                $db->table('HSE_audit_backup')->insert($backupRow);
+                            }
+                        }
+                    }
+
+                    // 2. Update Latest Active Audit if it has open NCs
+                    $latestHseAudit = $db->query("
+                        SELECT hse_audit_id 
+                        FROM alert_hse_audit_master 
+                        WHERE TRIM(client_name) = TRIM({$clientNameEscaped}) OR TRIM(location) = TRIM({$clientNameEscaped})
+                        ORDER BY hse_audit_id DESC LIMIT 1
+                    ")->getRowArray();
+
+                    if ($latestHseAudit) {
+                        $latestAuditId = $latestHseAudit['hse_audit_id'];
+                        
+                        $openNcCount = $db->query("
+                            SELECT COUNT(*) as cnt 
+                            FROM alert_hse_audit_details 
+                            WHERE hse_audit_id = ? AND finding = 'NO' AND nc_status IN (0, 1, 2)
+                        ", [$latestAuditId])->getRowArray()['cnt'];
+
+                        if ($openNcCount > 0) {
+                            $updateData = [];
+                            if ($cmChanged) {
+                                $updateData['cluster_name'] = $postData['cluster'];
+                            }
+                            if ($amChanged) {
+                                $updateData['account_manager'] = $postData['account_manager'];
+                            }
+                            
+                            if (!empty($updateData)) {
+                                $db->table('alert_hse_audit_master')
+                                    ->where('hse_audit_id', $latestAuditId)
+                                    ->update($updateData);
+                            }
+                        }
+                    }
+
+                    // 3. Update Open Gemba Audits (standalone or tied to HSE)
+                    $gembaUpdateData = [];
+                    if ($cmChanged) {
+                        $gembaUpdateData['cluster_manager_spoc'] = $postData['cluster'];
+                    }
+                    if ($amChanged) {
+                        $gembaUpdateData['account_manager'] = $postData['account_manager'];
+                    }
+
+                    if (!empty($gembaUpdateData)) {
+                        $activeGembaIds = $db->query("
+                            SELECT gemba_sr_no FROM alert_gemba_audits 
+                            WHERE TRIM(site_name) = TRIM({$clientNameEscaped}) AND nc_status IN (0, 1, 2, 5)
+                        ")->getResultArray();
+                        $activeIdList = array_column($activeGembaIds, 'gemba_sr_no');
+
+                        $db->table('alert_gemba_audits')
+                            ->where("TRIM(site_name) = TRIM({$clientNameEscaped})")
+                            ->whereIn('nc_status', [0, 1, 2, 5])
+                            ->update($gembaUpdateData);
+
+                        $gembaSite = null;
+                        if ($db->tableExists('alert_gemba_sites')) {
+                            $gembaSite = $db->table('alert_gemba_sites')
+                                ->where('TRIM(site_name)', trim($oldData['client_name']))
+                                ->get()
+                                ->getRowArray();
+                        }
+
+                        // Log into centralized Gemba_history
+                        if ($db->tableExists('Gemba_history')) {
+                            $db->table('Gemba_history')->insert([
+                                'client_id'            => $id,
+                                'site_id'              => $gembaSite['id'] ?? 0,
+                                'change_type'          => 'ALLOCATION',
+                                'remark'               => $remark,
+                                'reason'               => $reason,
+                                'prev_site_name'       => $oldData['client_name'],
+                                'prev_site_category'   => $gembaSite['site_category'] ?? null,
+                                'prev_site_type_1'     => $gembaSite['site_type_1'] ?? null,
+                                'prev_site_type_2'     => $gembaSite['site_type_2'] ?? null,
+                                'prev_region'          => $gembaSite['region'] ?? ($oldData['region'] ?? null),
+                                'prev_cluster'         => $oldData['cluster'] ?? null,
+                                'prev_account_manager' => $oldData['account_manager'] ?? null,
+                                'prev_status'          => isset($gembaSite['status']) ? (int)$gembaSite['status'] : null,
+                                'new_site_name'        => $oldData['client_name'],
+                                'new_site_category'    => $gembaSite['site_category'] ?? null,
+                                'new_site_type_1'      => $gembaSite['site_type_1'] ?? null,
+                                'new_site_type_2'      => $gembaSite['site_type_2'] ?? null,
+                                'new_region'           => $gembaSite['region'] ?? ($oldData['region'] ?? null),
+                                'new_cluster'          => $postData['cluster'] ?? $oldData['cluster'],
+                                'new_account_manager'  => $postData['account_manager'] ?? $oldData['account_manager'],
+                                'new_status'           => isset($gembaSite['status']) ? (int)$gembaSite['status'] : null,
+                                'affected_fields'      => $affectedFields,
+                                'affected_gemba_ids'   => !empty($activeIdList) ? json_encode($activeIdList) : null,
+                                'changed_by_user_id'   => session()->get('user_id') ?? 0,
+                                'changed_by_user_name' => session()->get('user_name') ?? 'System',
+                                'created_at'           => date('Y-m-d H:i:s')
+                            ]);
+                            $gembaHistId = $db->insertID();
+
+                            // Dump matching Gemba audits as-is into Gemba_audit_backup for direct export/restore
+                            $gembaAudits = $db->query("
+                                SELECT * FROM alert_gemba_audits 
+                                WHERE TRIM(site_name) = TRIM({$clientNameEscaped}) AND nc_status IN (0, 1, 2, 5)
+                            ")->getResultArray();
+
+                            if (!empty($gembaAudits) && $db->tableExists('Gemba_audit_backup')) {
+                                $now = date('Y-m-d H:i:s');
+                                foreach ($gembaAudits as $gRow) {
+                                    $backupRow = $gRow;
+                                    $backupRow['history_id'] = $gembaHistId;
+                                    $backupRow['backed_up_at'] = $now;
+                                    unset($backupRow['backup_id']);
+                                    $db->table('Gemba_audit_backup')->insert($backupRow);
+                                }
+                            }
+                        }
+                    }
+                } elseif (!$action) {
+                    $catChanged = (isset($postData['category']) && $oldData['category'] != $postData['category']) ||
+                                  (isset($postData['sub_category']) && ($oldData['sub_category'] ?? null) != $postData['sub_category']);
+                    if ($catChanged && $db->tableExists('HSE_history')) {
+                        $db->table('HSE_history')->insert([
+                            'client_id'             => $id,
+                            'change_type'           => 'CATEGORY_CHANGE',
+                            'remark'                => 'Site Category Changed',
+                            'reason'                => 'Updated via HSE Client Master',
+                            'prev_client_name'      => $oldData['client_name'],
+                            'prev_category'         => $oldData['category'] ?? null,
+                            'prev_sub_category'     => $oldData['sub_category'] ?? null,
+                            'prev_location'         => $oldData['location'] ?? null,
+                            'prev_region'           => $oldData['region'] ?? null,
+                            'prev_cluster'          => $oldData['cluster'] ?? null,
+                            'prev_account_manager'  => $oldData['account_manager'] ?? null,
+                            'prev_email'            => $oldData['email'] ?? null,
+                            'prev_status'           => isset($oldData['status']) ? (int)$oldData['status'] : null,
+                            'new_client_name'       => $oldData['client_name'],
+                            'new_category'          => $postData['category'] ?? ($oldData['category'] ?? null),
+                            'new_sub_category'      => $postData['sub_category'] ?? ($oldData['sub_category'] ?? null),
+                            'new_location'          => $postData['location'] ?? ($oldData['location'] ?? null),
+                            'new_region'            => $postData['region'] ?? ($oldData['region'] ?? null),
+                            'new_cluster'           => $oldData['cluster'] ?? null,
+                            'new_account_manager'   => $oldData['account_manager'] ?? null,
+                            'new_email'             => $postData['email'] ?? ($oldData['email'] ?? null),
+                            'new_status'            => isset($oldData['status']) ? (int)$oldData['status'] : null,
+                            'affected_fields'       => 'category,sub_category',
+                            'affected_audit_count'  => 0,
+                            'affected_nc_count'     => 0,
+                            'affected_audit_ids'    => null,
+                            'changed_by_user_id'    => session()->get('user_id') ?? 0,
+                            'changed_by_user_name'  => session()->get('user_name') ?? 'System',
+                            'created_at'            => date('Y-m-d H:i:s')
+                        ]);
+                    }
+                }
+
                 // Synchronize HSE Client changes (client_name, location, cluster, account_manager, region, status) across all HSE & Gemba dependent tables
+                $postData['client_id'] = $id;
                 $syncService = new \App\Services\ClientSiteDependencySyncService();
                 $syncRes = $syncService->syncHseClientChanges(
                     $oldData,
@@ -263,6 +505,7 @@ class Hse_client extends BaseController
                 );
 
                 if ($syncRes['status'] === 0) {
+                    $db->transRollback();
                     return $this->response->setJSON([
                         'status'  => 0,
                         'message' => $syncRes['message']
@@ -270,7 +513,13 @@ class Hse_client extends BaseController
                 }
 
                 if (!$this->BaseModel->update($id, $postData)) {
+                    $db->transRollback();
                     throw new \Exception('Failed to update record');
+                }
+
+                $db->transComplete();
+                if ($db->transStatus() === FALSE) {
+                    throw new \Exception('Transaction failed while updating HSE client record');
                 }
 
             } else {

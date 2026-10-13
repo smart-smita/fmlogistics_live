@@ -166,6 +166,19 @@ class GembaNcTracker extends BaseController
         // Summary Statistics
         $data['stats'] = $this->getSummaryStats($req, $nc_status);
 
+        $data['age_brackets'] = [
+            ['age_bracket' => '≤ 30 Days'],
+            ['age_bracket' => '> 30 Days'],
+            ['age_bracket' => '≤ 60 Days'],
+            ['age_bracket' => '> 60 Days'],
+            ['age_bracket' => '≤ 90 Days'],
+            ['age_bracket' => '> 90 Days'],
+            ['age_bracket' => '≤ 120 Days'],
+            ['age_bracket' => '> 120 Days'],
+            ['age_bracket' => '> 180 Days'],
+            ['age_bracket' => '> 365 Days']
+        ];
+
         // Filters from Request
         $data['filters'] = [
             'region' => $req->getGet('region'),
@@ -175,6 +188,7 @@ class GembaNcTracker extends BaseController
             'site_name' => $req->getGet('site_name'),
             'point_status' => $req->getGet('point_status'),
             'nc_recommendation' => $req->getGet('nc_recommendation'),
+            'age_bracket' => $req->getGet('age_bracket'),
         ];
 
         $ajaxUrl = base_url('Masters/GembaNcTracker/table_ajax');
@@ -213,7 +227,8 @@ class GembaNcTracker extends BaseController
             'point_status' => 'Status',
             'target_date' => 'Target',
             'closed_date' => 'Closed',
-            'ageing_days' => 'Ageing',
+            'ageing_days' => 'Ageing Days',
+            'age_bracket' => 'Age Bracket',
             'nc_status' => 'NC Status',
             'working_remarks' => 'Working Remarks',
             'working_uploaded_file' => 'Working File',
@@ -233,13 +248,18 @@ class GembaNcTracker extends BaseController
         ]);
 
         $columnDefsArr = [];
-        if ($canBulkAction) {
-            $columnDefsArr[] = ['orderable' => false, 'targets' => [0]];
+        $colIndex = 0;
+        foreach ($display_contents as $k => $v) {
+            $def = [
+                'targets' => [$colIndex],
+                'className' => 'col-field-' . $k . (in_array($k, ['observation_point', 'action_recommendation', 'nc_remark', 'qhse_remarks', 'rejection_reason', 'risks_details']) ? ' long-text-column' : '')
+            ];
+            if ($k === 'bulk_select' || $k === 'action') {
+                $def['orderable'] = false;
+            }
+            $columnDefsArr[] = $def;
+            $colIndex++;
         }
-        $columnDefsArr[] = [
-            'targets' => 'long-text-column',
-            'className' => 'long-text-column'
-        ];
         $columnDefs = json_encode($columnDefsArr);
 
         $tdata = [
@@ -254,6 +274,7 @@ class GembaNcTracker extends BaseController
         ];
         $tdata['is_server_side'] = true;
         $tdata['enable_export'] = false;
+        $tdata['ajax_type'] = 'POST';
 
         $data['table'] = view('Layout/table-view', $tdata);
 
@@ -280,6 +301,47 @@ class GembaNcTracker extends BaseController
                 }
             }
             
+            $ageBrackets = $req->getVar('age_bracket');
+            if (!empty($ageBrackets) && is_array($ageBrackets)) {
+                $ageSql = "DATEDIFF(CASE WHEN LOWER(point_status) IN ('closed', 'excluded', 'hold-review with client') THEN closed_date ELSE CURDATE() END, audit_report_date)";
+                $builder->groupStart();
+                foreach ($ageBrackets as $bracket) {
+                    switch ($bracket) {
+                        case '≤ 30 Days':
+                            $builder->orWhere("$ageSql <= 30", null, false);
+                            break;
+                        case '> 30 Days':
+                            $builder->orWhere("$ageSql > 30", null, false);
+                            break;
+                        case '≤ 60 Days':
+                            $builder->orWhere("$ageSql <= 60", null, false);
+                            break;
+                        case '> 60 Days':
+                            $builder->orWhere("$ageSql > 60", null, false);
+                            break;
+                        case '≤ 90 Days':
+                            $builder->orWhere("$ageSql <= 90", null, false);
+                            break;
+                        case '> 90 Days':
+                            $builder->orWhere("$ageSql > 90", null, false);
+                            break;
+                        case '≤ 120 Days':
+                            $builder->orWhere("$ageSql <= 120", null, false);
+                            break;
+                        case '> 120 Days':
+                            $builder->orWhere("$ageSql > 120", null, false);
+                            break;
+                        case '> 180 Days':
+                            $builder->orWhere("$ageSql > 180", null, false);
+                            break;
+                        case '> 365 Days':
+                            $builder->orWhere("$ageSql > 365", null, false);
+                            break;
+                    }
+                }
+                $builder->groupEnd();
+            }
+
             // Handle cluster mapping since alert_gemba_audits doesn't have cluster
             $clusterFilters = $req->getVar('cluster');
             if (!empty($clusterFilters)) {
@@ -629,12 +691,13 @@ class GembaNcTracker extends BaseController
         $req = service('request');
         $builder = $this->db->table('alert_gemba_audits');
 
-        $nc_status = $req->getGet('nc_status');
+        $nc_status = $req->getVar('nc_status');
         if ($nc_status === '') $nc_status = null;
         
         $this->applyFilters($builder, $req, $nc_status);
 
-        $searchValue = $req->getGet('search')['value'] ?? '';
+        $searchPost = $req->getVar('search');
+        $searchValue = is_array($searchPost) && isset($searchPost['value']) ? trim((string) $searchPost['value']) : '';
         if (!empty($searchValue)) {
             $builder->groupStart()
                 ->like('unique_no', $searchValue)
@@ -650,6 +713,7 @@ class GembaNcTracker extends BaseController
                 ->orLike('target_date', $searchValue)
                 ->orLike('closed_date', $searchValue)
                 ->orLike('ageing_days', $searchValue)
+                ->orLike('age_bracket', $searchValue)
                 ->orLike('nc_worked_by', $searchValue)
                 ->orLike('nc_remark', $searchValue)
                 ->orLike('working_remarks', $searchValue)
@@ -672,14 +736,14 @@ class GembaNcTracker extends BaseController
         
         $totalRecords = $totalRecordsBuilder->countAllResults();
 
-        $start = (int) ($req->getGet('start') ?? 0);
-        $length = (int) ($req->getGet('length') ?? 10);
-        $order = $req->getGet('order');
+        $start = (int) ($req->getVar('start') ?? 0);
+        $length = (int) ($req->getVar('length') ?? 10);
+        $order = $req->getVar('order');
 
         if ($order && isset($order[0])) {
             $colIdx = $order[0]['column'];
             $dir = $order[0]['dir'];
-            $columns = $req->getGet('columns');
+            $columns = $req->getVar('columns');
             $colName = $columns[$colIdx]['data'] ?? 'gemba_sr_no';
             if ($colName == 'action' || $colName == 'bulk_select') {
                 $colName = 'gemba_sr_no';
@@ -834,7 +898,7 @@ class GembaNcTracker extends BaseController
         }
 
         return $this->response->setJSON([
-            'draw' => intval($req->getGet('draw')),
+            'draw' => intval($req->getVar('draw')),
             'recordsTotal' => $totalRecords,
             'recordsFiltered' => $recordsFiltered,
             'data' => $data
@@ -1341,6 +1405,7 @@ class GembaNcTracker extends BaseController
                 ->orLike('target_date', $searchValue)
                 ->orLike('closed_date', $searchValue)
                 ->orLike('ageing_days', $searchValue)
+                ->orLike('age_bracket', $searchValue)
                 ->groupEnd();
         }
 

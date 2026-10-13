@@ -15,15 +15,15 @@
 
 <?php
 
-if(isset($details) && !empty($details))
-	$details=$details[0];
+		if(isset($details) && !empty($details))
+			$details=$details[0];
 
-$pending_message = '<span class="badge badge-warning">Pending</span>';
-$verified_message = '<span class="badge badge-info">Verified</span>';
-$active_message = '<span class="badge badge-success">Active</span>';
-$deactivated_message='<span class="badge badge-danger">Deactive</span>';
-$status= ($details ['status'] == 0) ? $pending_message : ($details ['status'] == 1 ? $verified_message: ($details ['status'] == 2 ? $active_message : ($details ['status'] == 3 ? $deactivated_message : "")));
-$near_miss_status= ($details ['status'] == 0) ? $pending_message : ($details ['status'] == 1 ? $verified_message: ($details ['status'] == 2 ? $active_message : ($details ['status'] == 3 ? $deactivated_message : "")));
+		$pending_message = '<span class="badge badge-warning">Pending</span>';
+		$verified_message = '<span class="badge badge-info">Verified</span>';
+		$active_message = '<span class="badge badge-success">Active</span>';
+		$deactivated_message='<span class="badge badge-danger">Deactive</span>';
+		$status= ($details ['status'] == 0) ? $pending_message : ($details ['status'] == 1 ? $verified_message: ($details ['status'] == 2 ? $active_message : ($details ['status'] == 3 ? $deactivated_message : "")));
+		$near_miss_status= ($details ['status'] == 0) ? $pending_message : ($details ['status'] == 1 ? $verified_message: ($details ['status'] == 2 ? $active_message : ($details ['status'] == 3 ? $deactivated_message : "")));
 
 ?>
 <div class="row">
@@ -388,22 +388,21 @@ $near_miss_status= ($details ['status'] == 0) ? $pending_message : ($details ['s
 										
 									</div>
 									<div class="profile-page-center">
-										<h1 class="card-user-profile-name">Write Comment</h1>
-                                        <form action="<?=$form_action?>" method="post">
-										<div class="comment-block">
+										<h3 class="fw-bold text-dark mb-4"><i class="fa fa-comments text-primary me-2"></i> Write Comment</h3>
+                                         <form action="<?=$form_action?>" method="post" class="mb-4">
+										<div class="comment-block mb-3">
 											<div class="form-group">
-												<textarea name="comment_text" class="form-control" id="comment-textarea" rows="2" placeholder="Enter your comment here..." require></textarea>
-												<div class="media-feed-control clearfix">
-													<button type="submit" class="btn btn-secondary btn-sm comment-reply float-right waves-effect waves-light">Post</button>
-													<!-- <a href="#" data-toggle="tooltip" title="" data-original-title="Add Picture">
-														<i class="batch-icon batch-icon-image"></i>
-													</a> -->
-												</div>
+												<textarea name="comment_text" class="form-control form-control-solid border border-gray-300 rounded-3 p-3 fs-6" id="comment-textarea" rows="3" placeholder="Enter your comment here..." required style="resize: vertical; min-height: 70px; max-height: 200px; overflow-y: auto;"></textarea>
 											</div>
 										</div>
-                                        <input type="text" style="visibility:hidden" value="<?=$details['near_miss_id']?>" name="near_miss_id">
-                                        <input type="text" style="visibility:hidden" value="<?=$login_id?>" name="user_id">
-                                        </form>
+										<div class="d-flex justify-content-end">
+											<button type="submit" class="btn btn-primary px-4 py-2 rounded-3 shadow-sm fw-bold d-inline-flex align-items-center">
+												<i class="fa fa-paper-plane me-2"></i> Post Comment
+											</button>
+										</div>
+                                         <input type="hidden" value="<?=$details['near_miss_id']?>" name="near_miss_id">
+                                         <input type="hidden" value="<?=$login_id?>" name="user_id">
+                                         </form>
 
 										<hr>
 										<ul class="list-unstyled mt-5">

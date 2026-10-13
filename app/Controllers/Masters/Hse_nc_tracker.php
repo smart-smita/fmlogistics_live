@@ -748,8 +748,7 @@ class Hse_nc_tracker extends BaseController
                         break;
                 }
 
-                $historyBtn = '<button class="btn btn-info btn-sm mt-2 ms-1" title="View Action History" onclick="showNcActionHistory(' . $row['id'] . ', \'HSE\', \'' . htmlspecialchars($row['client_name'] ?? '', ENT_QUOTES) . '\')"><i class="fa fa-history"></i></button>';
-                $action = "<center>" . ($statusLabels[$status] ?? '-') . "<br>" . $active . $edit . $historyBtn . "</center>";
+                $action = "<center>" . ($statusLabels[$status] ?? '-') . "<br>" . $active . $edit . "</center>";
             }
 
             $disabled = ($status === 2) ? '' : 'disabled';

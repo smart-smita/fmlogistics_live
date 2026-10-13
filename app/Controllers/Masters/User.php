@@ -128,9 +128,6 @@ class User extends BaseController
                 ->getResultArray();
         }
 
-        $data['oe_clients'] = $db->table("alert_client")->where("status !=", 2)->orderBy("client_name")->get()->getResultArray();
-        $data['hse_clients'] = $db->table("alert_hse_client_master")->where("status !=", 2)->orderBy("client_name")->get()->getResultArray();
-
         return view("Master/add_user", $data);
     }
     public function template_type_filter($category)
@@ -210,8 +207,6 @@ class User extends BaseController
         $db = db_connect();
         $data['cluster_list'] = $db->table("alert_cluster_master")->where("status", "1")->orderBy("cluster_name")->get()->getResultArray();
 
-        $data['oe_clients'] = $db->table("alert_client")->where("status !=", 2)->orderBy("client_name")->get()->getResultArray();
-        $data['hse_clients'] = $db->table("alert_hse_client_master")->where("status !=", 2)->orderBy("client_name")->get()->getResultArray();
 
         return view("Master/add_user", $data);
     }
@@ -247,34 +242,6 @@ class User extends BaseController
 
         $builder->orderBy('user_id', 'DESC');
         $tdata['table_data'] = $builder->get()->getResultArray();
-
-        // Fetch client mappings to show in Client and Cluster columns
-        $userIds = array_column($tdata['table_data'], 'user_id');
-        if (!empty($userIds)) {
-            $mappings = $db->table('alert_user_client_mapping')
-                           ->whereIn('user_id', $userIds)
-                           ->where('status', 1)
-                           ->get()->getResultArray();
-            $userMappingData = [];
-            foreach ($mappings as $m) {
-                $userMappingData[$m['user_id']]['sites'][] = $m['site_name'];
-                $userMappingData[$m['user_id']]['clusters'][] = $m['cluster_name'];
-            }
-            
-            foreach ($tdata['table_data'] as &$row) {
-                $uid = $row['user_id'];
-                if (isset($userMappingData[$uid])) {
-                    $sites = array_unique(array_filter($userMappingData[$uid]['sites']));
-                    $clusters = array_unique(array_filter($userMappingData[$uid]['clusters']));
-                    $row['user_location'] = implode(', ', $sites);
-                    $row['user_cluster'] = implode(', ', $clusters);
-                } else if (in_array($row['user_designation'], ['Cluster manager', 'Account Manager'])) {
-                    $row['user_location'] = '';
-                    $row['user_cluster'] = '';
-                }
-            }
-            unset($row); // Important: destroy reference to avoid bug in the next loop
-        }
 
         // Debug logging for results
         if (isset($_SESSION['user_name']) && $_SESSION['user_name'] === 'Balamurugan') {
@@ -395,38 +362,12 @@ class User extends BaseController
         $responce['status'] = "0";
         $responce['message'] = "Details not found";
         if (isset($id)) {
-            $userData = $this->BaseModel->find($id);
-            if ($userData) {
-                $db = db_connect();
-                $mappings = $db->table('alert_user_client_mapping')
-                               ->where('user_id', $id)
-                               ->where('status', 1)
-                               ->get()->getResultArray();
-                $oe_ids = [];
-                $hse_ids = [];
-                foreach ($mappings as $m) {
-                    if ($m['client_type'] === 'OE') {
-                        $oe_ids[] = (string)$m['client_id'];
-                    } else if ($m['client_type'] === 'HSE') {
-                        $hse_ids[] = (string)$m['client_id'];
-                    }
-                }
-                $totalOeCount = $db->table('alert_client')->where('status !=', 2)->countAllResults();
-                if ($totalOeCount > 0 && count(array_unique($oe_ids)) >= $totalOeCount) {
-                    $oe_ids[] = 'ALL';
-                }
 
-                $totalHseCount = $db->table('alert_hse_client_master')->where('status !=', 2)->countAllResults();
-                if ($totalHseCount > 0 && count(array_unique($hse_ids)) >= $totalHseCount) {
-                    $hse_ids[] = 'ALL';
-                }
-
-                $userData['oe_site_ids'] = $oe_ids;
-                $userData['hse_site_ids'] = $hse_ids;
-                $responce['data'] = $userData;
-                $responce['status'] = "1";
-                $responce['message'] = "Details found";
-            }
+            $responce['data'] = $this->BaseModel->find($id);
+            //print_r($responce['data']);
+            // exit();
+            $responce['status'] = "1";
+            $responce['message'] = "Details found";
         }
         echo json_encode($responce);
     }
@@ -561,14 +502,6 @@ class User extends BaseController
             }
         }
 
-        $mappingPostData = $postData;
-        unset(
-            $postData['oe_site_ids'],
-            $postData['hse_site_ids'],
-            $postData['oe_site_ids[]'],
-            $postData['hse_site_ids[]']
-        );
-
         if (isset($id)) {
             $responce['message'] = "Data update failed";
             if (isset($action)) {
@@ -601,10 +534,6 @@ class User extends BaseController
                 $responce['status'] = "1";
                 $responce['message'] = "Data updated successfully";
 
-                if ($action === null) {
-                    $this->saveUserClientMappings($id, $mappingPostData);
-                }
-
                 // Add entry to cluster master if designation is Cluster manager
                 if ($action === null && isset($postData['user_designation']) && $postData['user_designation'] == 'Cluster manager') {
                     $clusterName = trim($postData['user_name'] ?? '');
@@ -635,9 +564,6 @@ class User extends BaseController
             if ($this->BaseModel->insert($postData)) {
                 $responce['status'] = "1";
                 $responce['message'] = "Data saved successfully";
-
-                $newUserId = $this->BaseModel->insertID() ?: db_connect()->insertID();
-                $this->saveUserClientMappings($newUserId, $mappingPostData);
 
                 // Add entry to cluster master if designation is Cluster manager
                 if (isset($postData['user_designation']) && $postData['user_designation'] == 'Cluster manager') {
@@ -894,164 +820,5 @@ class User extends BaseController
         }
 
         return $this->response->setJSON($response);
-    }
-
-    private function saveUserClientMappings($userId, $postData)
-    {
-        if (!$userId) return;
-        $db = db_connect();
-
-        if (!isset($postData['oe_site_ids']) && !isset($postData['hse_site_ids']) &&
-            !isset($postData['oe_site_ids[]']) && !isset($postData['hse_site_ids[]'])) {
-            return;
-        }
-
-        $existingMappings = $db->table('alert_user_client_mapping')
-                               ->where('user_id', $userId)
-                               ->get()->getResultArray();
-        
-        $oldKeys = [];
-        foreach ($existingMappings as $em) {
-            $oldKeys[$em['client_type'] . '_' . $em['client_id']] = $em;
-        }
-
-        $db->table('alert_user_client_mapping')->where('user_id', $userId)->delete();
-
-        $newKeys = [];
-
-        $oeSiteIds = $postData['oe_site_ids'] ?? ($postData['oe_site_ids[]'] ?? []);
-        if (is_string($oeSiteIds)) {
-            $oeSiteIds = array_filter(explode(',', $oeSiteIds));
-        }
-        if (is_array($oeSiteIds)) {
-            $hasAllOe = false;
-            foreach ($oeSiteIds as $val) {
-                $valStr = strtolower(trim((string)$val));
-                if (in_array($valStr, ['all', 'all_selected', 'select_all', 'all selected', '0'], true)) {
-                    $hasAllOe = true;
-                    break;
-                }
-            }
-            if ($hasAllOe) {
-                $allOeClients = $db->table('alert_client')->where('status !=', 2)->select('client_id')->get()->getResultArray();
-                $oeSiteIds = array_column($allOeClients, 'client_id');
-            }
-
-            foreach ($oeSiteIds as $oeId) {
-                $oeId = trim($oeId);
-                if (empty($oeId) || strtolower($oeId) === 'all') continue;
-                $client = $db->table('alert_client')->where('client_id', $oeId)->get()->getRowArray();
-                if ($client) {
-                    $key = 'OE_' . $client['client_id'];
-                    $newKeys[$key] = [
-                        'user_id' => $userId,
-                        'client_id' => $client['client_id'],
-                        'client_type' => 'OE',
-                        'site_name' => $client['client_name'],
-                        'cluster_name' => $client['cluster'] ?? '',
-                        'region_name' => $client['region'] ?? ''
-                    ];
-                    $db->table('alert_user_client_mapping')->insert([
-                        'user_id' => $userId,
-                        'client_id' => $client['client_id'],
-                        'client_type' => 'OE',
-                        'site_name' => $client['client_name'],
-                        'cluster_name' => $client['cluster'] ?? '',
-                        'region_name' => $client['region'] ?? '',
-                        'created_by' => $_SESSION['user_id'] ?? null,
-                        'status' => 1
-                    ]);
-                }
-            }
-        }
-
-        $hseSiteIds = $postData['hse_site_ids'] ?? ($postData['hse_site_ids[]'] ?? []);
-        if (is_string($hseSiteIds)) {
-            $hseSiteIds = array_filter(explode(',', $hseSiteIds));
-        }
-        if (is_array($hseSiteIds)) {
-            $hasAllHse = false;
-            foreach ($hseSiteIds as $val) {
-                $valStr = strtolower(trim((string)$val));
-                if (in_array($valStr, ['all', 'all_selected', 'select_all', 'all selected', '0'], true)) {
-                    $hasAllHse = true;
-                    break;
-                }
-            }
-            if ($hasAllHse) {
-                $allHseClients = $db->table('alert_hse_client_master')->where('status !=', 2)->select('client_id')->get()->getResultArray();
-                $hseSiteIds = array_column($allHseClients, 'client_id');
-            }
-
-            foreach ($hseSiteIds as $hseId) {
-                $hseId = trim($hseId);
-                if (empty($hseId) || strtolower($hseId) === 'all') continue;
-                $hseClient = $db->table('alert_hse_client_master')->where('client_id', $hseId)->get()->getRowArray();
-                if ($hseClient) {
-                    $key = 'HSE_' . $hseClient['client_id'];
-                    $newKeys[$key] = [
-                        'user_id' => $userId,
-                        'client_id' => $hseClient['client_id'],
-                        'client_type' => 'HSE',
-                        'site_name' => $hseClient['client_name'],
-                        'cluster_name' => $hseClient['cluster'] ?? '',
-                        'region_name' => $hseClient['region'] ?? ''
-                    ];
-                    $db->table('alert_user_client_mapping')->insert([
-                        'user_id' => $userId,
-                        'client_id' => $hseClient['client_id'],
-                        'client_type' => 'HSE',
-                        'site_name' => $hseClient['client_name'],
-                        'cluster_name' => $hseClient['cluster'] ?? '',
-                        'region_name' => $hseClient['region'] ?? '',
-                        'created_by' => $_SESSION['user_id'] ?? null,
-                        'status' => 1
-                    ]);
-                }
-            }
-        }
-
-        if ($db->tableExists('alert_user_client_allocation_history')) {
-            $changedByUserId = $_SESSION['user_id'] ?? null;
-            $changedByUserName = $_SESSION['user_name'] ?? 'System';
-
-            foreach ($oldKeys as $k => $oldItem) {
-                if (!isset($newKeys[$k])) {
-                    $db->table('alert_user_client_allocation_history')->insert([
-                        'user_id' => $userId,
-                        'client_id' => $oldItem['client_id'],
-                        'client_type' => $oldItem['client_type'],
-                        'site_name' => $oldItem['site_name'],
-                        'cluster_name' => $oldItem['cluster_name'] ?? '',
-                        'region_name' => $oldItem['region_name'] ?? '',
-                        'action' => 'REMOVED',
-                        'effective_start_date' => $oldItem['created_at'] ?? date('Y-m-d H:i:s'),
-                        'effective_end_date' => date('Y-m-d H:i:s'),
-                        'changed_by_user_id' => $changedByUserId,
-                        'changed_by_user_name' => $changedByUserName,
-                        'created_at' => date('Y-m-d H:i:s')
-                    ]);
-                }
-            }
-
-            foreach ($newKeys as $k => $newItem) {
-                if (!isset($oldKeys[$k])) {
-                    $db->table('alert_user_client_allocation_history')->insert([
-                        'user_id' => $userId,
-                        'client_id' => $newItem['client_id'],
-                        'client_type' => $newItem['client_type'],
-                        'site_name' => $newItem['site_name'],
-                        'cluster_name' => $newItem['cluster_name'] ?? '',
-                        'region_name' => $newItem['region_name'] ?? '',
-                        'action' => 'ASSIGNED',
-                        'effective_start_date' => date('Y-m-d H:i:s'),
-                        'effective_end_date' => null,
-                        'changed_by_user_id' => $changedByUserId,
-                        'changed_by_user_name' => $changedByUserName,
-                        'created_at' => date('Y-m-d H:i:s')
-                    ]);
-                }
-            }
-        }
     }
 }

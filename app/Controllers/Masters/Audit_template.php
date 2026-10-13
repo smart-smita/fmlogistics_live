@@ -1173,7 +1173,7 @@ class Audit_template extends BaseController
 
     function save_perform_audit($audit_template_id)
     {
-        helper('designation_acl');
+
         $request = service('request');
         $postData = $request->getVar();
         $db = db_connect();
@@ -1224,7 +1224,7 @@ class Audit_template extends BaseController
 
         $clientRow = $db->table('alert_client')
             ->where('client_name', $location)
-            ->where('status', 1)
+            ->where('account_manager !=', '')
             ->get()
             ->getRowArray();
 
@@ -1237,15 +1237,6 @@ class Audit_template extends BaseController
         $alert_final_structured_audit_data['region'] =
             $clientRow['region'] ?? '';
         $alert_final_structured_audit_data['audit_note'] = $postData['audit_note'] ?? '';
-
-        // Snapshot fields for historical audit preservation
-        $alert_final_structured_audit_data['snapshot_site_id'] = $clientRow['client_id'] ?? null;
-        $alert_final_structured_audit_data['snapshot_account_manager_name'] = $clientRow['account_manager'] ?? ($alert_final_structured_audit_data['client_manager_name'] ?? '');
-        $alert_final_structured_audit_data['snapshot_cluster_manager_name'] = $clientRow['cluster'] ?? ($alert_final_structured_audit_data['cluster_name'] ?? '');
-        $alert_final_structured_audit_data['snapshot_created_by_user_id'] = $_SESSION['user_id'] ?? null;
-        $alert_final_structured_audit_data['snapshot_created_by_user_name'] = $_SESSION['user_name'] ?? null;
-        $alert_final_structured_audit_data['snapshot_created_at'] = date('Y-m-d H:i:s');
-
         $alert_final_structured_audit->insert($alert_final_structured_audit_data);
 
         $inId = $db->insertID();
@@ -1309,22 +1300,6 @@ class Audit_template extends BaseController
                     }
                 }
             $alert_final_structured_audit_details_table->insert($alert_final_structured_audit_details);
-            $detailInsertId = $db->insertID();
-
-            // Log NC action history if finding is NO
-            if ($alert_final_structured_audit_details['audit_finding'] === 'NO') {
-                logNcActionHistory(
-                    'OE',
-                    (int)$detailInsertId,
-                    'CREATED',
-                    null,
-                    '0',
-                    $alert_final_structured_audit_details['audit_remark'] ?? 'NC created during audit performance',
-                    $alert_final_structured_audit_details['audit_attachment'] ?? null,
-                    (int)$inId,
-                    $location
-                );
-            }
 
         } //for loop[]
 
@@ -1729,15 +1704,6 @@ class Audit_template extends BaseController
         
         $alert_normal_audit_data['audit_template_id'] = $resolvedTemplateId;
         $alert_normal_audit_data['audit_by_user_id'] = $_SESSION['login_id'];
-
-        // Snapshot fields for historical audit preservation
-        $alert_normal_audit_data['snapshot_site_id'] = $clientRow['client_id'] ?? null;
-        $alert_normal_audit_data['snapshot_account_manager_name'] = $clientRow['account_manager'] ?? ($alert_normal_audit_data['client_manager_name'] ?? '');
-        $alert_normal_audit_data['snapshot_cluster_manager_name'] = $clientRow['cluster'] ?? ($alert_normal_audit_data['cluster_name'] ?? '');
-        $alert_normal_audit_data['snapshot_created_by_user_id'] = $_SESSION['user_id'] ?? null;
-        $alert_normal_audit_data['snapshot_created_by_user_name'] = $_SESSION['user_name'] ?? null;
-        $alert_normal_audit_data['snapshot_created_at'] = date('Y-m-d H:i:s');
-
         $alert_normal_audit->insert($alert_normal_audit_data);
 
         $inId = $db->insertID();

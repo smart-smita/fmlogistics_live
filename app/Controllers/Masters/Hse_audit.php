@@ -736,19 +736,19 @@ class Hse_audit extends BaseController
            BASIC VALIDATION
         ========================================================= */
         if (empty($postData['audit_name'])) {
-            return redirect()->to(base_url("Masters/Hse_audit/audit_view/" . $id))->with('error', 'Audit details missing.');
+            return redirect()->back()->with('error', 'Audit details missing.');
         }
 
         if (empty($postData['auditor_name'])) {
-            return redirect()->to(base_url("Masters/Hse_audit/audit_view/" . $id))->with('error', 'Auditor Name is required.');
+            return redirect()->back()->with('error', 'Auditor Name is required.');
         }
 
         if (empty($postData['client_name'])) {
-            return redirect()->to(base_url("Masters/Hse_audit/audit_view/" . $id))->with('error', 'Client Name is required.');
+            return redirect()->back()->with('error', 'Client Name is required.');
         }
 
         if (empty($postData['main_category']) || empty($postData['sub_category'])) {
-            return redirect()->to(base_url("Masters/Hse_audit/audit_view/" . $id))->with('error', 'Site Category / Sub Category is required.');
+            return redirect()->back()->with('error', 'Site Category / Sub Category is required.');
         }
 
         // Auto-set next audit date to +3 months if not explicitly provided
@@ -778,7 +778,7 @@ class Hse_audit extends BaseController
             $exists = $existingQuery->countAllResults(false);
 
             if ($exists > 0) {
-                return redirect()->to(base_url("Masters/Hse_audit/audit_view/" . $id))->with('error', 'This Client/Location has already been audited once. Duplicate perform audit is not allowed.');
+                return redirect()->back()->with('error', 'This Client/Location has already been audited once. Duplicate perform audit is not allowed.');
             }
         }
 
@@ -790,10 +790,6 @@ class Hse_audit extends BaseController
         /* =========================================================
            INSERT MASTER RECORD
         ========================================================= */
-        $clientRow = $db->table('alert_hse_client_master')
-            ->where('client_name', $postData['client_name'] ?? '')
-            ->get()->getRowArray();
-
         $masterData = [
             'audit_no' => $postData['audit_no'] ?? '',
             'audit_name' => $postData['audit_name'] ?? '',
@@ -810,13 +806,7 @@ class Hse_audit extends BaseController
             'main_category' => $postData['main_category'] ?? '',
             'sub_category' => $postData['sub_category'] ?? '',
             'audit_template_id' => $id,
-            'status' => 1,
-            'snapshot_site_id' => $clientRow['client_id'] ?? null,
-            'snapshot_account_manager_name' => ($postData['account_manager'] ?? '') ?: ($clientRow['account_manager'] ?? ''),
-            'snapshot_cluster_manager_name' => ($postData['cluster_name'] ?? '') ?: ($clientRow['cluster'] ?? ''),
-            'snapshot_created_by_user_id' => $_SESSION['user_id'] ?? null,
-            'snapshot_created_by_user_name' => $_SESSION['user_name'] ?? null,
-            'snapshot_created_at' => date('Y-m-d H:i:s')
+            'status' => 1
         ];
 
         $masterTable->set($masterData);
@@ -827,7 +817,7 @@ class Hse_audit extends BaseController
 
         if (!$hse_id) {
             $db->transRollback();
-            return redirect()->to(base_url("Masters/Hse_audit/audit_view/" . $id))->with('error', 'Master audit save failed.');
+            return redirect()->back()->with('error', 'Master audit save failed.');
         }
 
         /* =========================================================
@@ -967,7 +957,7 @@ class Hse_audit extends BaseController
 
                     if (empty($validCapaJson)) {
                         $db->transRollback();
-                        return redirect()->to(base_url("Masters/Hse_audit/audit_view/" . $id))->with(
+                        return redirect()->back()->with(
                             'error',
                             'CAPA details are mandatory for all NO responses.'
                         );
@@ -1060,7 +1050,7 @@ class Hse_audit extends BaseController
         $db->transComplete();
 
         if ($db->transStatus() === false) {
-            return redirect()->to(base_url("Masters/Hse_audit/audit_view/" . $id))->with('error', 'Audit save failed. Please try again.');
+            return redirect()->back()->with('error', 'Audit save failed. Please try again.');
         }
 
         /* =========================================================
@@ -1720,7 +1710,7 @@ class Hse_audit extends BaseController
         if (!$newAuditId) {
             $dbError = $db->error();
             $lastQuery = (string) $db->getLastQuery();
-            return redirect()->to(base_url("Masters/Hse_audit/hse_reaudit/" . $originalHseId))->with('error', 'Reaudit master save failed: ' . ($dbError['message'] ?? 'Unknown DB Error') . ' | SQL: ' . $lastQuery);
+            return redirect()->back()->with('error', 'Reaudit master save failed: ' . ($dbError['message'] ?? 'Unknown DB Error') . ' | SQL: ' . $lastQuery);
         }
 
         /* -----------------------------
@@ -1870,7 +1860,7 @@ class Hse_audit extends BaseController
 
                     if (empty($validCapaJson)) {
                         $db->transRollback();
-                        return redirect()->to(base_url("Masters/Hse_audit/hse_reaudit/" . $originalHseId))->with(
+                        return redirect()->back()->with(
                             'error',
                             'CAPA details are mandatory for all NO responses.'
                         );
@@ -1916,7 +1906,7 @@ class Hse_audit extends BaseController
         $db->transComplete();
 
         if ($db->transStatus() === false) {
-            return redirect()->to(base_url("Masters/Hse_audit/hse_reaudit/" . $originalHseId))->with('error', 'HSE Reaudit save failed. Please try again.');
+            return redirect()->back()->with('error', 'HSE Reaudit save failed. Please try again.');
         }
 
         // Requirement 3: Call sync service
@@ -3699,9 +3689,6 @@ class Hse_audit extends BaseController
     // Load audit questions dynamically from alert_audit_questions
     public function get_audit_questions_ajax()
     {
-        // Set JSON header explicitly
-        $this->response->setHeader('Content-Type', 'application/json');
-
         $site_category = $this->request->getVar('site_category');
         $sub_category = $this->request->getVar('sub_category');
         $audit_template_id = $this->request->getVar('audit_template_id');

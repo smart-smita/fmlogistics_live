@@ -72,31 +72,6 @@ class BaseController extends Controller
             $this->customer_id = $_SESSION['customer_id'];
             $this->user_id = $_SESSION['user_id'];
         }
-
-        // Auto-run ACL Schema Migration if needed
-        $db = \Config\Database::connect();
-        $needsMigration = false;
-        
-        if (!$db->tableExists('alert_user_client_mapping')) {
-            $needsMigration = true;
-        } else {
-            $mappingCols = $db->getFieldNames('alert_user_client_mapping');
-            if (!in_array('status', $mappingCols)) {
-                $needsMigration = true;
-            }
-        }
-        
-        if (!$needsMigration && $db->tableExists('alert_final_structured_audit')) {
-            $auditCols = $db->getFieldNames('alert_final_structured_audit');
-            if (!in_array('snapshot_site_id', $auditCols)) {
-                $needsMigration = true;
-            }
-        }
-
-        if ($needsMigration) {
-            $mig = new \App\Controllers\Admin\DataMigration();
-            $mig->runMultiSiteAclMigration($db);
-        }
     }
     /**
      * Validate file type for uploads
@@ -662,15 +637,4 @@ class BaseController extends Controller
         return $mimeTypes[$ext] ?? 'application/octet-stream';
     }
 
-    public function set_active_client()
-    {
-        $request = \Config\Services::request();
-        $client = $request->getPost('client');
-        
-        if ($client) {
-            $this->session->set('selected_active_client', $client);
-            return $this->response->setJSON(['status' => 1, 'message' => 'Active client updated']);
-        }
-        return $this->response->setJSON(['status' => 0, 'message' => 'Invalid client']);
-    }
 }

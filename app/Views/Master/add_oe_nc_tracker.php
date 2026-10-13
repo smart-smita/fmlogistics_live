@@ -226,7 +226,6 @@ function downloadMonthlyReport(format) {
 <?php $this->endSection(); ?>
 
 <?php  $this->section("modals_section"); ?>
-<?= view('Master/nc_action_history_modal'); ?>
 
 <!--begin::Modal - Bulk Close-->
 <div class="modal fade" id="bulkCloseModal" tabindex="-1" aria-hidden="true">

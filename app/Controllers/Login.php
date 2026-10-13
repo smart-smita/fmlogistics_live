@@ -108,15 +108,8 @@ class Login extends BaseController
             $_SESSION['user_name'] = "Super_admin";
             $_SESSION['user_email'] = $adminEmail;
             $_SESSION['login_time'] = date('Y-m-d H:i:s');
-            $_SESSION['user_acl'] = [
-                'is_restricted' => false,
-                'can_view_all' => true,
-                'oe_client_ids' => [],
-                'oe_site_names' => [],
-                'hse_client_ids' => [],
-                'hse_site_names' => [],
-                'allocated_clusters' => []
-            ];
+            unset($_SESSION['feedback_skipped_session']);
+            unset($_SESSION['app_status_skipped_session']);
 
             $agent = $this->request->getUserAgent();
             $browser = $agent->getBrowser() . ' ' . $agent->getVersion();
@@ -245,89 +238,8 @@ class Login extends BaseController
         $_SESSION['user_location'] = $userData['user_location'] ?? '';
         $_SESSION['user_emp_country'] = $userData['user_emp_country'] ?? '';
         $_SESSION['login_time'] = date('Y-m-d H:i:s');
-
-        // Multi-Site Access Control (ACL) Population
-        $userDesignation = strtolower(trim($userData['user_designation'] ?? ''));
-        $isAdminFlag = !empty($userData['admin_flag']) && $userData['admin_flag'] == 1;
-        $isRestrictedRole = in_array($userDesignation, ['cluster manager', 'account manager']) && !$isAdminFlag;
-
-        $userAcl = [
-            'is_restricted' => $isRestrictedRole,
-            'can_view_all' => !$isRestrictedRole,
-            'oe_client_ids' => [],
-            'oe_site_names' => [],
-            'hse_client_ids' => [],
-            'hse_site_names' => [],
-            'allocated_clusters' => []
-        ];
-
-        if ($isRestrictedRole) {
-            $db = db_connect();
-            $mappings = $db->table('alert_user_client_mapping')
-                           ->where('user_id', $userData['user_id'])
-                           ->where('status', 1)
-                           ->get()->getResultArray();
-
-            $oeIds = [];
-            $oeSites = [];
-            $hseIds = [];
-            $hseSites = [];
-            $clusters = [];
-
-            foreach ($mappings as $m) {
-                if ($m['client_type'] === 'OE') {
-                    $oeIds[] = (int)$m['client_id'];
-                    if (!empty($m['site_name'])) {
-                        $oeSites[] = trim($m['site_name']);
-                    }
-                } elseif ($m['client_type'] === 'HSE') {
-                    $hseIds[] = (int)$m['client_id'];
-                    if (!empty($m['site_name'])) {
-                        $hseSites[] = trim($m['site_name']);
-                    }
-                }
-                if (!empty($m['cluster_name'])) {
-                    $clusters[] = trim($m['cluster_name']);
-                }
-            }
-
-            // Fallback for legacy setups if alert_user_client_mapping has no records for this user
-            if (empty($mappings)) {
-                if (!empty($userData['user_cluster'])) {
-                    $clusters[] = trim($userData['user_cluster']);
-                    $oeFallback = $db->table('alert_client')->where('cluster', $userData['user_cluster'])->where('status !=', 2)->get()->getResultArray();
-                    foreach ($oeFallback as $c) {
-                        $oeIds[] = (int)$c['client_id'];
-                        $oeSites[] = trim($c['client_name']);
-                    }
-                    $hseFallback = $db->table('alert_hse_client_master')->where('cluster', $userData['user_cluster'])->where('status !=', 2)->get()->getResultArray();
-                    foreach ($hseFallback as $c) {
-                        $hseIds[] = (int)$c['client_id'];
-                        $hseSites[] = trim($c['client_name']);
-                    }
-                }
-                if (!empty($userData['user_location'])) {
-                    $oeLoc = $db->table('alert_client')->where('client_name', $userData['user_location'])->where('status !=', 2)->get()->getResultArray();
-                    foreach ($oeLoc as $c) {
-                        $oeIds[] = (int)$c['client_id'];
-                        $oeSites[] = trim($c['client_name']);
-                    }
-                    $hseLoc = $db->table('alert_hse_client_master')->where('client_name', $userData['user_location'])->where('status !=', 2)->get()->getResultArray();
-                    foreach ($hseLoc as $c) {
-                        $hseIds[] = (int)$c['client_id'];
-                        $hseSites[] = trim($c['client_name']);
-                    }
-                }
-            }
-
-            $userAcl['oe_client_ids'] = array_values(array_unique($oeIds));
-            $userAcl['oe_site_names'] = array_values(array_unique($oeSites));
-            $userAcl['hse_client_ids'] = array_values(array_unique($hseIds));
-            $userAcl['hse_site_names'] = array_values(array_unique($hseSites));
-            $userAcl['allocated_clusters'] = array_values(array_unique($clusters));
-        }
-
-        $_SESSION['user_acl'] = $userAcl;
+        unset($_SESSION['feedback_skipped_session']); // Ensure feedback popup is eligible on new login if not submitted
+        unset($_SESSION['app_status_skipped_session']); // Ensure application status feedback popup is eligible on new login if not submitted
 
         $agent = $this->request->getUserAgent();
         $browser = $agent->getBrowser() . ' ' . $agent->getVersion();

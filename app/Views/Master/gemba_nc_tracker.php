@@ -126,6 +126,17 @@
                         <?php endforeach; ?>
                     </select>
                 </div>
+                <div class="col-md-2">
+                    <label class="form-label fw-bold text-dark">Ageing</label>
+                    <select name="age_bracket[]" class="form-select select2-filter" multiple="multiple"
+                        data-control="select2" data-placeholder="All Ages">
+                        <?php foreach ($age_brackets as $ab): ?>
+                            <option value="<?= esc($ab['age_bracket']) ?>">
+                                <?= esc($ab['age_bracket']) ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
                 <div class="col-md-2 d-flex align-items-end">
                     <button type="button" class="btn btn-primary w-100" id="apply_filter">
                         <i class="fas fa-filter me-2"></i> Show
@@ -158,51 +169,109 @@
         word-break: break-word !important;
     }
     
-    /* Keep action column and bulk select checkbox tight & make them sticky */
-    #gemba_nc_tracker_table_wrapper .table.dataTable td:first-child,
-    #gemba_nc_tracker_table_wrapper .table.dataTable th:first-child {
-        white-space: nowrap !important;
-        width: 40px !important;
-        min-width: 40px !important;
-        max-width: 40px !important;
+    /* ------------------------------------------------------------- */
+    /* PROPER STICKY COLUMNS FOR GEMBA NC TRACKER                     */
+    /* Handles both with and without Bulk Select (admin/auditor role) */
+    /* ------------------------------------------------------------- */
+
+    /* 1. Bulk Select Column (when present) */
+    #gemba_nc_tracker_table th.col-field-bulk_select,
+    #gemba_nc_tracker_table td.col-field-bulk_select {
         position: sticky !important;
         left: 0 !important;
-        z-index: 2 !important;
-        background-color: #fff !important;
+        width: 45px !important;
+        min-width: 45px !important;
+        max-width: 45px !important;
+        z-index: 10 !important;
+        background-color: #ffffff !important;
+        text-align: center !important;
+        box-shadow: inset -1px 0 0 #e4e6ef !important;
     }
 
-    #gemba_nc_tracker_table_wrapper .table.dataTable td:nth-child(2),
-    #gemba_nc_tracker_table_wrapper .table.dataTable th:nth-child(2) {
-        white-space: nowrap !important;
-        width: 100px !important;
-        min-width: 100px !important;
-        max-width: 100px !important;
+    /* 2. Action Column - positioned after bulk_select if present, otherwise at left: 0 */
+    #gemba_nc_tracker_table th.col-field-action,
+    #gemba_nc_tracker_table td.col-field-action {
         position: sticky !important;
-        left: 40px !important; /* Offset by the width of the first column */
-        z-index: 2 !important;
-        background-color: #fff !important;
-        box-shadow: inset -1px 0 0 #e2e8f0 !important; /* Use inset shadow for seamless border */
+        width: 130px !important;
+        min-width: 130px !important;
+        max-width: 150px !important;
+        z-index: 10 !important;
+        background-color: #ffffff !important;
+        text-align: center !important;
+        box-shadow: inset -1px 0 0 #e4e6ef !important;
     }
 
-    /* Keep headers above body rows */
-    #gemba_nc_tracker_table_wrapper .table.dataTable thead th:first-child,
-    #gemba_nc_tracker_table_wrapper .table.dataTable thead th:nth-child(2) {
-        z-index: 3 !important;
-        background-color: #fff !important;
+    /* When bulk_select is present, offset Action by bulk_select width */
+    #gemba_nc_tracker_table th.col-field-bulk_select ~ th.col-field-action,
+    #gemba_nc_tracker_table td.col-field-bulk_select ~ td.col-field-action,
+    #gemba_nc_tracker_table:has(th.col-field-bulk_select) th.col-field-action,
+    #gemba_nc_tracker_table:has(th.col-field-bulk_select) td.col-field-action {
+        left: 45px !important;
     }
 
-    /* Support for hover and striped rows if needed */
-    #gemba_nc_tracker_table_wrapper .table.dataTable tbody tr:hover td:first-child,
-    #gemba_nc_tracker_table_wrapper .table.dataTable tbody tr:hover td:nth-child(2) {
-        background-color: #f5f5f5;
+    /* When bulk_select is NOT present, Action is at left: 0 */
+    #gemba_nc_tracker_table:not(:has(th.col-field-bulk_select)) th.col-field-action,
+    #gemba_nc_tracker_table:not(:has(th.col-field-bulk_select)) td.col-field-action {
+        left: 0 !important;
     }
-    #gemba_nc_tracker_table_wrapper .table.dataTable.table-striped tbody tr:nth-of-type(odd) td:first-child,
-    #gemba_nc_tracker_table_wrapper .table.dataTable.table-striped tbody tr:nth-of-type(odd) td:nth-child(2) {
-        background-color: #f9f9f9;
+
+    /* 3. Unique No Column - sticky after Action */
+    #gemba_nc_tracker_table th.col-field-unique_no,
+    #gemba_nc_tracker_table td.col-field-unique_no {
+        position: sticky !important;
+        width: 145px !important;
+        min-width: 145px !important;
+        max-width: 155px !important;
+        z-index: 10 !important;
+        background-color: #ffffff !important;
+        box-shadow: 4px 0 8px -2px rgba(0, 0, 0, 0.1), inset -1px 0 0 #cbd5e1 !important;
+        font-weight: 600 !important;
+    }
+
+    /* Unique No left position when bulk_select IS present (45px + 130px = 175px) */
+    #gemba_nc_tracker_table:has(th.col-field-bulk_select) th.col-field-unique_no,
+    #gemba_nc_tracker_table:has(th.col-field-bulk_select) td.col-field-unique_no {
+        left: 175px !important;
+    }
+
+    /* Unique No left position when bulk_select is NOT present (0 + 130px = 130px) */
+    #gemba_nc_tracker_table:not(:has(th.col-field-bulk_select)) th.col-field-unique_no,
+    #gemba_nc_tracker_table:not(:has(th.col-field-bulk_select)) td.col-field-unique_no {
+        left: 130px !important;
+    }
+
+    /* 4. Keep sticky headers above sticky body cells */
+    #gemba_nc_tracker_table thead th.col-field-bulk_select,
+    #gemba_nc_tracker_table thead th.col-field-action,
+    #gemba_nc_tracker_table thead th.col-field-unique_no {
+        z-index: 20 !important;
+        background-color: #f8fafc !important;
+        border-bottom: 2px solid #cbd5e1 !important;
+    }
+
+    /* 5. Row hover and alternate background handling for sticky columns */
+    #gemba_nc_tracker_table tbody tr:hover td.col-field-bulk_select,
+    #gemba_nc_tracker_table tbody tr:hover td.col-field-action,
+    #gemba_nc_tracker_table tbody tr:hover td.col-field-unique_no {
+        background-color: #f1f5f9 !important;
+    }
+
+    #gemba_nc_tracker_table.table-striped tbody tr:nth-of-type(odd) td.col-field-bulk_select,
+    #gemba_nc_tracker_table.table-striped tbody tr:nth-of-type(odd) td.col-field-action,
+    #gemba_nc_tracker_table.table-striped tbody tr:nth-of-type(odd) td.col-field-unique_no {
+        background-color: #f8fafc !important;
+    }
+
+    /* Fallback positional rules using nth-child for older browsers */
+    #gemba_nc_tracker_table th:first-child,
+    #gemba_nc_tracker_table td:first-child {
+        position: sticky !important;
+        left: 0 !important;
+        background-color: #ffffff;
     }
 
     /* Ensure headers don't wrap awkwardly */
-    #gemba_nc_tracker_table_wrapper .table.dataTable th {
+    #gemba_nc_tracker_table th {
         white-space: nowrap !important;
         vertical-align: middle;
     }
@@ -312,6 +381,7 @@ $qs = http_build_query(array_filter([
     'site_name' => $filters['site_name'] ?? null,
     'point_status' => $filters['point_status'] ?? null,
     'nc_recommendation' => $filters['nc_recommendation'] ?? null,
+    'age_bracket' => $filters['age_bracket'] ?? null,
 ]));
 $qsStr = $qs ? '?' . $qs : '';
 
@@ -701,17 +771,30 @@ $closedActive = ($activeStatus === '3' || $activeStatus === 3) ? 'active-filter'
             loadDependentOptions('site_name');
         });
 
+        $('#gemba_nc_tracker_table').on('preXhr.dt', function ( e, settings, data ) {
+            var formData = $('#filter_form').serializeArray();
+            $.each(formData, function(i, field) {
+                // If it's an array field like region[]
+                if (field.name.endsWith('[]')) {
+                    var name = field.name.slice(0, -2);
+                    if (!data[name]) {
+                        data[name] = [];
+                    }
+                    data[name].push(field.value);
+                } else {
+                    data[field.name] = field.value;
+                }
+            });
+        });
+
         // DataTable re-initialization with filters
         window.reload_data_table = function (callback) {
-            var params = $('#filter_form').serialize();
-            var url = '<?= base_url("Masters/GembaNcTracker/table_ajax") ?>?' + params;
-
             if ($.fn.DataTable.isDataTable('#gemba_nc_tracker_table')) {
                 var table = $('#gemba_nc_tracker_table').DataTable();
                 if (callback) {
-                    table.ajax.url(url).load(callback);
+                    table.ajax.reload(callback, false);
                 } else {
-                    table.ajax.url(url).load();
+                    table.ajax.reload(null, false);
                 }
             } else {
                 if (callback) callback();

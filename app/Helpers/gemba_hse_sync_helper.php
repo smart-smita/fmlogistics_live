@@ -31,7 +31,7 @@ if (!function_exists('execute_hse_gemba_nc_action')) {
 
         /* ================= FETCH RECORD ================= */
         $current = $db->table('alert_hse_audit_details d')
-            ->select('d.*, m.client_name, m.location, cm.account_manager, cm.cluster, m.audit_no')
+            ->select('d.*, cm.account_manager, cm.cluster, m.audit_no')
             ->join('alert_hse_audit_master m', 'm.hse_audit_id = d.hse_audit_id', 'left')
             ->join('alert_hse_client_master cm', 'cm.client_name = m.client_name AND cm.status = 1', 'left')
             ->where('d.id', $id)
@@ -49,12 +49,10 @@ if (!function_exists('execute_hse_gemba_nc_action')) {
             return ['status' => 0, 'message' => 'Read only access'];
         }
 
-        $siteName = $current['client_name'] ?? ($current['site_name'] ?? ($current['location'] ?? ''));
-
         /* 🔒 ACCOUNT MANAGER LOCK */
         $isAssignedAM = false;
         if (isAccountManager()) {
-            if (verifySiteAccess($siteName, 'HSE') || verifySiteAccess($siteName, 'GEMBA') || verifySiteAccess($siteName, 'OE') || (!empty($current['account_manager']) && strtolower(trim($current['account_manager'])) === strtolower(trim($userName)))) {
+            if (!empty($current['account_manager']) && strtolower(trim($current['account_manager'])) === strtolower(trim($userName))) {
                 $isAssignedAM = true;
             }
         }
@@ -63,11 +61,10 @@ if (!function_exists('execute_hse_gemba_nc_action')) {
         $isAssignedCM = false;
         if (isClusterManager()) {
             $assignedClusters = getClusterManagerAssignedClusterHSE();
-            if (verifySiteAccess($siteName, 'HSE') || verifySiteAccess($siteName, 'GEMBA') || verifySiteAccess($siteName, 'OE') || (!empty($current['cluster']) && in_array($current['cluster'], $assignedClusters))) {
+            if (in_array($current['cluster'], $assignedClusters)) {
                 $isAssignedCM = true;
             }
         }
-
 
         $isSuperAdmin = isSuperAdmin();
         $isAuditor = isAuditor();
@@ -350,53 +347,6 @@ if (!function_exists('execute_hse_gemba_nc_action')) {
 
         if ($db->transStatus() === false) {
             return ['status' => 0, 'message' => 'Transaction failed'];
-        }
-
-        // Log NC action history
-        $newStat = isset($update['nc_status']) ? (string)$update['nc_status'] : (string)$currentStatus;
-        $actType = 'ACTION_UPDATED';
-        if ($action === '0') {
-            $actType = (isClusterManager()) ? 'REJECTED_BY_CM' : ((isAuditor()) ? 'REJECTED_BY_AUDITOR' : 'REJECTED');
-        } elseif ($action === 'working' || $action === 'save_wip') {
-            $actType = 'WORK_STARTED';
-        } elseif ($action === 'submit_for_review' || $action === 'review') {
-            $actType = (isAuditor() || isSuperAdmin()) ? 'FORWARDED_TO_AUDITOR' : 'SUBMITTED_TO_CM';
-        } elseif ($action === 'auditor') {
-            $actType = 'FORWARDED_TO_AUDITOR';
-        } elseif ($action === 'closed' || $action === 'auditor_direct_close') {
-            $actType = 'CLOSED';
-        }
-        if (!empty($postData['nc_after_photo']) || !empty($postData['closed_uploaded_file'])) {
-            $actType = ($actType === 'CLOSED' || $actType === 'SUBMITTED_TO_CM' || $actType === 'FORWARDED_TO_AUDITOR') ? $actType : 'EVIDENCE_UPLOADED';
-        }
-
-        $rem = $postData['closed_remarks'] ?? ($postData['nc_remark'] ?? ($postData['rejection_reason'] ?? null));
-        $att = $postData['closed_uploaded_file'] ?? ($postData['nc_after_photo'] ?? null);
-
-        logNcActionHistory(
-            'HSE',
-            (int)$id,
-            $actType,
-            (string)$currentStatus,
-            $newStat,
-            $rem,
-            $att,
-            (int)($current['hse_audit_id'] ?? 0),
-            $current['client_name'] ?? null
-        );
-
-        if ($gembaRow) {
-            logNcActionHistory(
-                'GEMBA',
-                (int)$gembaRow['gemba_sr_no'],
-                $actType,
-                (string)$currentStatus,
-                $newStat,
-                $rem,
-                $att,
-                (int)($current['hse_audit_id'] ?? 0),
-                $current['client_name'] ?? null
-            );
         }
 
         return [

@@ -244,23 +244,11 @@ echo showACLMessage('info');
                                 </td>
                                 </tr>
                                 <tr>
-                                    <th class="table-secondary">Assigned Cluster Manager</th>
-                                    <td>
-                                        <input type="text" id="cluster_manager_preview" class="form-control text-primary font-bold" readonly style="background-color: #f8f9fa;" value="<?= htmlspecialchars($details['cluster_name'] ?? '-') ?>">
-                                    </td>
-                                </tr>
-                                <tr>
-                                    <th class="table-secondary">Assigned Account Manager</th>
-                                    <td>
-                                        <input type="text" id="account_manager_preview" class="form-control text-primary font-bold" readonly style="background-color: #f8f9fa;" value="<?= htmlspecialchars($details['client_manager_name'] ?? '-') ?>">
-                                    </td>
-                                </tr>
-                                <tr>
-                                    <th class="table-secondary">Audit Note</th>
-                                    <td>
-                                        <textarea class="form-control" name="audit_note" id="audit_note" rows="3"><?= $details['audit_note'] ?? '' ?></textarea>
-                                    </td>
-                                </tr>
+    <th class="table-secondary">Audit Note</th>
+    <td>
+        <textarea class="form-control" name="audit_note" id="audit_note" rows="3"><?= $details['audit_note'] ?? '' ?></textarea>
+    </td>
+</tr>
                                 
                                
                             </tbody>
@@ -665,47 +653,20 @@ $(document).on('click', '.checkbox', function() {
                 }
             }, 500);
             
-    // changes on 16/11/25: Auto-fill and LOCK region when location is selected
-    $('#location').on('change', function() {
+            // changes on 16/11/25: Auto-fill and LOCK region when location is selected
+           $('#location').on('change', function() {
 
     let selectedOption = $(this).find('option:selected');
-    let selectedSite = $(this).val();
 
     let managerName = selectedOption.data('manager');
     let regionValue = selectedOption.data('region');
     let clusterValue = selectedOption.data('cluster');
 
-    // Fetch site manager info dynamically via AJAX
-    if (selectedSite) {
-        $.ajax({
-            url: '<?= base_url("Masters/Client/get_site_manager_info") ?>',
-            type: 'GET',
-            data: { site_identifier: selectedSite, module_type: 'OE' },
-            dataType: 'json',
-            success: function(res) {
-                if (res.status == 1) {
-                    if (res.cluster_manager_name) $('#cluster_manager_preview').val(res.cluster_manager_name);
-                    if (res.account_manager_name) {
-                        $('#account_manager_preview').val(res.account_manager_name);
-                        $("input[name='auditee_name']").val(res.account_manager_name);
-                    }
-                    if (res.region_name && !regionValue) {
-                        regionValue = res.region_name;
-                        $('#region_locked').val(regionValue).show();
-                        $('#region_dropdown').hide();
-                        if ($('#region_dropdown').next('.select2-container').length) {
-                            $('#region_dropdown').next('.select2-container').hide();
-                        }
-                        $('#region_value').val(regionValue);
-                    }
-                }
-            }
-        });
-    }
-
     // Set Auditee Name
     if (managerName) {
         $("input[name='auditee_name']").val(managerName);
+    } else {
+        $("input[name='auditee_name']").val('');
     }
 
     // Set Region

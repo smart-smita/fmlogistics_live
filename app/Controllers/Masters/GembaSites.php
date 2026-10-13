@@ -226,6 +226,50 @@ class GembaSites extends BaseController
                         return redirect()->back()->withInput()->with('errors', ['site_name' => $renameRes['message']]);
                     }
                 } else {
+                    $oldRec = $data['site'];
+                    $catChanged = (isset($postData['site_category']) && $oldRec['site_category'] != $postData['site_category']);
+                    $detailsChanged = [];
+                    foreach (['site_type_1', 'site_type_2', 'region'] as $f) {
+                        if (isset($postData[$f]) && ($oldRec[$f] ?? '') != $postData[$f]) {
+                            $detailsChanged[] = $f;
+                        }
+                    }
+
+                    if (($catChanged || !empty($detailsChanged)) && $db->tableExists('Gemba_history')) {
+                        $remark = $catChanged ? 'Site Category Changed' : 'Site Details Updated';
+                        $changeType = $catChanged ? 'CATEGORY_CHANGE' : 'DETAILS_UPDATE';
+                        $affectedFields = $catChanged ? 'site_category' : implode(',', $detailsChanged);
+
+                        $db->table('Gemba_history')->insert([
+                            'client_id'            => $oldRec['client_id'] ?? null,
+                            'site_id'              => $id,
+                            'change_type'          => $changeType,
+                            'remark'               => $remark,
+                            'reason'               => 'Updated via Gemba Sites Master',
+                            'prev_site_name'       => $oldRec['site_name'],
+                            'prev_site_category'   => $oldRec['site_category'] ?? null,
+                            'prev_site_type_1'     => $oldRec['site_type_1'] ?? null,
+                            'prev_site_type_2'     => $oldRec['site_type_2'] ?? null,
+                            'prev_region'          => $oldRec['region'] ?? null,
+                            'prev_cluster'         => null,
+                            'prev_account_manager' => null,
+                            'prev_status'          => isset($oldRec['status']) ? (int)$oldRec['status'] : null,
+                            'new_site_name'        => $postData['site_name'] ?? $oldRec['site_name'],
+                            'new_site_category'    => $postData['site_category'] ?? ($oldRec['site_category'] ?? null),
+                            'new_site_type_1'      => $postData['site_type_1'] ?? ($oldRec['site_type_1'] ?? null),
+                            'new_site_type_2'      => $postData['site_type_2'] ?? ($oldRec['site_type_2'] ?? null),
+                            'new_region'           => $postData['region'] ?? ($oldRec['region'] ?? null),
+                            'new_cluster'          => null,
+                            'new_account_manager'  => null,
+                            'new_status'           => isset($postData['status']) ? (int)$postData['status'] : (isset($oldRec['status']) ? (int)$oldRec['status'] : null),
+                            'affected_fields'      => $affectedFields,
+                            'affected_gemba_ids'   => null,
+                            'changed_by_user_id'   => session()->get('user_id') ?? 0,
+                            'changed_by_user_name' => session()->get('user_name') ?? 'System',
+                            'created_at'           => date('Y-m-d H:i:s')
+                        ]);
+                    }
+
                     $this->model->update($id, $postData);
                 }
 

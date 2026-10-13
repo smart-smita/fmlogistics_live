@@ -58,7 +58,7 @@ $form_id= $button_id;
 										<label class="required fs-5 fw-bold-2">Location Name</label>
 										<input type="text" class="form-control form-control-solid" placeholder="Location name"  id="location_name" name="location_name">
 										<div id="location_name_edit_note" class="text-warning fs-7 mt-1 font-weight-bold" style="display: none;">
-											<strong>Note:</strong> Changing the Client Name, Location, Account Manager, or Cluster Manager may update the corresponding details in dependent audit records.
+											<strong>Note:</strong> Changing the Location name may update the corresponding details in dependent audit records.
 										</div>
 										<div class="fv-plugins-message-container invalid-feedback"></div>
 									</div>
@@ -281,9 +281,7 @@ var validator = FormValidation.formValidation(form,validation_object);
                     var curCluster = $("#<?=$form_id?>").find("#cluster_name").val();
                     var curAm = $("#<?=$form_id?>").find("#account_manager").val();
 
-                    if ((originalLocationData.location_name || '') !== curName ||
-                        (originalLocationData.cluster_name || '') !== curCluster ||
-                        (originalLocationData.account_manager || '') !== curAm) {
+                    if ((originalLocationData.location_name || '') !== curName) {
                         isChanged = true;
                     }
                 }

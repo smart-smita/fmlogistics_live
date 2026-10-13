@@ -33,6 +33,7 @@ class Department_master extends BaseController
             "department_id"=>"ID",
             "department_name"=>"Department Name",
             "location_name"=>"Location Name",
+            "status_text"=>"Status",
             "action"=>"Action"
             ];
         $data['ajax_url']=base_url("Masters/Department_master/save_details");
@@ -48,15 +49,15 @@ class Department_master extends BaseController
         // if($_SESSION['role']!="super_admin")
         //     $tdata['table_data'] = $this->BaseModel->where(["employee_reporting_to"=>$_SESSION['department_id']])->findAll();
         // else
-            $tdata['table_data'] = $this->BaseModel->findAll();
+            $tdata['table_data'] = $this->BaseModel->where('status !=', 3)->findAll();
              $statusMessages = [
                 0 => '<span class="badge badge-warning">Pending</span>',
-                1 => '<span class="badge badge-info">Verified</span>',
-                2 => '<span class="badge badge-success">Active</span>',
-                3 => '<span class="badge badge-secondary">Deactivated</span>'
+                1 => '<span class="badge badge-success">Active</span>',
+                2 => '<span class="badge badge-danger">Deactivated</span>',
+                3 => '<span class="badge badge-secondary">Deleted</span>'
            ];
         foreach($tdata['table_data'] as $key=>$row){
-            $active = '<button class="btn btn-icon btn-success" onclick="url_call_ajax(\''.base_url("Masters/Department_master/save_details/".$row['department_id']).'/active\',$(this));">
+            $active = '<button class="btn btn-icon btn-sm btn-success" onclick="url_call_ajax(\''.base_url("Masters/Department_master/save_details/".$row['department_id']).'/active\',$(this));" title="Activate" data-bs-toggle="tooltip">
 											<span class="indicator-label svg-icon svg-icon-2">
 												<i class="fa fa-unlock"></i>
 											</span>
@@ -64,7 +65,7 @@ class Department_master extends BaseController
                                                 <span class="spinner-border spinner-border-sm align-middle ms-2"></span>
                                             </span>
 											</button> ';
-			$deactive = '<button  class="btn btn-icon btn-danger" onclick="url_call_ajax(\''.base_url("Masters/Department_master/save_details/".$row['department_id']).'/deactive\',$(this));">
+			$deactive = '<button  class="btn btn-icon btn-sm btn-danger" onclick="url_call_ajax(\''.base_url("Masters/Department_master/save_details/".$row['department_id']).'/deactive\',$(this));" title="Deactivate" data-bs-toggle="tooltip">
                 			<span class="indicator-label svg-icon svg-icon-2">
                 			<i class="fa fa-lock"></i>
                 			</span>
@@ -72,7 +73,7 @@ class Department_master extends BaseController
                                 <span class="spinner-border spinner-border-sm align-middle ms-2"></span>
                             </span>
                 			</button> ';
-			$delete = '<button data-ajax-url="'.base_url("Masters/Department_master/save_details/".$row['department_id']).'/delete" class="btn btn-icon btn-danger" onclick="delete_row(this);">
+			$delete = '<button data-ajax-url="'.base_url("Masters/Department_master/save_details/".$row['department_id']).'/delete" class="btn btn-icon btn-sm btn-danger" onclick="delete_row(this);" title="Delete" data-bs-toggle="tooltip">
                 			<span class="indicator-label svg-icon svg-icon-2">
                 				
 								<i class="fa fa-trash"></i>
@@ -84,7 +85,7 @@ class Department_master extends BaseController
                 			</button> ';
 
             //$(this).attr('data-kt-indicator', 'on');$(this).attr('disabled', true);setTimeout(function (obj) {obj.attr('data-kt-indicator', 'off');obj.attr('disabled', false);},500,$(this));
-             $edit = '<button data-ajax-url="'.base_url("Masters/Department_master/get_form_data/".$row['department_id']).'" class="btn btn-icon btn-primary" onclick="edit_id(this,'.$row['department_id'].');">
+             $edit = '<button data-ajax-url="'.base_url("Masters/Department_master/get_form_data/".$row['department_id']).'" class="btn btn-icon btn-sm btn-primary" onclick="edit_id(this,'.$row['department_id'].');" title="Edit" data-bs-toggle="tooltip">
 											<span class="indicator-label svg-icon svg-icon-3">
 												<i class="fa fa-edit"></i>
 											</span>
@@ -93,20 +94,22 @@ class Department_master extends BaseController
                                             </span>
 											</button>
 											';
+                                            
+                                            $toggle_status_btn = $active;
+                                            
 											if($row['status']=="0"){
-											    $deactive = "";
 											    $tdata['table_data'][$key]['tr_class']="bg-light-warning";
 											    
 											}else if($row['status']=="1"){
-											    $active = "";
+											    $toggle_status_btn = $deactive;
 											    
 											}else if($row['status']=="2"){
-											    $delete = "";
-											    $deactive = "";
 											    $tdata['table_data'][$key]['tr_class']="bg-light-danger";
 											    
 											}
-			$tdata['table_data'][$key]['action']="<center>".$statusMessages[$row['status']]."<br><br>".$edit.$active.$deactive.$delete."</center>";
+                                            
+            $tdata['table_data'][$key]['status_text'] = $statusMessages[$row['status']] ?? '';
+            $tdata['table_data'][$key]['action']='<div class="d-flex justify-content-center gap-2">' . $edit . $toggle_status_btn . $delete . '</div>';
         }
         $tdata['data'] = $tdata['table_data'];
         unset($tdata['table_data']);
@@ -149,10 +152,10 @@ class Department_master extends BaseController
                                     $postData['status']= "1";
                                     break;
                                 case "deactive":
-                                    $postData['status']= "0";
+                                    $postData['status']= "2";
                                     break;
                                 case "delete":
-                                    $postData['status']= "2";
+                                    $postData['status']= "3";
                                     break;
                             }
                         }

@@ -448,21 +448,60 @@ class Audit_dashboard extends BaseController
         $data['country'] = $db->table("alert_country")->get()->getResultArray();
 
         /* -------- Role-based Dropdown Locking & Filtering -------- */
-        if (isClusterManager() || isAccountManager() || isWHManager()) {
+        if (isClusterManager()) {
+            $assignedClusters = getClusterManagerAssignedCluster();
+            $assignedRegions = getClusterManagerAssignedRegion();
+
+            $selected_region = $assignedRegions;
+            $cluster_name = $assignedClusters;
+
+            $data['locked_cluster'] = $assignedClusters;
+            $data['locked_region'] = $assignedRegions;
+            $data['is_cluster_manager'] = true;
+
+            $locationQueryForCM = $db->table("alert_client");
+
+            if (!empty($assignedClusters)) {
+                $locationQueryForCM->whereIn('cluster', $assignedClusters);
+            }
+
+            if (!empty($assignedRegions)) {
+                $locationQueryForCM->whereIn('region', $assignedRegions);
+            }
+
+            $data['location'] = $locationQueryForCM
+                ->select('DISTINCT(client_name) AS location_name', false)
+                ->where('status', 1)
+                ->groupBy("client_name")
+                ->get()
+                ->getResultArray();
+
+            $data['cluster'] = array_map(function ($c) {
+                return ['cluster_name' => $c]; }, $assignedClusters);
+            $data['region'] = array_map(function ($r) {
+                return ['region_name' => $r]; }, $assignedRegions);
+
+            $data['lock_cluster'] = false;
+            $data['lock_location'] = false;
+        } elseif (isAccountManager() || isWHManager()) {
             $assignedRegions = getAccountManagerAssignedRegion();
             $assignedClusters = getAccountManagerAssignedCluster();
-            $assignedClients = getUserAllocatedSiteNames('OE');
+            $assignedClients = getAccountManagerAssignedClient();
 
+            // Use assigned values if nothing specifically selected yet
+            if (empty($selected_region))
+                $selected_region = $assignedRegions;
+            if (empty($cluster_name))
+                $cluster_name = $assignedClusters;
             if (empty($location_name))
                 $location_name = $assignedClients;
-
 
             $data['locked_region'] = $assignedRegions;
             $data['locked_cluster'] = $assignedClusters;
             $data['locked_location'] = $assignedClients;
-            $data['is_cluster_manager'] = isClusterManager();
-            $data['is_account_manager'] = isAccountManager() || isWHManager();
+            $data['is_account_manager'] = true;
 
+            // Populate dropdowns with only assigned values
             $data['region'] = array_map(function ($r) {
                 return ['region_name' => $r]; }, (array) $assignedRegions);
             $data['cluster'] = array_map(function ($c) {
@@ -715,15 +754,13 @@ class Audit_dashboard extends BaseController
             audit.audit_date,
             audit.structured_audit_id,
             audit.audit_no,
-            COALESCE(NULLIF(audit.snapshot_cluster_manager_name, ''), NULLIF(audit.cluster_name, ''), ac.cluster, '-') as cluster_name,
-            COALESCE(NULLIF(audit.snapshot_account_manager_name, ''), NULLIF(audit.client_manager_name, ''), ac.account_manager, '-') as account_manager,
+            audit.cluster_name as cluster_name,
             audit.region,
             audit.client_name,
             audit_details.audit_template_id,
             audit_details.category,
             COUNT(DISTINCT audit_details.audit_details_id) as openpoints
         FROM `alert_final_structured_audit` audit
-        LEFT JOIN alert_client ac ON (ac.client_name = audit.client_name OR ac.client_name = audit.location)
         LEFT JOIN alert_final_structured_audit_details audit_details ON audit.structured_audit_id = audit_details.structured_audit_id
         WHERE audit_details.audit_finding = 'NO' AND audit_details.status IN (0, 1, 2, 3, 6) {$oeAgingFilter}";
 
@@ -790,16 +827,13 @@ class Audit_dashboard extends BaseController
                     audit.region,
                     DATE_FORMAT(audit.audit_date, '%M') AS audit_month,
 
-                    COALESCE(NULLIF(audit.snapshot_cluster_manager_name, ''), NULLIF(audit.cluster_name, ''), ac.cluster, '-') AS cluster_name,
-                    COALESCE(NULLIF(audit.snapshot_account_manager_name, ''), NULLIF(audit.client_manager_name, ''), ac.account_manager, '-') AS account_manager,
+                    audit.cluster_name AS cluster_name,
 
                     audit_details.category, 
                     audit_details.audit_parameter, 
                     audit_details.audit_remark
 
                 FROM alert_final_structured_audit audit
-
-                LEFT JOIN alert_client ac ON (ac.client_name = audit.client_name OR ac.client_name = audit.location)
 
                 LEFT JOIN alert_final_structured_audit_details audit_details
                     ON audit.structured_audit_id = audit_details.structured_audit_id
@@ -830,21 +864,20 @@ class Audit_dashboard extends BaseController
         GROUP BY audit_details.audit_details_id
 
         ")->getResultArray();
+        // category_OE query removed as it is now fetched at the top
+
+
 
         $oeAclWhereA = getOEAuditACLWhere('a', 'OE');
         $whereClause = " WHERE 1=1 {$reauditCondition_a} {$oeAclWhereA} ";
 
         $whereClause .= $this->buildSqlCondition("a.region", $selected_region);
         $whereClause .= $this->buildSqlCondition("a.cluster_name", $cluster_name);
-        if (!empty($location_name)) {
-            $locArray = (array)$location_name;
-            $escapedLocs = array_map([$db, 'escape'], $locArray);
-            $whereClause .= " AND (a.location IN (" . implode(',', $escapedLocs) . ") OR a.client_name IN (" . implode(',', $escapedLocs) . "))";
-        }
-
+        $whereClause .= $this->buildSqlCondition("a.location", $location_name);
         $whereClause .= $this->buildSqlCondition("YEAR(a.audit_date)", $selectedYearNums);
         $whereClause .= $this->buildSqlCondition("MONTH(a.audit_date)", $selectedMonthNums);
         $whereClause .= $latestAuditSubquery_a;
+
 
         /* ---------------- MAIN QUERY ---------------- */
 
@@ -854,8 +887,7 @@ class Audit_dashboard extends BaseController
                     MAX(a.audit_date) AS audit_date,
                     a.location,
                     a.region,
-                    COALESCE(NULLIF(a.snapshot_cluster_manager_name, ''), NULLIF(a.cluster_name, ''), ac.cluster, '-') AS cluster_name,
-                    COALESCE(NULLIF(a.snapshot_account_manager_name, ''), NULLIF(a.client_manager_name, ''), ac.account_manager, '-') AS account_manager,
+                    a.cluster_name,
                     a.client_name,
     
                     /* TOTAL OPEN POINTS */
@@ -877,8 +909,6 @@ class Audit_dashboard extends BaseController
                     ) AS remarks_combined
     
                 FROM alert_final_structured_audit a
-
-                LEFT JOIN alert_client ac ON (ac.client_name = a.client_name OR ac.client_name = a.location)
     
                 LEFT JOIN alert_final_structured_audit_details d
                     ON a.structured_audit_id = d.structured_audit_id
@@ -1084,12 +1114,7 @@ class Audit_dashboard extends BaseController
         $totalKpiWhere = " WHERE 1=1 {$reauditCondition_a} {$oeAclTotalKpi}";
         $totalKpiWhere .= $this->buildSqlCondition("a.region", $selected_region);
         $totalKpiWhere .= $this->buildSqlCondition("a.cluster_name", $cluster_name);
-        if (!empty($location_name)) {
-            $locArray = (array)$location_name;
-            $escapedLocs = array_map([$db, 'escape'], $locArray);
-            $totalKpiWhere .= " AND (a.location IN (" . implode(',', $escapedLocs) . ") OR a.client_name IN (" . implode(',', $escapedLocs) . "))";
-        }
-
+        $totalKpiWhere .= $this->buildSqlCondition("a.client_name", $location_name);
         if ($selectedYearNum !== null)
             $totalKpiWhere .= " AND YEAR(a.audit_date) = {$selectedYearNum}";
         if ($selectedMonthNum !== null)
@@ -1103,49 +1128,6 @@ class Audit_dashboard extends BaseController
              {$totalKpiWhere}"
         )->getRow();
         $data['total_oe_audits_count'] = $totalAuditsRow ? (int) $totalAuditsRow->cnt : 0;
-
-        $selectedSiteManagers = [];
-        if (!empty($location_name)) {
-            $siteRows = $db->table('alert_client')
-                ->select('client_id, client_name, region, cluster AS cluster_manager, account_manager')
-                ->whereIn('client_name', (array)$location_name)
-                ->get()->getResultArray();
-
-            foreach ($siteRows as $ssm) {
-                $siteName = $ssm['client_name'];
-                $mappedUsers = $db->table('alert_user_client_mapping m')
-                    ->select('u.user_name, u.user_designation AS designation')
-                    ->join('alert_users u', 'u.user_id = m.user_id')
-                    ->groupStart()
-                        ->where('LOWER(TRIM(m.site_name))', strtolower(trim($siteName)))
-                        ->orWhere('m.client_id', (int)($ssm['client_id'] ?? 0))
-                    ->groupEnd()
-                    ->where('u.status', 1)
-                    ->get()->getResultArray();
-
-                $mappedAMs = [];
-                $mappedCMs = [];
-                foreach ($mappedUsers as $mu) {
-                    $des = strtolower(trim($mu['designation'] ?? ''));
-                    if ($des === 'account manager') {
-                        $mappedAMs[] = trim($mu['user_name']);
-                    } elseif ($des === 'cluster manager') {
-                        $mappedCMs[] = trim($mu['user_name']);
-                    }
-                }
-
-                if (!empty($mappedAMs)) {
-                    $ssm['account_manager'] = implode(', ', array_unique($mappedAMs));
-                }
-                if (!empty($mappedCMs)) {
-                    $ssm['cluster_manager'] = implode(', ', array_unique($mappedCMs));
-                }
-
-                $selectedSiteManagers[] = $ssm;
-            }
-        }
-        $data['selected_site_managers'] = $selectedSiteManagers;
-
 
         return view("Customer/oe_dashboard", $data);
 
@@ -1216,31 +1198,71 @@ class Audit_dashboard extends BaseController
 
         $data['country'] = $db->table("alert_country")->get()->getResultArray();
 
-        /* -------- Role-based Dropdown Locking & Filtering -------- */
-        if (isClusterManager() || isAccountManager() || isWHManager()) {
-            $assignedClients = getUserAllocatedSiteNames('HSE');
-            $assignedRegions = getClusterManagerAssignedRegionHSE();
-            $assignedClusters = getClusterManagerAssignedClusterHSE();
+        /* -------- Cluster Manager Locking (like OE dashboard) -------- */
+        if (isClusterManager()) {
+            $assignedCluster = getClusterManagerAssignedCluster();
+            $assignedRegion = getClusterManagerAssignedRegion();
 
-            if (empty($selected_region))
-                $selected_region = $assignedRegions;
-            if (empty($cluster_name))
-                $cluster_name = $assignedClusters;
-            if (empty($location_name))
-                $location_name = $assignedClients;
+            $selected_region = $assignedRegion;
+            $cluster_name = $assignedCluster;
+
+            $data['locked_cluster'] = $assignedCluster;
+            $data['locked_region'] = $assignedRegion;
+            $data['is_cluster_manager'] = true;
+            $data['is_account_manager'] = false;
+
+            $locationQueryForCM = $db->table("alert_location_master");
+            if (!empty($assignedCluster)) {
+                $locationQueryForCM->whereIn('cluster_name', $assignedCluster);
+            }
+            if (!empty($assignedRegion)) {
+                $locationQueryForCM->whereIn('region_name', $assignedRegion);
+            }
+            $data['location'] = $locationQueryForCM->groupBy("location_name")
+                ->get()->getResultArray();
+
+            $data['cluster'] = array_map(function ($c) {
+                return ['cluster_name' => $c]; }, $assignedCluster);
+            $data['region'] = array_map(function ($r) {
+                return ['region_name' => $r]; }, $assignedRegion);
+
+            $data['lock_cluster'] = false;
+            $data['lock_location'] = false;
+        } elseif (isAccountManager()) {
+            $assignedDetails = getAccountManagerClientDetails();
+            $assignedClients = [];
+            $assignedRegions = [];
+            $assignedClusters = [];
+
+            if ($assignedDetails) {
+                foreach ($assignedDetails as $row) {
+                    if (!empty($row['client_name']))
+                        $assignedClients[] = $row['client_name'];
+                    if (!empty($row['region']))
+                        $assignedRegions[] = $row['region'];
+                    if (!empty($row['cluster']))
+                        $assignedClusters[] = $row['cluster'];
+                }
+            }
+
+            $assignedClients = array_unique(array_filter($assignedClients));
+            $assignedRegions = array_unique(array_filter($assignedRegions));
+            $assignedClusters = array_unique(array_filter($assignedClusters));
+
+            $selected_region = $assignedRegions;
+            $cluster_name = $assignedClusters;
 
             $data['locked_cluster'] = $assignedClusters;
             $data['locked_region'] = $assignedRegions;
-            $data['locked_location'] = $assignedClients;
-            $data['is_cluster_manager'] = isClusterManager();
-            $data['is_account_manager'] = isAccountManager() || isWHManager();
+            $data['is_cluster_manager'] = false;
+            $data['is_account_manager'] = true;
 
             $data['location'] = array_map(function ($c) {
-                return ['location_name' => $c]; }, (array) $assignedClients);
+                return ['location_name' => $c]; }, $assignedClients);
             $data['cluster'] = array_map(function ($c) {
-                return ['cluster_name' => $c]; }, (array) $assignedClusters);
+                return ['cluster_name' => $c]; }, $assignedClusters);
             $data['region'] = array_map(function ($r) {
-                return ['region_name' => $r]; }, (array) $assignedRegions);
+                return ['region_name' => $r]; }, $assignedRegions);
 
             $data['lock_cluster'] = false;
             $data['lock_location'] = false;
@@ -2257,7 +2279,7 @@ class Audit_dashboard extends BaseController
 
         $db = db_connect();
 
-        if (empty($cluster_name) && empty($region_name)) {
+        if (empty($cluster_name)) {
             return $this->response->setJSON([]);
         }
 

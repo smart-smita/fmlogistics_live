@@ -50,7 +50,7 @@ $form_id= $button_id;
 					<!--end::Modal header-->
 					<!--begin::Modal body-->
 					<div class="modal-body py-lg-10 px-lg-10">
-                    	<div class="scroll-y me-n7 pe-7" id="user" data-kt-scroll="false" data-kt-scroll-activate="{default: false, lg: true}" data-kt-scroll-max-height="auto" data-kt-scroll-dependencies="#kt_modal_new_address_header" data-kt-scroll-wrappers="#fees_head" data-kt-scroll-offset="300px" style="max-height: 273px;">
+                    	<div class="scroll-y me-n7 pe-7" id="user" data-kt-scroll="false" data-kt-scroll-activate="{default: false, lg: true}" data-kt-scroll-max-height="auto" data-kt-scroll-dependencies="#kt_modal_new_address_header" data-kt-scroll-wrappers="#fees_head" data-kt-scroll-offset="300px" style="max-height: calc(75vh - 120px);">
 								<!--begin::Input group-->
 								<div class="row mb-12">
 									<!--begin::Col-->
@@ -58,15 +58,28 @@ $form_id= $button_id;
 										<label class="required fs-5 fw-bold-2">Client Name</label>
 										<input type="text" class="form-control form-control-solid" placeholder="Client Name"  id="client_name" name="client_name">
 										<div id="client_name_edit_note" class="text-warning fs-7 mt-1 font-weight-bold" style="display: none;">
-											<strong>Note:</strong> Changing the Client Name, Location, Account Manager, or Cluster Manager may update the corresponding details in dependent audit records.
+											<strong>Note:</strong> Changing the Client Name will update dependent audit records and backup pre-rename audit history.
 										</div>
 										<div class="fv-plugins-message-container invalid-feedback"></div>
 									</div>
+
+									<div class="col-md-12 fv-row fv-plugins-icon-container" id="rename_remarks_group" style="display: none;">
+										<label class="fs-5 fw-bold-2 text-primary"><i class="fa fa-info-circle text-primary me-1"></i>Reason / Remarks for Renaming Site (Optional)</label>
+										<input type="text" class="form-control form-control-solid border border-primary" placeholder="Enter reason or remarks for site renaming (e.g. Client facility name changed)" id="rename_remarks" name="rename_remarks">
+										<div class="form-text text-muted fs-7">This remark will be permanently recorded in the OE rename audit history log.</div>
+										<div class="fv-plugins-message-container invalid-feedback"></div>
+									</div>
 									
-								    <!-- changes on 1/11/25 by darsh: Added location dropdown with manual entry and Add Location button -->
 								    <div class="col-md-12 fv-row fv-plugins-icon-container">
 										<label class="fs-5 fw-bold-2">Location </label>
-										<input type="text" class="form-control form-control-solid" placeholder="Location" id="location" name="location">
+										<select class="form-select form-select-solid" id="location" name="location">
+										    <option value="">Select Location</option>
+										    <?php if(isset($location_list)): ?>
+										        <?php foreach($location_list as $row): ?>
+										            <option value="<?=htmlspecialchars($row['location_name'])?>"><?=htmlspecialchars($row['location_name'])?></option>
+										        <?php endforeach; ?>
+										    <?php endif; ?>
+										</select>
 										<div class="fv-plugins-message-container invalid-feedback"></div>
 									</div>
 									
@@ -252,8 +265,9 @@ var validator = FormValidation.formValidation(form,validation_object);
                         }
                         formData['options[]'].push(field.value);
                     } else {
-                        if (field.value.trim() !== "") {
-                            formData[field.name] = field.value;
+                        var fVal = (field.value !== null && field.value !== undefined) ? String(field.value).trim() : "";
+                        if (fVal !== "") {
+                            formData[field.name] = fVal;
                         }
                     }
                 });
@@ -280,28 +294,34 @@ var validator = FormValidation.formValidation(form,validation_object);
 
                 var isChanged = false;
                 if (originalOeData) {
-                    var curName = $("#<?=$form_id?>").find("#client_name").val().trim();
-                    var curLoc = $("#<?=$form_id?>").find("#location").val().trim();
+                    var curNameVal = $("#<?=$form_id?>").find("#client_name").val();
+                    var curLocVal = $("#<?=$form_id?>").find("#location").val();
+                    var curName = (curNameVal !== null && curNameVal !== undefined) ? String(curNameVal).trim() : "";
+                    var curLoc = (curLocVal !== null && curLocVal !== undefined) ? String(curLocVal).trim() : "";
                     var curCluster = $("#<?=$form_id?>").find("#cluster").val();
                     var curAm = $("#<?=$form_id?>").find("#account_manager").val();
 
-                    if ((originalOeData.client_name || '') !== curName ||
-                        (originalOeData.location || '') !== curLoc ||
-                        (originalOeData.cluster || '') !== curCluster ||
-                        (originalOeData.account_manager || '') !== curAm) {
+                    var isNameChanged = (originalOeData.client_name || '').trim() !== curName;
+                    var isLocChanged = (originalOeData.location || '').trim() !== curLoc;
+                    if (isNameChanged || isLocChanged) {
                         isChanged = true;
                     }
                 }
 
                 if (isChanged) {
-                    var confirmMsg = "This change will update the corresponding details in dependent audit records. Do you want to continue?";
+                    var isNameChanged = originalOeData && (originalOeData.client_name || '').trim() !== curName;
+                    var confirmTitle = isNameChanged ? 'Rename Site Confirmation' : 'Are you sure?';
+                    var confirmMsg = isNameChanged
+                        ? "Are you sure you want to rename site '" + (originalOeData.client_name || '') + "' to '" + curName + "'? Dependent audit records will be updated and an audit backup will be created."
+                        : "This change will update the corresponding details in dependent audit records. Do you want to continue?";
+
                     if (typeof Swal !== 'undefined') {
                         Swal.fire({
-                            title: 'Are you sure?',
+                            title: confirmTitle,
                             text: confirmMsg,
                             icon: 'warning',
                             showCancelButton: true,
-                            confirmButtonText: 'Yes, Update',
+                            confirmButtonText: isNameChanged ? 'Yes, Rename' : 'Yes, Update',
                             cancelButtonText: 'Cancel'
                         }).then((result) => {
                             if (result.isConfirmed) {
@@ -341,6 +361,8 @@ function edit_id(obj,id){
                                     };
                                     $("#<?=$form_id?>").find("#client_name").val(responce.data.client_name);
                                     $("#client_name_edit_note").show();
+                                    $("#rename_remarks_group").hide();
+                                    $("#rename_remarks").val('');
 
                                     if(responce.data.location) {
                                         $("#<?=$form_id?>").find("#location_select").val(responce.data.location);
@@ -363,10 +385,26 @@ function edit_id(obj,id){
                     });
 }
 
+// Dynamically display remarks field when site name is modified in edit modal
+$(document).on("input change", "#client_name", function() {
+    if (originalOeData && originalOeData.client_name) {
+        var cur = $(this).val().trim();
+        if (cur !== "" && cur !== originalOeData.client_name.trim()) {
+            $("#rename_remarks_group").slideDown();
+        } else {
+            $("#rename_remarks_group").slideUp();
+        }
+    } else {
+        $("#rename_remarks_group").hide();
+    }
+});
+
 // Reset edit note when clicking add button
 $('[data-bs-target="#<?=$button_id?>"]').on('click', function() {
     originalOeData = null;
     $("#client_name_edit_note").hide();
+    $("#rename_remarks_group").hide();
+    $("#rename_remarks").val('');
     $("#<?=$form_id?>_form")[0].reset();
     $("#<?=$form_id?>").find("#ajax_click").attr("data-ajax-url", $("#<?=$form_id?>").find("#ajax_click").attr("data-ajax-add-url"));
 });
