@@ -137,7 +137,7 @@ $this->section("breadcrumb_title_li");
                                     value='<?= isset($_SESSION['country']) ? $_SESSION['country'] : '' ?>'>
                             <?php } ?>
 
-                            <div class="form-group">
+                            <div class="form-group" style="display:none;">
                                 <label>Region *</label>
                                 <select class="form-control" id="user_region" name="user_region">
                                     <option value="" data-location-id="0">Select Region</option>
