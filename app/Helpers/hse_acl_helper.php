@@ -149,36 +149,61 @@ if (!function_exists('getClusterFilterByClientForHSE')) {
 
             $assignedClusters = getClusterManagerAssignedClusterHSE();
 
-            // ✅ FIX: handle empty clusters BEFORE query
             if (empty($assignedClusters)) {
-                return ' AND 1=0'; // 🔥 prevents SQL crash
+                return ' AND 1=0';
             }
 
-            $escapedClusters = implode(',', array_map([$db, 'escape'], $assignedClusters));
+            $escapedClusters = array_map([$db, 'escape'], (array)$assignedClusters);
+            $clusterList = implode(',', array_map(function($c) { return "LOWER(TRIM($c))"; }, $escapedClusters));
 
-            return " AND {$clientNameColumn} IN (
-                SELECT client_name 
-                FROM alert_hse_client_master 
-                WHERE cluster IN ({$escapedClusters}) 
-                AND status = 1
-            )";
+            return " AND (EXISTS (
+                SELECT 1 FROM alert_hse_client_master hc
+                WHERE (LOWER(TRIM(hc.location)) = LOWER(TRIM({$clientNameColumn})) OR LOWER(TRIM(hc.client_name)) = LOWER(TRIM({$clientNameColumn})))
+                AND LOWER(TRIM(hc.cluster)) IN ({$clusterList})
+                AND hc.status != 2
+            ) OR EXISTS (
+                SELECT 1 FROM alert_client c
+                WHERE (LOWER(TRIM(c.location)) = LOWER(TRIM({$clientNameColumn})) OR LOWER(TRIM(c.client_name)) = LOWER(TRIM({$clientNameColumn})))
+                AND LOWER(TRIM(c.cluster)) IN ({$clusterList})
+                AND c.status != 2
+            ) OR EXISTS (
+                SELECT 1 FROM alert_location_master lm
+                WHERE LOWER(TRIM(lm.location_name)) = LOWER(TRIM({$clientNameColumn}))
+                AND LOWER(TRIM(lm.cluster_name)) IN ({$clusterList})
+                AND lm.status != 2
+            ))";
         }
 
         elseif (isWHManager() || isAccountManager()) {
 
             $userName = getUserName();
-            $loginUser = strtolower(trim($userName));
+            $loginUser = $db->escape(strtolower(trim($userName)));
 
-            return " AND EXISTS (
+            return " AND (EXISTS (
                 SELECT 1 
                 FROM alert_hse_client_master c
                 WHERE (
                     LOWER(TRIM(c.location)) = LOWER(TRIM({$clientNameColumn}))
                     OR LOWER(TRIM(c.client_name)) = LOWER(TRIM({$clientNameColumn}))
                 )
-                AND LOWER(TRIM(c.account_manager)) = " . $db->escape($loginUser) . "
+                AND LOWER(TRIM(c.account_manager)) = {$loginUser}
                 AND c.status != 2
-            )";
+            ) OR EXISTS (
+                SELECT 1 
+                FROM alert_client ac
+                WHERE (
+                    LOWER(TRIM(ac.location)) = LOWER(TRIM({$clientNameColumn}))
+                    OR LOWER(TRIM(ac.client_name)) = LOWER(TRIM({$clientNameColumn}))
+                )
+                AND LOWER(TRIM(ac.account_manager)) = {$loginUser}
+                AND ac.status != 2
+            ) OR EXISTS (
+                SELECT 1 
+                FROM alert_location_master lm
+                WHERE LOWER(TRIM(lm.location_name)) = LOWER(TRIM({$clientNameColumn}))
+                AND LOWER(TRIM(lm.account_manager)) = {$loginUser}
+                AND lm.status != 2
+            ))";
         }
 
         return ' AND 1=0';
@@ -193,39 +218,6 @@ if (!function_exists('getHSEAuditACLWhere')) {
      */
     function getHSEAuditACLWhere($alias = 'a')
     {
-        if (canViewAllData()) {
-            return '';
-        }
-
-        $db = \Config\Database::connect();
-        $userName = getUserName();
-        $loginUser = strtolower(trim($userName));
-
-        if (isClusterManager()) {
-            $userClusters = getClusterManagerAssignedClusterHSE();
-            if (empty($userClusters)) {
-                return " AND 1=0";
-            }
-            $escapedClusters = array_map([$db, 'escape'], (array)$userClusters);
-            $clusterList = implode(',', array_map(function($c) { return "LOWER(TRIM($c))"; }, $escapedClusters));
-
-            return " AND EXISTS (
-                SELECT 1 FROM alert_hse_client_master c
-                WHERE (LOWER(TRIM(c.location)) = LOWER(TRIM({$alias}.client_name)) OR LOWER(TRIM(c.client_name)) = LOWER(TRIM({$alias}.client_name)))
-                AND LOWER(TRIM(c.cluster)) IN ({$clusterList})
-                AND c.status != 2
-            )";
-        }
-
-        if (isAccountManager() || isWHManager()) {
-            return " AND EXISTS (
-                SELECT 1 FROM alert_hse_client_master c
-                WHERE (LOWER(TRIM(c.location)) = LOWER(TRIM({$alias}.client_name)) OR LOWER(TRIM(c.client_name)) = LOWER(TRIM({$alias}.client_name)))
-                AND LOWER(TRIM(c.account_manager)) = " . $db->escape($loginUser) . "
-                AND c.status != 2
-            )";
-        }
-
-        return " AND 1=0";
+        return getClusterFilterByClientForHSE("{$alias}.client_name");
     }
 }

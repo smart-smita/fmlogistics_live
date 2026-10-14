@@ -20,6 +20,7 @@ helper('simple_acl');
 // Hide audit type filter buttons for Cluster Managers (read-only access)
 if(canCreateAudit()): ?>
 <div class="row g-5 g-xl-8">
+    <?php if (function_exists('canAccessOeModule') ? canAccessOeModule() : true): ?>
     <div class="col-xl-3">
         <a href="<?= base_url('Masters/Audit_template/template_type_filter/OE'); ?>" class="card bg-primary hoverable mb-xl-8">
             <!--begin::Body-->
@@ -29,7 +30,9 @@ if(canCreateAudit()): ?>
             </div>
         </a>
     </div>
+    <?php endif; ?>
     
+    <?php if (function_exists('canAccessHseModule') ? canAccessHseModule() : true): ?>
     <div class="col-xl-3">
         <a href="<?= base_url('Masters/Audit_template/template_type_filter/HSE'); ?>" class="card bg-dark hoverable mb-xl-8">
             <div class="card-body" style="padding: 1rem 2.25rem;">
@@ -37,23 +40,17 @@ if(canCreateAudit()): ?>
             </div>
         </a>
     </div>
-    
-    <!-- <div class="col-xl-3">
-        <a href="<?= base_url('Masters/Audit_template/template_type_filter/Normal'); ?>" class="card bg-warning hoverable mb-xl-8">
-            <div class="card-body" style="padding: 1rem 2.25rem;">
-                <div class="fw-semibold text-white">Normal </div>
-            </div>
-        </a>
-    </div> -->
+    <?php endif; ?>
 
+    <?php if ((function_exists('canAccessOeModule') ? canAccessOeModule() : true) && (function_exists('canAccessHseModule') ? canAccessHseModule() : true)): ?>
     <div class="col-xl-3">
-        
         <a href="<?= base_url('Masters/Audit_template'); ?>" class="card bg-info hoverable mb-5 mb-xl-8">
             <div class="card-body" style="padding: 1rem 2.25rem;">
                 <div class="fw-semibold text-white">All </div>
             </div>
         </a>    
     </div>
+    <?php endif; ?>
 </div>
 <?php else: ?>
 <!-- changes on 16/10/25 by darsh: Show simple ACL message for Cluster Managers -->

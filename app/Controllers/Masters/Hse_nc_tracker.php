@@ -861,29 +861,32 @@ class Hse_nc_tracker extends BaseController
 
         if (!empty($selRegion)) {
             $placeholders = implode(',', array_fill(0, count($selRegion), '?'));
-            $where .= " AND EXISTS (
+            $where .= " AND (m.region IN ($placeholders) OR EXISTS (
                 SELECT 1 FROM alert_hse_client_master cm
-                WHERE cm.client_name = m.client_name
+                WHERE (cm.client_name = m.client_name OR cm.location = m.location)
                 AND cm.region IN ($placeholders)
                 AND cm.status = 1
-            )";
+            ))";
+            $params = array_merge($params, $selRegion);
             $params = array_merge($params, $selRegion);
         }
 
         if (!empty($selCluster)) {
             $placeholders = implode(',', array_fill(0, count($selCluster), '?'));
-            $where .= " AND EXISTS (
+            $where .= " AND (m.cluster_name IN ($placeholders) OR EXISTS (
                 SELECT 1 FROM alert_hse_client_master cm
-                WHERE cm.client_name = m.client_name
+                WHERE (cm.client_name = m.client_name OR cm.location = m.location)
                 AND cm.cluster IN ($placeholders)
-                AND cm.status = 1
-            )";
+                AND (cm.status IS NULL OR cm.status != 2)
+            ))";
+            $params = array_merge($params, $selCluster);
             $params = array_merge($params, $selCluster);
         }
 
         if (!empty($selLocation)) {
             $placeholders = implode(',', array_fill(0, count($selLocation), '?'));
-            $where .= " AND m.client_name IN ($placeholders)";
+            $where .= " AND (m.client_name IN ($placeholders) OR m.location IN ($placeholders))";
+            $params = array_merge($params, $selLocation);
             $params = array_merge($params, $selLocation);
         }
 

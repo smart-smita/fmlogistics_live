@@ -105,6 +105,7 @@
 										<span class="menu-title">Normal Audit Dashboard</span></span>
 									</a>
 								</div> -->
+								<?php if (function_exists('canAccessOeModule') ? canAccessOeModule() : true): ?>
 								<div class="menu-item">
 									<a class="menu-link" href="<?= base_url('Customer/Audit_dashboard/OE_Audit') ?>">
 										<span class="menu-icon">
@@ -113,14 +114,17 @@
 										<span class="menu-title">OE Audit Dashboard</span></span>
 									</a>
 								</div>
-								<!-- <div class="menu-item">
+								<?php endif; ?>
+
+								<?php if (function_exists('canAccessHseModule') ? canAccessHseModule() : true): ?>
+								<div class="menu-item">
 									<a class="menu-link" href="<?= base_url('Customer/Audit_Dashboard_HSE/HSE_Audit') ?>">
 										<span class="menu-icon">
 											<span class="fas fa-shield-alt"></span>
 										</span>
 										<span class="menu-title">HSE Audit Dashboard</span></span>
 									</a>
-								</div> -->
+								</div>
 								<div class="menu-item">
 									<a class="menu-link" href="<?= base_url('Customer/Gemba_Dashboard') ?>">
 										<span class="menu-icon">
@@ -129,6 +133,7 @@
 										<span class="menu-title">Gemba HSE Audit Dashboard</span>
 									</a>
 								</div>
+								<?php endif; ?>
 
 								<?php 
 								$currRole = strtolower(trim($_SESSION['user_designation'] ?? ($_SESSION['role'] ?? '')));
@@ -226,6 +231,7 @@
 
 											<hr style="color: white;opacity: 100%;">
 
+											<?php if (function_exists('canAccessOeModule') ? canAccessOeModule() : true): ?>
 											<div class="menu-item">
 												<div class="menu-link">
 													<span class="menu-title"> - OE Master</span>
@@ -248,6 +254,7 @@
 													<span class="menu-title">Client Master</span>
 												</a>
 											</div>
+											<?php endif; ?>
 											
 
 											<!--	<div class="menu-item">-->
@@ -260,6 +267,7 @@
 											<!--</div>-->
 											<hr style="color: white;opacity: 100%;">
 
+											<?php if (function_exists('canAccessHseModule') ? canAccessHseModule() : true): ?>
 											<div class="menu-item">
 												<div class="menu-link">
 													<span class="menu-title"> - HSE Master</span>
@@ -299,6 +307,7 @@
 													<span class="menu-title">Client Master</span>
 												</a>
 											</div>
+											<?php endif; ?>
 
 
 
@@ -330,6 +339,7 @@
 
 											<hr style="color: white;opacity: 100%;">
 
+											<?php if (function_exists('canAccessHseModule') ? canAccessHseModule() : true): ?>
 											<div class="menu-item">
 												<div class="menu-link">
 													<span class="menu-title"> - Near Miss Master</span>
@@ -352,6 +362,7 @@
 													<span class="menu-title">Body Part</span>
 												</a>
 											</div>
+											<?php endif; ?>
 										
 										</div>
 									</div>
@@ -360,7 +371,7 @@
 								<?php
 									$role = strtolower($_SESSION['role'] ?? '');
 									$allowedRoles = ['super admin', 'super_admin', 'admin', 'auditor', 'account manager', 'account_manager', 'cluster manager', 'cluster_manager'];
-									if (in_array($role, $allowedRoles) || ($_SESSION['admin_flag'] ?? 0) == 1) {
+									if ((in_array($role, $allowedRoles) || ($_SESSION['admin_flag'] ?? 0) == 1) && (function_exists('canAccessGembaModule') ? canAccessGembaModule() : true)) {
 								?>
 								<div data-kt-menu-trigger="click" class="menu-item menu-accordion">
 									<span class="menu-link">
@@ -482,6 +493,7 @@
 												<span class="menu-title">Perform Normal Audit</span>
 											</a>
 										</div> -->
+										<?php if (function_exists('canAccessHseModule') ? canAccessHseModule() : true): ?>
 										<div class="menu-item">
 											<a class="menu-link" href="<?= base_url('Masters/Hse_audit') ?>">
 												<span class="menu-bullet">
@@ -490,9 +502,9 @@
 												<span class="menu-title">Perform HSE Audit</span>
 											</a>
 										</div>
+										<?php endif; ?>
 
-
-
+										<?php if (function_exists('canAccessOeModule') ? canAccessOeModule() : true): ?>
 										<div class="menu-item">
 											<a class="menu-link" href="<?= base_url('Masters/Audit_final_structure') ?>">
 												<span class="menu-bullet">
@@ -501,6 +513,7 @@
 												<span class="menu-title">Perform OE Audit</span>
 											</a>
 										</div>
+										<?php endif; ?>
 
 										<div class="menu-item">
 											<a class="menu-link" href="<?= base_url('Masters/Reaudit') ?>">
@@ -586,6 +599,7 @@
 									</span>
 									<div class="menu-sub menu-sub-accordion menu-active-bg">
 										
+											<?php if (function_exists('canAccessOeModule') ? canAccessOeModule() : true): ?>
 											<div class="menu-item">
 												<a class="menu-link" href="<?= base_url('Masters/Oe_nc_tracker') ?>">
 													<span class="menu-bullet">
@@ -594,24 +608,9 @@
 													<span class="menu-title">OE NC Tracker</span>
 												</a>
 											</div>
+											<?php endif; ?>
 											
-											<!-- <div class="menu-item">
-												<a class="menu-link" href="<?= base_url('Masters/Normal_nc_tracker') ?>">
-													<span class="menu-bullet">
-														<span class="bullet bullet-dot"></span>
-													</span>
-													<span class="menu-title">Normal NC Tracker</span>
-												</a>
-											</div> -->
-
-											<!-- <div class="menu-item">
-												<a class="menu-link" href="<?= base_url('Masters/Hse_nc_tracker') ?>">
-													<span class="menu-bullet">
-														<span class="bullet bullet-dot"></span>
-													</span>
-													<span class="menu-title">HSE NC Tracker</span>
-												</a>
-											</div> -->
+											<?php if (function_exists('canAccessHseModule') ? canAccessHseModule() : true): ?>
 											<div class="menu-item">
 												<a class="menu-link" href="<?= base_url('Masters/GembaNcTracker') ?>">
 													<span class="menu-bullet">
@@ -620,6 +619,7 @@
 													<span class="menu-title">Gemba HSE NC Tracker</span>
 												</a>
 											</div>
+											<?php endif; ?>
 									</div>
 								</div>
 
@@ -717,7 +717,13 @@
 											</a>
 										</div>
 										<?php 
-											$sd_cats = ['SOPs', 'Protocols', 'OE Documents', 'Policies', 'Manuals', 'HSE Grid Checklist'];
+											$sd_cats = ['SOPs', 'Protocols', 'Policies', 'Manuals'];
+									if (function_exists('canAccessOeModule') ? canAccessOeModule() : true) {
+										$sd_cats[] = 'OE Documents';
+									}
+									if (function_exists('canAccessHseModule') ? canAccessHseModule() : true) {
+										$sd_cats[] = 'HSE Grid Checklist';
+									}
 											foreach($sd_cats as $scat): 
 										?>
 										<div class="menu-item">
@@ -1006,8 +1012,12 @@
 												<!--begin::Footer-->
 												<div class="py-2 px-4 text-center border-top bg-light fs-9 text-muted d-flex justify-content-between align-items-center">
 													<span>24-Hour Review SLA System</span>
+													<?php if (function_exists('canAccessOeModule') ? canAccessOeModule() : true): ?>
 													<a href="<?= base_url('Masters/Oe_nc_tracker') ?>" class="text-primary fw-bold text-hover-underline">OE Tracker</a>
+													<?php endif; ?>
+													<?php if (function_exists('canAccessHseModule') ? canAccessHseModule() : true): ?>
 													<a href="<?= base_url('Masters/GembaNcTracker') ?>" class="text-primary fw-bold text-hover-underline">Gemba Tracker</a>
+													<?php endif; ?>
 												</div>
 												<!--end::Footer-->
 											</div>
@@ -1183,7 +1193,10 @@
 									class="page-title d-flex align-items-center flex-wrap me-3 mb-5 mb-lg-0">
 									<!--begin::Title-->
 									<?php
-										$dashboardUrl = base_url('Customer/Audit_dashboard/OE_Audit'); // Default to OE Dashboard
+										$defaultDashboard = (function_exists('isHseAuditType') && isHseAuditType())
+											? base_url('Customer/Gemba_Dashboard')
+											: base_url('Customer/Audit_dashboard/OE_Audit');
+										$dashboardUrl = $defaultDashboard; // Default Dashboard based on audit_type
 										if (isset($audit_template_type)) {
 											if (strcasecmp($audit_template_type, 'Normal') === 0) {
 												$dashboardUrl = base_url('Customer/Audit_dashboard/Normal_Audit');

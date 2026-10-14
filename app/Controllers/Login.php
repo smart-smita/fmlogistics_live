@@ -107,6 +107,7 @@ class Login extends BaseController
             $_SESSION['country'] = "IN";
             $_SESSION['user_name'] = "Super_admin";
             $_SESSION['user_email'] = $adminEmail;
+            $_SESSION['audit_type'] = 'Both';
             $_SESSION['login_time'] = date('Y-m-d H:i:s');
             unset($_SESSION['feedback_skipped_session']);
             unset($_SESSION['app_status_skipped_session']);
@@ -237,6 +238,7 @@ class Login extends BaseController
         $_SESSION['user_cluster'] = $userData['user_cluster'] ?? '';
         $_SESSION['user_location'] = $userData['user_location'] ?? '';
         $_SESSION['user_emp_country'] = $userData['user_emp_country'] ?? '';
+        $_SESSION['audit_type'] = $userData['audit_type'] ?? 'Both';
         $_SESSION['login_time'] = date('Y-m-d H:i:s');
         unset($_SESSION['feedback_skipped_session']); // Ensure feedback popup is eligible on new login if not submitted
         unset($_SESSION['app_status_skipped_session']); // Ensure application status feedback popup is eligible on new login if not submitted
@@ -257,10 +259,14 @@ class Login extends BaseController
             'status' => 'Success'
         ]);
 
+        $redirectUrl = (isset($userData['audit_type']) && strtoupper(trim((string)$userData['audit_type'])) === 'HSE')
+            ? base_url('Customer/Gemba_Dashboard')
+            : base_url('Customer/Audit_dashboard/OE_Audit');
+
         return $this->response->setJSON([
             'status' => 1,
             'message' => 'Login successful',
-            'url' => base_url('Customer/Audit_dashboard/OE_Audit')
+            'url' => $redirectUrl
         ]);
     }
 

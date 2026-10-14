@@ -324,31 +324,33 @@ class Normal_nc_tracker extends BaseController
         );
         $builder->select('COUNT(*) as total, alert_normal_audit_details.audit_finding, alert_normal_audit_details.status');
 
-        // Apply filters (audit_type / region / cluster / location / month)
-        if (!empty($selAuditType)) {
-            $builder->whereIn('alert_normal_audit.audit_name', $selAuditType);
+        // Apply user-selected filters (audit_type / region / cluster / location / month)
+        if (!empty($inAuditType)) {
+            $aArr = is_array($inAuditType) ? $inAuditType : [$inAuditType];
+            $builder->whereIn('alert_normal_audit.audit_name', $aArr);
         }
 
-        if (!empty($selRegion)) {
-            $builder->whereIn('alert_normal_audit.region', $selRegion);
+        if (!empty($inRegion)) {
+            $rArr = is_array($inRegion) ? $inRegion : [$inRegion];
+            $builder->whereIn('alert_normal_audit.region', $rArr);
         }
 
-        if (!empty($selCluster)) {
-
-            $builder->where(
-                "EXISTS (
-                    SELECT 1 
-                    FROM alert_client ac
-                    WHERE ac.client_name = alert_normal_audit.client_name
-                    AND ac.cluster IN (" . implode(',', array_map([$db, 'escape'], $selCluster)) . ")
-                )",
-                null,
-                false
-            );
+        if (!empty($inCluster)) {
+            $cArr = is_array($inCluster) ? $inCluster : [$inCluster];
+            $escapedClusters = array_map([$db, 'escape'], $cArr);
+            $cIn = implode(',', $escapedClusters);
+            $builder->where("(alert_normal_audit.cluster_name IN ({$cIn}) OR EXISTS (
+                SELECT 1 FROM alert_client ac
+                WHERE (ac.client_name = alert_normal_audit.client_name OR ac.location = alert_normal_audit.location)
+                AND ac.cluster IN ({$cIn})
+            ))", null, false);
         }
 
-        if (!empty($selLocation)) {
-            $builder->whereIn('alert_normal_audit.location', $selLocation);
+        if (!empty($inLocation)) {
+            $lArr = is_array($inLocation) ? $inLocation : [$inLocation];
+            $escapedLocations = array_map([$db, 'escape'], $lArr);
+            $lIn = implode(',', $escapedLocations);
+            $builder->where("(alert_normal_audit.location IN ({$lIn}) OR alert_normal_audit.client_name IN ({$lIn}))", null, false);
         }
 
         if ($month !== '' && preg_match('/^\d{4}-\d{2}$/', $month)) {
@@ -2164,21 +2166,19 @@ class Normal_nc_tracker extends BaseController
         }
 
         if (!empty($selCluster)) {
-
-            $builder->where(
-                "EXISTS (
-                    SELECT 1 
-                    FROM alert_client ac
-                    WHERE ac.client_name = alert_normal_audit.client_name
-                    AND ac.cluster IN (" . implode(',', array_map([$db, 'escape'], $selCluster)) . ")
-                )",
-                null,
-                false
-            );
+            $escapedClusters = array_map([$db, 'escape'], $selCluster);
+            $cIn = implode(',', $escapedClusters);
+            $builder->where("(alert_normal_audit.cluster_name IN ({$cIn}) OR EXISTS (
+                SELECT 1 FROM alert_client ac
+                WHERE (ac.client_name = alert_normal_audit.client_name OR ac.location = alert_normal_audit.location)
+                AND ac.cluster IN ({$cIn})
+            ))", null, false);
         }
 
         if (!empty($selLocation)) {
-            $builder->whereIn('alert_normal_audit.location', $selLocation);
+            $escapedLocations = array_map([$db, 'escape'], $selLocation);
+            $lIn = implode(',', $escapedLocations);
+            $builder->where("(alert_normal_audit.location IN ({$lIn}) OR alert_normal_audit.client_name IN ({$lIn}))", null, false);
         }
 
         if ($month !== '' && preg_match('/^\d{4}-\d{2}$/', $month)) {

@@ -228,6 +228,9 @@ class Gemba_Dashboard extends BaseController
 
         public function index()
         {
+            if (function_exists('isOeAuditType') && isOeAuditType()) {
+                return redirect()->to(base_url('Customer/Audit_dashboard/OE_Audit'));
+            }
             $db = \Config\Database::connect();
             $request = \Config\Services::request();
             

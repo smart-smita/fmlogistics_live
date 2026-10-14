@@ -25,6 +25,9 @@ class Client extends BaseController
     }
     public function index()
     {
+        if (function_exists('isHseAuditType') && isHseAuditType()) {
+            return redirect()->to(base_url('Masters/Hse_client'));
+        }
         $data = [];
 
         $tdata['title']="";
@@ -64,13 +67,24 @@ class Client extends BaseController
         $data['region_list']=$db->table("alert_region")->where("status","1")->get()->getResultArray();
         
         $db = db_connect();
-        $data['cluster_list']=$db->table("alert_cluster_master")->where("status","1")->get()->getResultArray();
+        // Fetch users with designation 'Cluster Manager' for cluster dropdown
+        $data['cluster_list'] = $db->table("alert_users")
+            ->select("user_name AS cluster_name, user_id AS cluster_id")
+            ->where("status", 1)
+            ->groupStart()
+                ->like("LOWER(user_designation)", "cluster")
+            ->groupEnd()
+            ->orderBy("user_name", "ASC")
+            ->get()->getResultArray();
 
         $db = db_connect();
         // Fetch users with designation 'Account Manager'
         $data['account_managers'] = $db->table("alert_users")
-            ->where("user_designation", "Account Manager")
+            ->select("user_name, user_email")
             ->where("status", 1)
+            ->groupStart()
+                ->like("LOWER(user_designation)", "account")
+            ->groupEnd()
             ->orderBy("user_name", "ASC")
             ->get()->getResultArray();
         
@@ -300,14 +314,14 @@ class Client extends BaseController
                                 'remark'                => $remark,
                                 'reason'                => $reason,
                                 'prev_client_name'      => $oldData['client_name'],
-                                'prev_site_category'    => $oldData['site_category'] ?? null,
+                                'prev_location'         => $oldData['location'] ?? null,
                                 'prev_region'           => $oldData['region'] ?? null,
                                 'prev_cluster'          => $oldData['cluster'] ?? null,
                                 'prev_account_manager'  => $oldData['account_manager'] ?? null,
                                 'prev_email'            => $oldData['email'] ?? null,
                                 'prev_status'           => isset($oldData['status']) ? (int)$oldData['status'] : null,
                                 'new_client_name'       => $oldData['client_name'],
-                                'new_site_category'     => $oldData['site_category'] ?? null,
+                                'new_location'          => $oldData['location'] ?? null,
                                 'new_region'            => $oldData['region'] ?? null,
                                 'new_cluster'           => $postData['cluster'] ?? $oldData['cluster'],
                                 'new_account_manager'   => $postData['account_manager'] ?? $oldData['account_manager'],
@@ -341,37 +355,30 @@ class Client extends BaseController
                             }
                         }
 
-                        // 3. Update Latest Active Audit if it has open NCs
-                        $latestAudit = $db->query("
-                            SELECT structured_audit_id 
-                            FROM alert_final_structured_audit 
-                            WHERE TRIM(location) = TRIM({$clientNameEscaped}) OR TRIM(client_name) = TRIM({$clientNameEscaped})
-                            ORDER BY structured_audit_id DESC LIMIT 1
-                        ")->getRowArray();
+                        // 3. Update ALL Audits under this client so that ALL records (including Forced Closed, Closed, and Open NCs) show under the new cluster and account manager
+                        $updateData = [];
+                        if (isset($postData['cluster']) && $oldData['cluster'] != $postData['cluster']) {
+                            $updateData['cluster_name'] = $postData['cluster'];
+                        }
+                        if (isset($postData['account_manager']) && $oldData['account_manager'] != $postData['account_manager']) {
+                            $updateData['client_manager_name'] = $postData['account_manager'];
+                        }
+                        
+                        if (!empty($updateData)) {
+                            if (!empty($affectedAuditIds)) {
+                                $db->table('alert_final_structured_audit')
+                                    ->whereIn('structured_audit_id', $affectedAuditIds)
+                                    ->update($updateData);
+                            } else {
+                                $db->table('alert_final_structured_audit')
+                                    ->where("(TRIM(client_name) = TRIM({$clientNameEscaped}) OR TRIM(location) = TRIM({$clientNameEscaped}))")
+                                    ->update($updateData);
+                            }
 
-                        if ($latestAudit) {
-                            $latestAuditId = $latestAudit['structured_audit_id'];
-                            
-                            $openNcCount = $db->query("
-                                SELECT COUNT(*) as cnt 
-                                FROM alert_final_structured_audit_details 
-                                WHERE structured_audit_id = ? AND audit_finding = 'NO' AND status IN (0, 1, 2, 6)
-                            ", [$latestAuditId])->getRowArray()['cnt'];
-
-                            if ($openNcCount > 0) {
-                                $updateData = [];
-                                if (isset($postData['cluster']) && $oldData['cluster'] != $postData['cluster']) {
-                                    $updateData['cluster_name'] = $postData['cluster'];
-                                }
-                                if (isset($postData['account_manager']) && $oldData['account_manager'] != $postData['account_manager']) {
-                                    $updateData['client_manager_name'] = $postData['account_manager'];
-                                }
-                                
-                                if (!empty($updateData)) {
-                                    $db->table('alert_final_structured_audit')
-                                        ->where('structured_audit_id', $latestAuditId)
-                                        ->update($updateData);
-                                }
+                            if ($db->tableExists('alert_normal_audit')) {
+                                $db->table('alert_normal_audit')
+                                    ->where("(TRIM(client_name) = TRIM({$clientNameEscaped}) OR TRIM(location) = TRIM({$clientNameEscaped}))")
+                                    ->update($updateData);
                             }
                         }
                     }

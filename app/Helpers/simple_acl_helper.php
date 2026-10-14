@@ -157,3 +157,84 @@ if (!function_exists('showACLMessage')) {
         return '';
     }
 }
+
+if (!function_exists('getUserAuditType')) {
+    /**
+     * Get user's audit type (OE, HSE, Both) from session or database
+     */
+    function getUserAuditType() {
+        $auditType = session()->get('audit_type') ?? null;
+        if (!$auditType) {
+            $userId = session()->get('user_id');
+            if (!empty($userId)) {
+                $db = db_connect();
+                $u = $db->table('alert_users')->select('audit_type')->where('user_id', $userId)->get()->getRowArray();
+                $auditType = $u['audit_type'] ?? 'Both';
+                session()->set('audit_type', $auditType);
+                $_SESSION['audit_type'] = $auditType;
+            } else {
+                $auditType = 'Both';
+            }
+        }
+        return strtoupper(trim((string)$auditType));
+    }
+}
+
+if (!function_exists('isHseAuditType')) {
+    /**
+     * Check if user is strictly assigned HSE audit type
+     */
+    function isHseAuditType() {
+        if ((session()->get('admin_flag') ?? 0) == 1) return false;
+        $role = strtolower(trim((string)(session()->get('role') ?? '')));
+        if ($role === 'admin' || $role === 'super admin' || $role === 'super_admin') return false;
+        return getUserAuditType() === 'HSE';
+    }
+}
+
+if (!function_exists('isOeAuditType')) {
+    /**
+     * Check if user is strictly assigned OE audit type
+     */
+    function isOeAuditType() {
+        if ((session()->get('admin_flag') ?? 0) == 1) return false;
+        $role = strtolower(trim((string)(session()->get('role') ?? '')));
+        if ($role === 'admin' || $role === 'super admin' || $role === 'super_admin') return false;
+        return getUserAuditType() === 'OE';
+    }
+}
+
+if (!function_exists('canAccessOeModule')) {
+    /**
+     * Check if user can access OE module (Dashboard, Masters, Structure Audit, NC Tracker)
+     */
+    function canAccessOeModule() {
+        if ((session()->get('admin_flag') ?? 0) == 1) return true;
+        $role = strtolower(trim((string)(session()->get('role') ?? '')));
+        if ($role === 'admin' || $role === 'super admin' || $role === 'super_admin') return true;
+        $type = getUserAuditType();
+        return $type === 'OE' || $type === 'BOTH' || empty($type);
+    }
+}
+
+if (!function_exists('canAccessHseModule')) {
+    /**
+     * Check if user can access HSE module (Dashboard, Masters, Structure Audit, NC Tracker)
+     */
+    function canAccessHseModule() {
+        if ((session()->get('admin_flag') ?? 0) == 1) return true;
+        $role = strtolower(trim((string)(session()->get('role') ?? '')));
+        if ($role === 'admin' || $role === 'super admin' || $role === 'super_admin') return true;
+        $type = getUserAuditType();
+        return $type === 'HSE' || $type === 'BOTH' || empty($type);
+    }
+}
+
+if (!function_exists('canAccessGembaModule')) {
+    /**
+     * Check if user can access Gemba module
+     */
+    function canAccessGembaModule() {
+        return canAccessHseModule();
+    }
+}

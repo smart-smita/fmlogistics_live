@@ -118,22 +118,28 @@ class ClientSiteDependencySyncService
             $oeAuditData = [];
             if (isset($changes['location'])) $oeAuditData['location'] = $newLocation;
             if (isset($changes['region'])) $oeAuditData['region'] = $newRegion;
+            if (isset($changes['cluster'])) $oeAuditData['cluster_name'] = $newCluster;
+            if (isset($changes['account_manager'])) $oeAuditData['client_manager_name'] = $newAccountManager;
 
             $oeAuditData = $this->filterExistingFields('alert_final_structured_audit', $oeAuditData);
 
             if (!empty($oeAuditData)) {
-                $builder = $this->db->table('alert_final_structured_audit')
-                    ->groupStart()
-                        ->where('client_name', $effectiveClientName)
-                        ->orWhere('client_name', $oldClientName);
-                if (!empty($oldLocation)) {
-                    $builder->orWhere('location', $oldLocation);
+                $matchNames = array_unique(array_filter([
+                    trim($effectiveClientName),
+                    trim($oldClientName),
+                    trim($newLocation),
+                    trim($oldLocation)
+                ]));
+                if (!empty($matchNames)) {
+                    $escapedNames = array_map([$this->db, 'escape'], $matchNames);
+                    $inClause = implode(',', $escapedNames);
+                    $this->db->table('alert_final_structured_audit')
+                        ->where("(TRIM(client_name) IN ({$inClause}) OR TRIM(location) IN ({$inClause}))")
+                        ->update($oeAuditData);
+                    $cnt = $this->db->affectedRows();
+                    $affectedCounts['alert_final_structured_audit'] = $cnt;
+                    $totalAffected += $cnt;
                 }
-                $builder->groupEnd();
-                $builder->update($oeAuditData);
-                $cnt = $this->db->affectedRows();
-                $affectedCounts['alert_final_structured_audit'] = $cnt;
-                $totalAffected += $cnt;
             }
         }
 
@@ -142,22 +148,28 @@ class ClientSiteDependencySyncService
             $normalAuditData = [];
             if (isset($changes['location'])) $normalAuditData['location'] = $newLocation;
             if (isset($changes['region'])) $normalAuditData['region'] = $newRegion;
+            if (isset($changes['cluster'])) $normalAuditData['cluster_name'] = $newCluster;
+            if (isset($changes['account_manager'])) $normalAuditData['client_manager_name'] = $newAccountManager;
 
             $normalAuditData = $this->filterExistingFields('alert_normal_audit', $normalAuditData);
 
             if (!empty($normalAuditData)) {
-                $builder = $this->db->table('alert_normal_audit')
-                    ->groupStart()
-                        ->where('client_name', $effectiveClientName)
-                        ->orWhere('client_name', $oldClientName);
-                if (!empty($oldLocation)) {
-                    $builder->orWhere('location', $oldLocation);
+                $matchNames = array_unique(array_filter([
+                    trim($effectiveClientName),
+                    trim($oldClientName),
+                    trim($newLocation),
+                    trim($oldLocation)
+                ]));
+                if (!empty($matchNames)) {
+                    $escapedNames = array_map([$this->db, 'escape'], $matchNames);
+                    $inClause = implode(',', $escapedNames);
+                    $this->db->table('alert_normal_audit')
+                        ->where("(TRIM(client_name) IN ({$inClause}) OR TRIM(location) IN ({$inClause}))")
+                        ->update($normalAuditData);
+                    $cnt = $this->db->affectedRows();
+                    $affectedCounts['alert_normal_audit'] = $cnt;
+                    $totalAffected += $cnt;
                 }
-                $builder->groupEnd();
-                $builder->update($normalAuditData);
-                $cnt = $this->db->affectedRows();
-                $affectedCounts['alert_normal_audit'] = $cnt;
-                $totalAffected += $cnt;
             }
         }
 
@@ -293,45 +305,58 @@ class ClientSiteDependencySyncService
             $hseAuditData = [];
             if (isset($changes['location'])) $hseAuditData['location'] = $newLocation;
             if (isset($changes['region'])) $hseAuditData['region'] = $newRegion;
+            if (isset($changes['cluster'])) $hseAuditData['cluster_name'] = $newCluster;
+            if (isset($changes['account_manager'])) $hseAuditData['account_manager'] = $newAccountManager;
 
             $hseAuditData = $this->filterExistingFields('alert_hse_audit_master', $hseAuditData);
 
             if (!empty($hseAuditData)) {
-                $builder = $this->db->table('alert_hse_audit_master')
-                    ->groupStart()
-                        ->where('client_name', $effectiveClientName)
-                        ->orWhere('client_name', $oldClientName);
-                if (!empty($oldLocation)) {
-                    $builder->orWhere('location', $oldLocation);
+                $matchHseNames = array_unique(array_filter([
+                    trim($effectiveClientName),
+                    trim($oldClientName),
+                    trim($newLocation),
+                    trim($oldLocation)
+                ]));
+                if (!empty($matchHseNames)) {
+                    $escapedNames = array_map([$this->db, 'escape'], $matchHseNames);
+                    $inClause = implode(',', $escapedNames);
+                    $this->db->table('alert_hse_audit_master')
+                        ->where("(TRIM(client_name) IN ({$inClause}) OR TRIM(location) IN ({$inClause}))")
+                        ->update($hseAuditData);
+                    $cnt = $this->db->affectedRows();
+                    $affectedCounts['alert_hse_audit_master'] = $cnt;
+                    $totalAffected += $cnt;
                 }
-                $builder->groupEnd();
-                $builder->update($hseAuditData);
-                $cnt = $this->db->affectedRows();
-                $affectedCounts['alert_hse_audit_master'] = $cnt;
-                $totalAffected += $cnt;
             }
         }
 
         // 4. Sync Gemba Audits (alert_gemba_audits)
         if ($this->db->tableExists('alert_gemba_audits')) {
             $gembaAuditData = [];
+            if (isset($changes['location'])) $gembaAuditData['site_name'] = $newLocation;
             if (isset($changes['region'])) $gembaAuditData['region'] = $newRegion;
+            if (isset($changes['cluster'])) $gembaAuditData['cluster_manager_spoc'] = $newCluster;
+            if (isset($changes['account_manager'])) $gembaAuditData['account_manager'] = $newAccountManager;
 
             $gembaAuditData = $this->filterExistingFields('alert_gemba_audits', $gembaAuditData);
 
             if (!empty($gembaAuditData)) {
-                $builder = $this->db->table('alert_gemba_audits')
-                    ->groupStart()
-                        ->where('site_name', $effectiveClientName)
-                        ->orWhere('site_name', $oldClientName);
-                if (!empty($oldLocation)) {
-                    $builder->orWhere('site_name', $oldLocation);
+                $matchGembaNames = array_unique(array_filter([
+                    trim($effectiveClientName),
+                    trim($oldClientName),
+                    trim($newLocation),
+                    trim($oldLocation)
+                ]));
+                if (!empty($matchGembaNames)) {
+                    $escapedNames = array_map([$this->db, 'escape'], $matchGembaNames);
+                    $inClause = implode(',', $escapedNames);
+                    $this->db->table('alert_gemba_audits')
+                        ->where("TRIM(site_name) IN ({$inClause})")
+                        ->update($gembaAuditData);
+                    $cnt = $this->db->affectedRows();
+                    $affectedCounts['alert_gemba_audits'] = $cnt;
+                    $totalAffected += $cnt;
                 }
-                $builder->groupEnd();
-                $builder->update($gembaAuditData);
-                $cnt = $this->db->affectedRows();
-                $affectedCounts['alert_gemba_audits'] = $cnt;
-                $totalAffected += $cnt;
             }
         }
 
@@ -436,19 +461,26 @@ class ClientSiteDependencySyncService
                 $oeAuditData['location'] = $newLocName;
             }
             if (isset($changes['region'])) $oeAuditData['region'] = $newRegion;
+            if (isset($changes['cluster'])) $oeAuditData['cluster_name'] = $newCluster;
+            if (isset($changes['account_manager'])) $oeAuditData['client_manager_name'] = $newAccountManager;
 
             $oeAuditData = $this->filterExistingFields('alert_final_structured_audit', $oeAuditData);
 
             if (!empty($oeAuditData)) {
-                $this->db->table('alert_final_structured_audit')
-                    ->groupStart()
-                        ->where('client_name', $oldLocName)
-                        ->orWhere('location', $oldLocName)
-                    ->groupEnd()
-                    ->update($oeAuditData);
-                $cnt = $this->db->affectedRows();
-                $affectedCounts['alert_final_structured_audit'] = $cnt;
-                $totalAffected += $cnt;
+                $matchNames = array_unique(array_filter([
+                    trim($oldLocName),
+                    trim($newLocName)
+                ]));
+                if (!empty($matchNames)) {
+                    $escapedNames = array_map([$this->db, 'escape'], $matchNames);
+                    $inClause = implode(',', $escapedNames);
+                    $this->db->table('alert_final_structured_audit')
+                        ->where("(TRIM(client_name) IN ({$inClause}) OR TRIM(location) IN ({$inClause}))")
+                        ->update($oeAuditData);
+                    $cnt = $this->db->affectedRows();
+                    $affectedCounts['alert_final_structured_audit'] = $cnt;
+                    $totalAffected += $cnt;
+                }
             }
         }
 
@@ -460,19 +492,26 @@ class ClientSiteDependencySyncService
                 $normalAuditData['location'] = $newLocName;
             }
             if (isset($changes['region'])) $normalAuditData['region'] = $newRegion;
+            if (isset($changes['cluster'])) $normalAuditData['cluster_name'] = $newCluster;
+            if (isset($changes['account_manager'])) $normalAuditData['client_manager_name'] = $newAccountManager;
 
             $normalAuditData = $this->filterExistingFields('alert_normal_audit', $normalAuditData);
 
             if (!empty($normalAuditData)) {
-                $this->db->table('alert_normal_audit')
-                    ->groupStart()
-                        ->where('client_name', $oldLocName)
-                        ->orWhere('location', $oldLocName)
-                    ->groupEnd()
-                    ->update($normalAuditData);
-                $cnt = $this->db->affectedRows();
-                $affectedCounts['alert_normal_audit'] = $cnt;
-                $totalAffected += $cnt;
+                $matchNames = array_unique(array_filter([
+                    trim($oldLocName),
+                    trim($newLocName)
+                ]));
+                if (!empty($matchNames)) {
+                    $escapedNames = array_map([$this->db, 'escape'], $matchNames);
+                    $inClause = implode(',', $escapedNames);
+                    $this->db->table('alert_normal_audit')
+                        ->where("(TRIM(client_name) IN ({$inClause}) OR TRIM(location) IN ({$inClause}))")
+                        ->update($normalAuditData);
+                    $cnt = $this->db->affectedRows();
+                    $affectedCounts['alert_normal_audit'] = $cnt;
+                    $totalAffected += $cnt;
+                }
             }
         }
 
@@ -488,15 +527,20 @@ class ClientSiteDependencySyncService
             $hseClientData = $this->filterExistingFields('alert_hse_client_master', $hseClientData);
 
             if (!empty($hseClientData)) {
-                $this->db->table('alert_hse_client_master')
-                    ->groupStart()
-                        ->where('client_name', $oldLocName)
-                        ->orWhere('location', $oldLocName)
-                    ->groupEnd()
-                    ->update($hseClientData);
-                $cnt = $this->db->affectedRows();
-                $affectedCounts['alert_hse_client_master'] = $cnt;
-                $totalAffected += $cnt;
+                $matchNames = array_unique(array_filter([
+                    trim($oldLocName),
+                    trim($newLocName)
+                ]));
+                if (!empty($matchNames)) {
+                    $escapedNames = array_map([$this->db, 'escape'], $matchNames);
+                    $inClause = implode(',', $escapedNames);
+                    $this->db->table('alert_hse_client_master')
+                        ->where("(TRIM(client_name) IN ({$inClause}) OR TRIM(location) IN ({$inClause}))")
+                        ->update($hseClientData);
+                    $cnt = $this->db->affectedRows();
+                    $affectedCounts['alert_hse_client_master'] = $cnt;
+                    $totalAffected += $cnt;
+                }
             }
         }
 
@@ -510,12 +554,20 @@ class ClientSiteDependencySyncService
             $gembaSiteData = $this->filterExistingFields('alert_gemba_sites', $gembaSiteData);
 
             if (!empty($gembaSiteData)) {
-                $this->db->table('alert_gemba_sites')
-                    ->where('site_name', $oldLocName)
-                    ->update($gembaSiteData);
-                $cnt = $this->db->affectedRows();
-                $affectedCounts['alert_gemba_sites'] = $cnt;
-                $totalAffected += $cnt;
+                $matchNames = array_unique(array_filter([
+                    trim($oldLocName),
+                    trim($newLocName)
+                ]));
+                if (!empty($matchNames)) {
+                    $escapedNames = array_map([$this->db, 'escape'], $matchNames);
+                    $inClause = implode(',', $escapedNames);
+                    $this->db->table('alert_gemba_sites')
+                        ->where("TRIM(site_name) IN ({$inClause})")
+                        ->update($gembaSiteData);
+                    $cnt = $this->db->affectedRows();
+                    $affectedCounts['alert_gemba_sites'] = $cnt;
+                    $totalAffected += $cnt;
+                }
             }
         }
 
@@ -527,19 +579,26 @@ class ClientSiteDependencySyncService
                 $hseAuditData['location'] = $newLocName;
             }
             if (isset($changes['region'])) $hseAuditData['region'] = $newRegion;
+            if (isset($changes['cluster'])) $hseAuditData['cluster_name'] = $newCluster;
+            if (isset($changes['account_manager'])) $hseAuditData['account_manager'] = $newAccountManager;
 
             $hseAuditData = $this->filterExistingFields('alert_hse_audit_master', $hseAuditData);
 
             if (!empty($hseAuditData)) {
-                $this->db->table('alert_hse_audit_master')
-                    ->groupStart()
-                        ->where('client_name', $oldLocName)
-                        ->orWhere('location', $oldLocName)
-                    ->groupEnd()
-                    ->update($hseAuditData);
-                $cnt = $this->db->affectedRows();
-                $affectedCounts['alert_hse_audit_master'] = $cnt;
-                $totalAffected += $cnt;
+                $matchNames = array_unique(array_filter([
+                    trim($oldLocName),
+                    trim($newLocName)
+                ]));
+                if (!empty($matchNames)) {
+                    $escapedNames = array_map([$this->db, 'escape'], $matchNames);
+                    $inClause = implode(',', $escapedNames);
+                    $this->db->table('alert_hse_audit_master')
+                        ->where("(TRIM(client_name) IN ({$inClause}) OR TRIM(location) IN ({$inClause}))")
+                        ->update($hseAuditData);
+                    $cnt = $this->db->affectedRows();
+                    $affectedCounts['alert_hse_audit_master'] = $cnt;
+                    $totalAffected += $cnt;
+                }
             }
         }
 
@@ -548,19 +607,28 @@ class ClientSiteDependencySyncService
             $gembaAuditData = [];
             if (isset($changes['location_name'])) $gembaAuditData['site_name'] = $newLocName;
             if (isset($changes['region'])) $gembaAuditData['region'] = $newRegion;
+            if (isset($changes['cluster'])) $gembaAuditData['cluster_manager_spoc'] = $newCluster;
+            if (isset($changes['account_manager'])) $gembaAuditData['account_manager'] = $newAccountManager;
 
             $gembaAuditData = $this->filterExistingFields('alert_gemba_audits', $gembaAuditData);
 
             if (!empty($gembaAuditData)) {
-                $this->db->table('alert_gemba_audits')
-                    ->where('site_name', $oldLocName)
-                    ->update($gembaAuditData);
-                $cnt = $this->db->affectedRows();
-                $affectedCounts['alert_gemba_audits'] = $cnt;
-                $totalAffected += $cnt;
+                $matchNames = array_unique(array_filter([
+                    trim($oldLocName),
+                    trim($newLocName)
+                ]));
+                if (!empty($matchNames)) {
+                    $escapedNames = array_map([$this->db, 'escape'], $matchNames);
+                    $inClause = implode(',', $escapedNames);
+                    $this->db->table('alert_gemba_audits')
+                        ->where("TRIM(site_name) IN ({$inClause})")
+                        ->update($gembaAuditData);
+                    $cnt = $this->db->affectedRows();
+                    $affectedCounts['alert_gemba_audits'] = $cnt;
+                    $totalAffected += $cnt;
+                }
             }
         }
-
 
         $this->db->transComplete();
 

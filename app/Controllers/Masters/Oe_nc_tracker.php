@@ -17,6 +17,9 @@ class Oe_nc_tracker extends BaseController
 
     public function index($status = null)
     {
+        if (function_exists('isHseAuditType') && isHseAuditType()) {
+            return redirect()->to(base_url('Masters/GembaNcTracker'));
+        }
         $data = [];
 
         $tdata['title'] = "OE NC Tracker";
@@ -311,27 +314,28 @@ class Oe_nc_tracker extends BaseController
         );
         $builder->select('COUNT(*) as total, alert_final_structured_audit_details.audit_finding, alert_final_structured_audit_details.status');
 
-        // Apply filters (region / cluster / location / month)
-        if (!empty($selRegion)) {
-            $builder->whereIn('alert_final_structured_audit.region', $selRegion);
+        // Apply user-selected filters (region / cluster / location / month)
+        if (!empty($inRegion)) {
+            $rArr = is_array($inRegion) ? $inRegion : [$inRegion];
+            $builder->whereIn('alert_final_structured_audit.region', $rArr);
         }
 
-        if (!empty($selCluster)) {
-
-            $builder->where(
-                "EXISTS (
-                    SELECT 1 
-                    FROM alert_client ac
-                    WHERE ac.client_name = alert_final_structured_audit.client_name
-                    AND ac.cluster IN (" . implode(',', array_map([$db, 'escape'], $selCluster)) . ")
-                )",
-                null,
-                false
-            );
+        if (!empty($inCluster)) {
+            $cArr = is_array($inCluster) ? $inCluster : [$inCluster];
+            $escapedClusters = array_map([$db, 'escape'], $cArr);
+            $cIn = implode(',', $escapedClusters);
+            $builder->where("(alert_final_structured_audit.cluster_name IN ({$cIn}) OR EXISTS (
+                SELECT 1 FROM alert_client ac
+                WHERE (ac.client_name = alert_final_structured_audit.client_name OR ac.location = alert_final_structured_audit.location)
+                AND ac.cluster IN ({$cIn})
+            ))", null, false);
         }
 
-        if (!empty($selLocation)) {
-            $builder->whereIn('alert_final_structured_audit.location', $selLocation);
+        if (!empty($inLocation)) {
+            $lArr = is_array($inLocation) ? $inLocation : [$inLocation];
+            $escapedLocations = array_map([$db, 'escape'], $lArr);
+            $lIn = implode(',', $escapedLocations);
+            $builder->where("(alert_final_structured_audit.location IN ({$lIn}) OR alert_final_structured_audit.client_name IN ({$lIn}))", null, false);
         }
 
         if ($month !== '' && preg_match('/^\d{4}-\d{2}$/', $month)) {
@@ -343,20 +347,11 @@ class Oe_nc_tracker extends BaseController
         }
 
         // ACL: Cluster Manager / Account Manager
-        if (!empty($userClusterACLs)) {
-            $builder->where(
-                "EXISTS (
-                    SELECT 1 FROM alert_client 
-                    WHERE alert_client.client_name = alert_final_structured_audit.client_name
-                    AND LOWER(TRIM(alert_client.cluster)) IN (" . implode(',', array_map([$db, 'escape'], $userClusterACLs)) . ")
-                    AND alert_client.status = 1
-                )",
-                null,
-                false
-            );
-        }
-        if (!empty($userClient)) {
-            $builder->whereIn('alert_final_structured_audit.client_name', $userClient);
+        helper('designation_acl');
+        $aclWhere = getOEAuditACLWhere('alert_final_structured_audit', 'OE');
+        if (!empty($aclWhere)) {
+            $aclCondition = preg_replace('/^\s*AND\s*/i', '', $aclWhere);
+            $builder->where($aclCondition, null, false);
         }
 
         // Show all NCs, but exclude reaudited ones UNLESS they are closed/force-closed
@@ -625,7 +620,14 @@ class Oe_nc_tracker extends BaseController
 
         if (!empty($selCluster)) {
             $placeholders = implode(',', array_fill(0, count($selCluster), '?'));
-            $sql .= " AND alert_final_structured_audit.cluster_name IN ($placeholders)";
+            $sql .= " AND (alert_final_structured_audit.cluster_name IN ($placeholders) OR EXISTS (
+                SELECT 1 FROM alert_client ac
+                WHERE (ac.client_name = alert_final_structured_audit.client_name OR ac.location = alert_final_structured_audit.location)
+                AND ac.cluster IN ($placeholders)
+            ))";
+            foreach ($selCluster as $c) {
+                $params[] = $c;
+            }
             foreach ($selCluster as $c) {
                 $params[] = $c;
             }
@@ -633,7 +635,10 @@ class Oe_nc_tracker extends BaseController
 
         if (!empty($selLocation)) {
             $placeholders = implode(',', array_fill(0, count($selLocation), '?'));
-            $sql .= " AND alert_final_structured_audit.location IN ($placeholders)";
+            $sql .= " AND (alert_final_structured_audit.location IN ($placeholders) OR alert_final_structured_audit.client_name IN ($placeholders))";
+            foreach ($selLocation as $l) {
+                $params[] = $l;
+            }
             foreach ($selLocation as $l) {
                 $params[] = $l;
             }
@@ -645,26 +650,10 @@ class Oe_nc_tracker extends BaseController
         }
 
         // ACL
-        if (isClusterManager() || isWHManager()) {
-            $userClusters = getClusterManagerAssignedCluster();
-            if (!empty($userClusters)) {
-                $escapedClusters = array_map([$db, 'escape'], $userClusters);
-                $sql .= " AND LOWER(TRIM(alert_final_structured_audit.cluster_name)) IN (" . implode(',', array_map(function ($c) {
-                    return "LOWER(TRIM($c))"; }, $escapedClusters)) . ")";
-            }
-        } elseif (isAccountManager()) {
-            $userClients = getAccountManagerAssignedClient();
-            if (!empty($userClients)) {
-                $placeholders = implode(',', array_fill(0, count($userClients), '?'));
-                $sql .= " AND alert_final_structured_audit.client_name IN ($placeholders)";
-                foreach ($userClients as $c) {
-                    $params[] = $c;
-                }
-            } else {
-                // If AM has no assigned clients, return empty result
-                $tdata['data'] = [];
-                return $this->response->setJSON($tdata);
-            }
+        helper('designation_acl');
+        $aclWhere = getOEAuditACLWhere('alert_final_structured_audit', 'OE');
+        if (!empty($aclWhere)) {
+            $sql .= $aclWhere;
         }
 
         $sql .= " ORDER BY alert_final_structured_audit_details.audit_details_id DESC";
@@ -916,23 +905,12 @@ class Oe_nc_tracker extends BaseController
                       alert_final_structured_audit.zone,alert_final_structured_audit.audit_score')
             ->join('alert_final_structured_audit', 'alert_final_structured_audit.structured_audit_id = alert_final_structured_audit_details.structured_audit_id', 'left');
 
-        if (isClusterManager() || isWHManager()) {
-            $userClusters = getClusterManagerAssignedCluster();
-            if (!empty($userClusters)) {
-                $escapedClusters = array_map([$db, 'escape'], $userClusters);
-                $builder->where("LOWER(TRIM(alert_final_structured_audit.cluster_name)) IN (" . implode(',', array_map(function ($c) {
-                    return "LOWER(TRIM($c))"; }, $escapedClusters)) . ")", null, false);
-            }
-        } elseif (isAccountManager()) {
-            $userClients = getAccountManagerAssignedClient();
-            if (!empty($userClients)) {
-                $builder->whereIn('alert_final_structured_audit.client_name', $userClients);
-            } else {
-                // If AM has no assigned clients, show empty result
-                $tdata['table_data'] = [];
-                $data['table'] = view("Layout/table-view", $tdata);
-                return view("Master/add_oe_nc_tracker", $data);
-            }
+        // ACL
+        helper('designation_acl');
+        $aclWhere = getOEAuditACLWhere('alert_final_structured_audit', 'OE');
+        if (!empty($aclWhere)) {
+            $aclCondition = preg_replace('/^\s*AND\s*/i', '', $aclWhere);
+            $builder->where($aclCondition, null, false);
         }
 
         switch (strtolower($status)) {
@@ -970,11 +948,19 @@ class Oe_nc_tracker extends BaseController
             $builder->whereIn('alert_final_structured_audit.region', $selRegion);
         }
         if (!empty($selCluster)) {
-            $escapedClusters = implode(',', array_map([$db, 'escape'], $selCluster));
-            $builder->where("alert_final_structured_audit.cluster_name IN ($escapedClusters)", null, false);
+            $escapedClusters = array_map([$db, 'escape'], $selCluster);
+            $cIn = implode(',', $escapedClusters);
+            $builder->where("(alert_final_structured_audit.cluster_name IN ($cIn) OR EXISTS (
+                SELECT 1 FROM alert_client ac
+                WHERE (ac.client_name = alert_final_structured_audit.client_name OR ac.location = alert_final_structured_audit.location)
+                AND ac.cluster IN ($cIn)
+            ))", null, false);
         }
         if (!empty($selLocation)) {
-            $builder->whereIn('alert_final_structured_audit.location', $selLocation);
+            $builder->groupStart()
+                ->whereIn('alert_final_structured_audit.location', $selLocation)
+                ->orWhereIn('alert_final_structured_audit.client_name', $selLocation)
+            ->groupEnd();
         }
         if ($month !== '' && preg_match('/^\d{4}\-\d{2}$/', $month)) {
             $builder->where(
@@ -2262,37 +2248,12 @@ class Oe_nc_tracker extends BaseController
             }
         }
 
-        // ACL: Cluster Manager filtering
-        if (isClusterManager() || isWHManager()) {
-            $userClusters = getClusterManagerAssignedCluster();
-            if (!empty($userClusters)) {
-                $escapedClusters = array_map([$db, 'escape'], $userClusters);
-                $builder->where(
-                    "EXISTS (
-                        SELECT 1 FROM alert_client 
-                        WHERE alert_client.client_name = alert_final_structured_audit.client_name
-                        AND LOWER(TRIM(alert_client.cluster)) IN (" . implode(',', array_map(function ($c) {
-                        return "LOWER(TRIM($c))"; }, $escapedClusters)) . ")
-                        AND alert_client.status = 1 
-                    )",
-                    null,
-                    false
-                );
-            }
-        } elseif (isAccountManager()) {
-            $userClients = getAccountManagerAssignedClient();
-            if (!empty($userClients)) {
-                $builder->whereIn('alert_final_structured_audit.client_name', $userClients);
-            } else {
-                // If AM has no assigned clients, show empty report
-                header('Content-Type: text/csv; charset=utf-8');
-                header('Content-Disposition: attachment; filename="OE_NC_Report_Empty.csv"');
-                $output = fopen('php://output', 'w');
-                fprintf($output, chr(0xEF) . chr(0xBB) . chr(0xBF));
-                fputcsv($output, ['ID', 'Client Name', 'Region', 'Location', 'Audit Date', 'Observation / Question', 'Risk / Priority', 'Audit Remark', 'NC Remark', 'Status', 'Closed Date', 'Reviewed Date']);
-                fclose($output);
-                exit;
-            }
+        // ACL: Cluster Manager / Account Manager
+        helper('designation_acl');
+        $aclWhere = getOEAuditACLWhere('alert_final_structured_audit', 'OE');
+        if (!empty($aclWhere)) {
+            $aclCondition = preg_replace('/^\s*AND\s*/i', '', $aclWhere);
+            $builder->where($aclCondition, null, false);
         }
 
 

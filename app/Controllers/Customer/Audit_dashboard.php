@@ -365,6 +365,9 @@ class Audit_dashboard extends BaseController
 
     public function OE_Audit()
     {
+        if (function_exists('isHseAuditType') && isHseAuditType()) {
+            return redirect()->to(base_url('Customer/Gemba_Dashboard'));
+        }
         $db = db_connect();
         $postData = $this->request->getVar();
 

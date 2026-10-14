@@ -142,6 +142,9 @@ class Audit_Dashboard_HSE extends BaseController
 
     public function HSE_Audit()
     {
+        if (function_exists('isOeAuditType') && isOeAuditType()) {
+            return redirect()->to(base_url('Customer/Audit_dashboard/OE_Audit'));
+        }
         ini_set('memory_limit', '512M');
         set_time_limit(300);
         $db = db_connect();

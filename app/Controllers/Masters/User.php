@@ -16,7 +16,7 @@ class User extends BaseController
         helper(["form", "simple_acl"]);
         $db = null;
         $db['table'] = 'alert_users';
-        $db['allowedFields'] = ['user_emp_country', 'user_emp_zone', 'user_emp_code', 'user_region', 'user_name', 'user_cluster', 'user_location', 'user_email', 'user_contact', 'user_password', 'user_designation', 'employee_reporting_to', 'fcm_id', 'status', 'admin_flag'];
+        $db['allowedFields'] = ['user_emp_country', 'user_emp_zone', 'user_emp_code', 'user_region', 'user_name', 'user_cluster', 'user_location', 'user_email', 'user_contact', 'user_password', 'user_designation', 'audit_type', 'employee_reporting_to', 'fcm_id', 'status', 'admin_flag'];
         $db['primaryKey'] = "user_id";
         $this->BaseModel = new CRUDBaseModel($db);
     }
@@ -137,15 +137,13 @@ class User extends BaseController
         $tdata['display_contents'] = [
             "user_id" => "ID",
             "user_emp_country" => "Country",
-            "user_region" => "Region",
-            "user_location" => "Client Name",
-            "user_cluster" => "Cluster",
             "user_emp_code" => "Code",
             "user_name" => "Name",
             "user_email" => "E-mail",
             "user_contact" => "Contact",
             "user_password" => "Password",
             "user_designation" => "Designation",
+            "audit_type" => "Audit Type",
             "action" => "Action"
         ];
 
@@ -248,6 +246,9 @@ class User extends BaseController
             3 => '<span class="badge badge-danger">Deactivated</span>'
         ];
         foreach ($tdata['table_data'] as $key => $row) {
+            $auditTypeVal = !empty($row['audit_type']) ? $row['audit_type'] : 'Both';
+            $auditBadgeClass = ($auditTypeVal == 'Both') ? 'badge-light-primary' : (($auditTypeVal == 'OE') ? 'badge-light-info' : 'badge-light-warning');
+            $tdata['table_data'][$key]['audit_type'] = '<span class="badge ' . $auditBadgeClass . '">' . esc($auditTypeVal) . '</span>';
             // changes on 1/11/25 by darsh: Added tooltips to action buttons
             $active_btn = '<button class="btn btn-icon btn-success" onclick="url_call_ajax(\'' . base_url("Masters/User/save_details/" . $row['user_id']) . '/active\',$(this));" title="Activate User" data-bs-toggle="tooltip" data-bs-placement="top">
 											<span class="indicator-label svg-icon svg-icon-2">
@@ -442,39 +443,7 @@ class User extends BaseController
             }
         }
 
-        // Validate hierarchy based on designation
-        if (isset($postData['user_designation'])) {
-            $designation = $postData['user_designation'];
-
-            if ($designation == 'Cluster manager') {
-                if (empty($postData['user_region'])) {
-                    $responce['message'] = "Region is required for Cluster Managers";
-                    echo json_encode($responce);
-                    return;
-                }
-
-                // Validate that cluster belongs to region ONLY if both are provided
-                if (!empty($postData['user_cluster']) && !empty($postData['user_region'])) {
-                    $db = db_connect();
-                    $validCluster = $db->query(
-                        "SELECT COUNT(*) as count FROM alert_location_master WHERE cluster_name = ? AND region_name = ?",
-                        [$postData['user_cluster'], $postData['user_region']]
-                    )->getRowArray();
-
-                    if ($validCluster['count'] == 0) {
-                        $responce['message'] = "Selected cluster does not belong to the selected region";
-                        echo json_encode($responce);
-                        return;
-                    }
-                }
-            } elseif ($designation == 'Account Manager') {
-                if (empty($postData['user_cluster'])) {
-                    $responce['message'] = "Cluster is required for Account Managers";
-                    echo json_encode($responce);
-                    return;
-                }
-            }
-        }
+        // Note: Region, Cluster, and Client selections have been removed from User Master form (managed via OE & HSE client masters)
 
         // Check ACL permissions for current user
         if ($_SESSION['role'] == 'Cluster manager') {
@@ -634,6 +603,7 @@ class User extends BaseController
                                 <tr><th style='background-color: #f8f9fa; text-align: left;'>Contact Number</th><td>{$contact}</td></tr>
                                 <tr><th style='background-color: #f8f9fa; text-align: left;'>Designation</th><td>{$postData['user_designation']}</td></tr>
                                 <tr><th style='background-color: #f8f9fa; text-align: left;'>Admin Role</th><td>{$adminStatus}</td></tr>
+                                <tr><th style='background-color: #f8f9fa; text-align: left;'>Audit Type</th><td>{$postData['audit_type']}</td></tr>
                                 <tr><th style='background-color: #f8f9fa; text-align: left;'>Region</th><td>{$postData['user_region']}</td></tr>
                                 <tr><th style='background-color: #f8f9fa; text-align: left;'>Cluster</th><td>{$postData['user_cluster']}</td></tr>
                                 <tr><th style='background-color: #f8f9fa; text-align: left;'>Location</th><td>{$postData['user_location']}</td></tr>

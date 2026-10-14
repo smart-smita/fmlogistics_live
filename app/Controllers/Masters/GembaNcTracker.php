@@ -56,6 +56,9 @@ class GembaNcTracker extends BaseController
 
     public function index()
     {
+        if (function_exists('isOeAuditType') && isOeAuditType()) {
+            return redirect()->to(base_url('Masters/Oe_nc_tracker'));
+        }
         return $this->template_type_filter();
     }
 
@@ -342,7 +345,7 @@ class GembaNcTracker extends BaseController
                 $builder->groupEnd();
             }
 
-            // Handle cluster mapping since alert_gemba_audits doesn't have cluster
+            // Handle cluster mapping since alert_gemba_audits has cluster_manager_spoc and site_name
             $clusterFilters = $req->getVar('cluster');
             if (!empty($clusterFilters)) {
                 if (is_array($clusterFilters)) {
@@ -351,13 +354,22 @@ class GembaNcTracker extends BaseController
                 if (!empty($clusterFilters)) {
                     $locSites = $this->db->table('alert_location_master')->select('location_name')->whereIn('cluster_name', $clusterFilters)->get()->getResultArray();
                     $hseSites = $this->db->table('alert_hse_client_master')->select('client_name')->whereIn('cluster', $clusterFilters)->get()->getResultArray();
+                    $oeSites = $this->db->table('alert_client')->select('client_name')->whereIn('cluster', $clusterFilters)->get()->getResultArray();
                     
-                    $clusterSites = array_values(array_unique(array_merge(array_column($locSites, 'location_name'), array_column($hseSites, 'client_name'))));
+                    $clusterSites = array_values(array_unique(array_filter(array_merge(
+                        array_column($locSites, 'location_name'),
+                        array_column($hseSites, 'client_name'),
+                        array_column($oeSites, 'client_name')
+                    ))));
+
+                    $builder->groupStart();
                     if (!empty($clusterSites)) {
-                        $builder->whereIn('site_name', $clusterSites);
+                        $builder->whereIn('site_name', $clusterSites)
+                                ->orWhereIn('cluster_manager_spoc', $clusterFilters);
                     } else {
-                        $builder->where('1=0');
+                        $builder->whereIn('cluster_manager_spoc', $clusterFilters);
                     }
+                    $builder->groupEnd();
                 }
             }
         }
@@ -1504,17 +1516,43 @@ class GembaNcTracker extends BaseController
         $currentStatus = (int) $current['nc_status'];
         
         $siteName = $current['site_name'] ?? ($current['client_name'] ?? ($current['location'] ?? ''));
+        $loginUserLower = strtolower(trim($userName));
+
         $isAssignedAM = false;
         if (isAccountManager()) {
-            if (verifySiteAccess($siteName, 'GEMBA') || verifySiteAccess($siteName, 'OE') || verifySiteAccess($siteName, 'HSE') || (!empty($current['account_manager']) && strtolower(trim($current['account_manager'])) === strtolower(trim($userName)))) {
+            // Check if this user is the account manager via audit record or any client/location master table
+            if (!empty($current['account_manager']) && strtolower(trim($current['account_manager'])) === $loginUserLower) {
                 $isAssignedAM = true;
+            } else if (!empty($siteName)) {
+                $amSiteCount = $db->query("
+                    SELECT COUNT(*) as cnt FROM (
+                        SELECT client_name FROM alert_client WHERE LOWER(TRIM(account_manager)) = ? AND (TRIM(client_name) = ? OR TRIM(location) = ?) AND status != 2
+                        UNION
+                        SELECT client_name FROM alert_hse_client_master WHERE LOWER(TRIM(account_manager)) = ? AND (TRIM(client_name) = ? OR TRIM(location) = ?) AND status != 2
+                        UNION
+                        SELECT location_name FROM alert_location_master WHERE LOWER(TRIM(account_manager)) = ? AND TRIM(location_name) = ? AND status != 2
+                    ) AS t
+                ", [$loginUserLower, $siteName, $siteName, $loginUserLower, $siteName, $siteName, $loginUserLower, $siteName])->getRowArray();
+                $isAssignedAM = ($amSiteCount['cnt'] ?? 0) > 0;
             }
         }
 
         $isAssignedCM = false;
         if (isClusterManager()) {
-            if (verifySiteAccess($siteName, 'GEMBA') || verifySiteAccess($siteName, 'OE') || verifySiteAccess($siteName, 'HSE') || (!empty($current['cluster_manager_spoc']) && strtolower(trim($current['cluster_manager_spoc'])) === strtolower(trim($userName)))) {
+            // Check if this user is the cluster manager via audit record or any client/location master table
+            if (!empty($current['cluster_manager_spoc']) && strtolower(trim($current['cluster_manager_spoc'])) === $loginUserLower) {
                 $isAssignedCM = true;
+            } else if (!empty($siteName)) {
+                $cmSiteCount = $db->query("
+                    SELECT COUNT(*) as cnt FROM (
+                        SELECT client_name FROM alert_client WHERE LOWER(TRIM(cluster)) = ? AND (TRIM(client_name) = ? OR TRIM(location) = ?) AND status != 2
+                        UNION
+                        SELECT client_name FROM alert_hse_client_master WHERE LOWER(TRIM(cluster)) = ? AND (TRIM(client_name) = ? OR TRIM(location) = ?) AND status != 2
+                        UNION
+                        SELECT location_name FROM alert_location_master WHERE LOWER(TRIM(cluster_name)) = ? AND TRIM(location_name) = ? AND status != 2
+                    ) AS t
+                ", [$loginUserLower, $siteName, $siteName, $loginUserLower, $siteName, $siteName, $loginUserLower, $siteName])->getRowArray();
+                $isAssignedCM = ($cmSiteCount['cnt'] ?? 0) > 0;
             }
         }
 

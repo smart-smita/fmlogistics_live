@@ -41,7 +41,7 @@ class BaseController extends Controller
      *
      * @var array
      */
-    protected $helpers = [];
+    protected $helpers = ['form', 'simple_acl'];
 
     protected Session $session;
     /**
@@ -68,9 +68,18 @@ class BaseController extends Controller
             return;
         }
 
-        if (isset($_SESSION['user_id']) && isset($_SESSION['customer_id'])) {
-            $this->customer_id = $_SESSION['customer_id'];
+        if (isset($_SESSION['user_id'])) {
+            $this->customer_id = $_SESSION['customer_id'] ?? 0;
             $this->user_id = $_SESSION['user_id'];
+            if (!isset($_SESSION['audit_type'])) {
+                if (!empty($_SESSION['user_id'])) {
+                    $db = db_connect();
+                    $u = $db->table('alert_users')->select('audit_type')->where('user_id', $_SESSION['user_id'])->get()->getRowArray();
+                    $_SESSION['audit_type'] = $u['audit_type'] ?? 'Both';
+                } else {
+                    $_SESSION['audit_type'] = 'Both';
+                }
+            }
         }
     }
     /**

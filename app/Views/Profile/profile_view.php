@@ -464,9 +464,13 @@
                     <label class="form-label fs-7 fw-bold text-muted mb-1"><i class="fa fa-th-large text-warning me-1"></i> Module</label>
                     <select class="form-select form-select-sm form-select-solid" id="audFilterModule">
                         <option value="all" selected>All Modules</option>
+                        <?php if (function_exists('canAccessOeModule') ? canAccessOeModule() : true): ?>
                         <option value="OE">OE Audits (Monthly)</option>
+                        <?php endif; ?>
+                        <?php if (function_exists('canAccessHseModule') ? canAccessHseModule() : true): ?>
                         <option value="HSE">HSE Audits (Quarterly)</option>
                         <option value="Gemba">Gemba Audits (Walks)</option>
+                        <?php endif; ?>
                     </select>
                 </div>
 
@@ -518,6 +522,7 @@
             </button>
         </div>
 
+        <?php if (function_exists('canAccessOeModule') ? canAccessOeModule() : true): ?>
         <!-- ========================================================
              SECTION 3.A: OE AUDIT DASHBOARD (Monthly: 1 Month)
         ======================================================== -->
@@ -592,7 +597,9 @@
                 </div>
             </div>
         </div>
+        <?php endif; ?>
 
+        <?php if (function_exists('canAccessHseModule') ? canAccessHseModule() : true): ?>
         <!-- ========================================================
              SECTION 3.B: HSE AUDIT DASHBOARD (Quarterly: 3 Months)
         ======================================================== -->
@@ -742,6 +749,7 @@
                 </div>
             </div>
         </div>
+        <?php endif; ?>
 
         <!-- ========================================================
              SECTION 4: 4 AUDIT PERFORMANCE GRAPHS
@@ -882,9 +890,13 @@
                     <input type="text" class="form-control form-control-sm form-control-solid" id="searchScheduleTable" placeholder="Search client, site..." style="max-width: 220px;">
                     <div class="btn-group-pill" id="scheduleTableModulePills">
                         <button type="button" class="btn active" data-mod="all">All</button>
+                        <?php if (function_exists('canAccessOeModule') ? canAccessOeModule() : true): ?>
                         <button type="button" class="btn" data-mod="OE">OE</button>
+                        <?php endif; ?>
+                        <?php if (function_exists('canAccessHseModule') ? canAccessHseModule() : true): ?>
                         <button type="button" class="btn" data-mod="HSE">HSE</button>
                         <button type="button" class="btn" data-mod="Gemba">Gemba</button>
+                        <?php endif; ?>
                     </div>
                 </div>
             </div>

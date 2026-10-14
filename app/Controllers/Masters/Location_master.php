@@ -42,7 +42,15 @@ protected $BaseModel;
         $data['ajax_url']=base_url("Masters/Location_master/save_details");
         $tdata ['ajax_url_for_data']=base_url("Masters/Location_master/table_ajax");
         $data['table'] = view("Layout/table-view",$tdata);
-         $data['cluster_list']=$db->table("alert_cluster_master")->where("status","1")->get()->getResultArray();
+         // Fetch users with designation 'Cluster Manager' for cluster dropdown
+         $data['cluster_list'] = $db->table("alert_users")
+             ->select("user_name AS cluster_name, user_id AS cluster_id")
+             ->where("status", 1)
+             ->groupStart()
+                 ->like("LOWER(user_designation)", "cluster")
+             ->groupEnd()
+             ->orderBy("user_name", "ASC")
+             ->get()->getResultArray();
          $data['country_list']=$db->table("alert_country")->where("status","1")->get()->getResultArray();
          $regions1 = $db->table("alert_region")->select("region_name")->where("status", 1)->get()->getResultArray();
          $regions2 = $db->table("alert_hse_region_master")->select("region_name")->where("status", 1)->get()->getResultArray();
@@ -52,13 +60,15 @@ protected $BaseModel;
          )), function($val) { return trim((string)$val) !== ''; });
          natcasesort($mergedRegions);
          $data['region_list'] = array_map(function($r) { return ['region_name' => $r]; }, array_values($mergedRegions));
-        // Fetch active account managers
-        $data['account_managers'] = $db->query("
-            SELECT DISTINCT user_name FROM alert_users 
-            WHERE (LOWER(user_designation) LIKE '%account%' OR LOWER(user_designation) LIKE '%manager%') 
-            AND status IN (1, '1') AND user_name IS NOT NULL AND TRIM(user_name) != '' 
-            ORDER BY user_name ASC
-        ")->getResultArray();
+        // Fetch users with designation 'Account Manager'
+        $data['account_managers'] = $db->table("alert_users")
+            ->select("user_name")
+            ->where("status", 1)
+            ->groupStart()
+                ->like("LOWER(user_designation)", "account")
+            ->groupEnd()
+            ->orderBy("user_name", "ASC")
+            ->get()->getResultArray();
             
         return view("Master/add_location_master",$data);
     }

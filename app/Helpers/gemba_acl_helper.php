@@ -99,6 +99,9 @@ if (!function_exists('apply_gemba_role_filters')) {
                 UNION
                 SELECT DISTINCT client_name FROM alert_hse_client_master
                     WHERE LOWER(TRIM(cluster)) = {$escapedUserName} AND status != 2
+                UNION
+                SELECT DISTINCT location_name FROM alert_location_master
+                    WHERE LOWER(TRIM(cluster_name)) = {$escapedUserName} AND status != 2
             )";
 
             if ($tableName === 'alert_gemba_audits') {
@@ -115,6 +118,9 @@ if (!function_exists('apply_gemba_role_filters')) {
                     WHERE LOWER(TRIM(account_manager)) = {$escapedUserName} AND status != 2
                 UNION
                 SELECT DISTINCT client_name FROM alert_hse_client_master
+                    WHERE LOWER(TRIM(account_manager)) = {$escapedUserName} AND status != 2
+                UNION
+                SELECT DISTINCT location_name FROM alert_location_master
                     WHERE LOWER(TRIM(account_manager)) = {$escapedUserName} AND status != 2
             )";
 

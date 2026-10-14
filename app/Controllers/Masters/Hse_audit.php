@@ -29,6 +29,9 @@ class Hse_audit extends BaseController
     }
     public function index()
     {
+        if (function_exists('isOeAuditType') && isOeAuditType()) {
+            return redirect()->to(base_url('Masters/Audit_final_structure'));
+        }
         $data = [];
         $db = db_connect();
 

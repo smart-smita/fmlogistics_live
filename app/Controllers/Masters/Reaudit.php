@@ -107,20 +107,33 @@ class Reaudit extends BaseController
         $data['ajax_url'] = base_url("Masters/Reaudit/save_details");
         $tdata['ajax_url_for_data'] = base_url("Masters/Reaudit/table_ajax/" . $type);
 
-        // Simple filter buttons like Audit Template (UI-level)
-        $data['table_filter_buttons'] = (
-            '<div class="d-flex" style="gap:8px;">'
-            . '<a class="btn btn-sm ' . ($type === 'OE' ? 'btn-primary' : 'btn-light-primary') . '" href="' . base_url('Masters/Reaudit/index/OE') . '">OE</a>'
-            //. '<a class="btn btn-sm ' . ($type === 'NORMAL' ? 'btn-primary' : 'btn-light-primary') . '" href="' . base_url('Masters/Reaudit/index/NORMAL') . '">Normal</a>'
-            . '<a class="btn btn-sm ' . ($type === 'HSE' ? 'btn-primary' : 'btn-light-primary') . '" href="' . base_url('Masters/Reaudit/index/HSE') . '">HSE</a>'
-            . '</div>'
-        );
-        // Render top filter buttons row
-        $buttons = '<div class="row g-5 g-xl-8" style="margin-bottom:12px;">'
-            . '<div class="col-md-4"><a href="' . base_url('Masters/Reaudit/index/OE') . '" class="card ' . ($type === 'OE' ? 'bg-primary' : 'bg-info') . ' hoverable mb-xl-8"><div class="card-body" style="padding: 1rem 2.25rem;"><div class="fw-semibold text-white">OE</div></div></a></div>'
-            . '<div class="col-md-4"><a href="' . base_url('Masters/Reaudit/index/HSE') . '" class="card ' . ($type === 'HSE' ? 'bg-dark' : 'bg-dark') . ' hoverable mb-xl-8"><div class="card-body" style="padding: 1rem 2.25rem;"><div class="fw-semibold text-gray-100">HSE</div></div></a></div>'
-            //. '<div class="col-md-4"><a href="' . base_url('Masters/Reaudit/index/NORMAL') . '" class="card ' . ($type === 'NORMAL' ? 'bg-warning' : 'bg-warning') . ' hoverable mb-xl-8"><div class="card-body" style="padding: 1rem 2.25rem;"><div class="fw-semibold text-white">Normal</div></div></a></div>'
-            . '</div>';
+        helper('simple_acl');
+        $canOe = function_exists('canAccessOeModule') ? canAccessOeModule() : true;
+        $canHse = function_exists('canAccessHseModule') ? canAccessHseModule() : true;
+
+        if (!$canOe && $canHse && $type === 'OE') {
+            $type = 'HSE';
+        } elseif (!$canHse && $canOe && $type === 'HSE') {
+            $type = 'OE';
+        }
+
+        $filterButtonsHtml = '<div class="d-flex" style="gap:8px;">';
+        $topCardsHtml = '<div class="row g-5 g-xl-8" style="margin-bottom:12px;">';
+
+        if ($canOe) {
+            $filterButtonsHtml .= '<a class="btn btn-sm ' . ($type === 'OE' ? 'btn-primary' : 'btn-light-primary') . '" href="' . base_url('Masters/Reaudit/index/OE') . '">OE</a>';
+            $topCardsHtml .= '<div class="col-md-4"><a href="' . base_url('Masters/Reaudit/index/OE') . '" class="card ' . ($type === 'OE' ? 'bg-primary' : 'bg-info') . ' hoverable mb-xl-8"><div class="card-body" style="padding: 1rem 2.25rem;"><div class="fw-semibold text-white">OE</div></div></a></div>';
+        }
+        if ($canHse) {
+            $filterButtonsHtml .= '<a class="btn btn-sm ' . ($type === 'HSE' ? 'btn-primary' : 'btn-light-primary') . '" href="' . base_url('Masters/Reaudit/index/HSE') . '">HSE</a>';
+            $topCardsHtml .= '<div class="col-md-4"><a href="' . base_url('Masters/Reaudit/index/HSE') . '" class="card ' . ($type === 'HSE' ? 'bg-dark' : 'bg-dark') . ' hoverable mb-xl-8"><div class="card-body" style="padding: 1rem 2.25rem;"><div class="fw-semibold text-gray-100">HSE</div></div></a></div>';
+        }
+
+        $filterButtonsHtml .= '</div>';
+        $topCardsHtml .= '</div>';
+
+        $data['table_filter_buttons'] = $filterButtonsHtml;
+        $buttons = $topCardsHtml;
 
         $data['table'] = $buttons . view("Layout/table-view", $tdata);
         // $data['table'] ="";

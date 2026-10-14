@@ -41,6 +41,9 @@ class Audit_final_structure extends BaseController
 
     public function index()
     {
+        if (function_exists('isHseAuditType') && isHseAuditType()) {
+            return redirect()->to(base_url('Masters/Hse_audit'));
+        }
         $data = [];
 
         $tdata['title'] = "Audit Final Structure";

@@ -28,6 +28,9 @@ class Hse_client extends BaseController
 
     public function index()
     {
+        if (function_exists('isOeAuditType') && isOeAuditType()) {
+            return redirect()->to(base_url('Masters/Client'));
+        }
         $tdata['title'] = "HSE Client";
         $tdata['button_name'] = "Add HSE Client";
         $tdata['button_id'] = "HseClient";
@@ -55,40 +58,31 @@ class Hse_client extends BaseController
         $data['category_list'] = $db->table("alert_hse_site_category")->where("status","1")->get()->getResultArray();
         $data['region_list']   = $db->table("alert_hse_region_master")->where("status","1")->get()->getResultArray();
         
-        // Fetch active clusters from cluster master, location master and existing client master
-        $clusters1 = $db->table("alert_cluster_master")->select("cluster_name AS cluster")->whereIn("status", [1, '1'])->where("cluster_name IS NOT NULL")->where("TRIM(cluster_name) != ''")->get()->getResultArray();
-        $clusters2 = $db->table("alert_location_master")->select("cluster_name AS cluster")->whereIn("status", [1, '1'])->where("cluster_name IS NOT NULL")->where("TRIM(cluster_name) != ''")->get()->getResultArray();
-        $clusters3 = $db->table("alert_hse_client_master")->select("cluster")->where("cluster IS NOT NULL")->where("TRIM(cluster) != ''")->get()->getResultArray();
-        
-        $mergedClusters = array_filter(array_unique(array_merge(
-            array_column($clusters1, 'cluster'),
-            array_column($clusters2, 'cluster'),
-            array_column($clusters3, 'cluster')
-        )), function($val) { return trim((string)$val) !== ''; });
-        natcasesort($mergedClusters);
-        $data['cluster_list'] = array_map(function($c) { return ['cluster' => $c]; }, array_values($mergedClusters));
+        // Fetch active cluster managers from alert_users
+        $clusterManagers = $db->table("alert_users")
+            ->select("user_name AS cluster")
+            ->whereIn("status", [1, '1'])
+            ->groupStart()
+                ->like("LOWER(user_designation)", "cluster")
+            ->groupEnd()
+            ->where("user_name IS NOT NULL")
+            ->where("TRIM(user_name) != ''")
+            ->orderBy("user_name", "ASC")
+            ->get()->getResultArray();
+        $data['cluster_list'] = $clusterManagers;
 
-        // Fetch active account managers from alert_users, alert_client and existing client master
-        $am1 = $db->table("alert_users")
+        // Fetch active account managers from alert_users only
+        $accountManagers = $db->table("alert_users")
             ->select("user_name AS account_manager")
             ->groupStart()
                 ->like("LOWER(user_designation)", "account")
-                ->orLike("LOWER(user_designation)", "manager")
             ->groupEnd()
             ->whereIn("status", [1, '1'])
             ->where("user_name IS NOT NULL")
             ->where("TRIM(user_name) != ''")
+            ->orderBy("user_name", "ASC")
             ->get()->getResultArray();
-        $am2 = $db->table("alert_hse_client_master")->select("account_manager")->where("account_manager IS NOT NULL")->where("TRIM(account_manager) != ''")->get()->getResultArray();
-        $am3 = $db->table("alert_client")->select("account_manager")->where("account_manager IS NOT NULL")->where("TRIM(account_manager) != ''")->get()->getResultArray();
-
-        $mergedAMs = array_filter(array_unique(array_merge(
-            array_column($am1, 'account_manager'),
-            array_column($am2, 'account_manager'),
-            array_column($am3, 'account_manager')
-        )), function($val) { return trim((string)$val) !== ''; });
-        natcasesort($mergedAMs);
-        $data['am_list'] = array_map(function($am) { return ['account_manager' => $am]; }, array_values($mergedAMs));
+        $data['am_list'] = $accountManagers;
 
         return view("Master/add_hse_client", $data);
     }
@@ -343,41 +337,28 @@ class Hse_client extends BaseController
                         }
                     }
 
-                    // 2. Update Latest Active Audit if it has open NCs
-                    $latestHseAudit = $db->query("
-                        SELECT hse_audit_id 
-                        FROM alert_hse_audit_master 
-                        WHERE TRIM(client_name) = TRIM({$clientNameEscaped}) OR TRIM(location) = TRIM({$clientNameEscaped})
-                        ORDER BY hse_audit_id DESC LIMIT 1
-                    ")->getRowArray();
-
-                    if ($latestHseAudit) {
-                        $latestAuditId = $latestHseAudit['hse_audit_id'];
-                        
-                        $openNcCount = $db->query("
-                            SELECT COUNT(*) as cnt 
-                            FROM alert_hse_audit_details 
-                            WHERE hse_audit_id = ? AND finding = 'NO' AND nc_status IN (0, 1, 2)
-                        ", [$latestAuditId])->getRowArray()['cnt'];
-
-                        if ($openNcCount > 0) {
-                            $updateData = [];
-                            if ($cmChanged) {
-                                $updateData['cluster_name'] = $postData['cluster'];
-                            }
-                            if ($amChanged) {
-                                $updateData['account_manager'] = $postData['account_manager'];
-                            }
-                            
-                            if (!empty($updateData)) {
-                                $db->table('alert_hse_audit_master')
-                                    ->where('hse_audit_id', $latestAuditId)
-                                    ->update($updateData);
-                            }
+                    // 2. Update ALL Audits under this HSE client so all records show under the new cluster and account manager
+                    $updateData = [];
+                    if ($cmChanged) {
+                        $updateData['cluster_name'] = $postData['cluster'];
+                    }
+                    if ($amChanged) {
+                        $updateData['account_manager'] = $postData['account_manager'];
+                    }
+                    
+                    if (!empty($updateData)) {
+                        if (!empty($affectedHseAuditIds)) {
+                            $db->table('alert_hse_audit_master')
+                                ->whereIn('hse_audit_id', $affectedHseAuditIds)
+                                ->update($updateData);
+                        } else {
+                            $db->table('alert_hse_audit_master')
+                                ->where("(TRIM(client_name) = TRIM({$clientNameEscaped}) OR TRIM(location) = TRIM({$clientNameEscaped}))")
+                                ->update($updateData);
                         }
                     }
 
-                    // 3. Update Open Gemba Audits (standalone or tied to HSE)
+                    // 3. Update ALL Gemba Audits under this site
                     $gembaUpdateData = [];
                     if ($cmChanged) {
                         $gembaUpdateData['cluster_manager_spoc'] = $postData['cluster'];
@@ -389,13 +370,12 @@ class Hse_client extends BaseController
                     if (!empty($gembaUpdateData)) {
                         $activeGembaIds = $db->query("
                             SELECT gemba_sr_no FROM alert_gemba_audits 
-                            WHERE TRIM(site_name) = TRIM({$clientNameEscaped}) AND nc_status IN (0, 1, 2, 5)
+                            WHERE TRIM(site_name) = TRIM({$clientNameEscaped})
                         ")->getResultArray();
                         $activeIdList = array_column($activeGembaIds, 'gemba_sr_no');
 
                         $db->table('alert_gemba_audits')
                             ->where("TRIM(site_name) = TRIM({$clientNameEscaped})")
-                            ->whereIn('nc_status', [0, 1, 2, 5])
                             ->update($gembaUpdateData);
 
                         $gembaSite = null;
