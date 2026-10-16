@@ -43,7 +43,7 @@ class GembaAudit extends BaseController
                 'action' => 'Actions'
             ],
             'example2' => 'gemba_audit_table',
-            'ajax_url_for_data' => base_url('gemba-audit/table_ajax'),
+            'ajax_url_for_data' => site_url('gemba-audit/table_ajax'),
             'is_server_side' => true,
             'export_csv' => false,
             'enable_export' => false
@@ -148,15 +148,21 @@ class GembaAudit extends BaseController
             if ($isHseMapped) {
                 $action = '<span class="badge badge-light-info">Managed in HSE</span>';
             } else {
+                // View Attachment Icon if exists
+                if (!empty($row['attachment'])) {
+                    $attUrl = strpos($row['attachment'], 'uploads/') === 0 ? base_url($row['attachment']) : base_url('uploads/gemba_audit/' . $row['attachment']);
+                    $action .= '<a href="' . $attUrl . '" target="_blank" class="btn btn-icon btn-light-primary btn-sm" title="View Attachment"><i class="fas fa-paperclip"></i></a>';
+                }
+
                 // View Button (Blue/Solid)
-                $action .= '<a href="' . base_url('gemba-audit/view/' . $row['gemba_sr_no']) . '" class="btn btn-icon btn-primary btn-sm" title="View"><i class="fas fa-eye"></i></a>';
+                $action .= '<a href="' . site_url('gemba-audit/view/' . $row['gemba_sr_no']) . '" class="btn btn-icon btn-primary btn-sm" title="View"><i class="fas fa-eye"></i></a>';
 
                 if (gemba_can_write()) {
                     // Edit Button (Blue/Solid)
-                    $action .= '<a href="' . base_url('gemba-audit/edit/' . $row['gemba_sr_no']) . '" class="btn btn-icon btn-info btn-sm" title="Edit"><i class="fas fa-edit"></i></a>';
+                    $action .= '<a href="' . site_url('gemba-audit/edit/' . $row['gemba_sr_no']) . '" class="btn btn-icon btn-info btn-sm" title="Edit"><i class="fas fa-edit"></i></a>';
 
                     // Delete Button (Red/Solid)
-                    $action .= '<a href="' . base_url('gemba-audit/delete/' . $row['gemba_sr_no']) . '" class="btn btn-icon btn-danger btn-sm" onclick="return confirm(\'Are you sure?\')" title="Delete"><i class="fas fa-trash"></i></a>';
+                    $action .= '<a href="' . site_url('gemba-audit/delete/' . $row['gemba_sr_no']) . '" class="btn btn-icon btn-danger btn-sm" onclick="return confirm(\'Are you sure?\')" title="Delete"><i class="fas fa-trash"></i></a>';
                 }
             }
 
@@ -339,6 +345,98 @@ class GembaAudit extends BaseController
         return $postData;
     }
 
+    /**
+     * Safely upload an attachment file with permission checks, fallback directory, and exception handling
+     */
+    private function handleAttachmentUpload($file): ?string
+    {
+        if (!$file || $file->getError() === UPLOAD_ERR_NO_FILE) {
+            return null;
+        }
+
+        if (!$file->isValid()) {
+            $errorCode = $file->getError();
+            switch ($errorCode) {
+                case UPLOAD_ERR_INI_SIZE:
+                case UPLOAD_ERR_FORM_SIZE:
+                    throw new \RuntimeException('The uploaded file exceeds the maximum allowed file size.');
+                case UPLOAD_ERR_PARTIAL:
+                    throw new \RuntimeException('The uploaded file was only partially uploaded. Please try again.');
+                case UPLOAD_ERR_NO_TMP_DIR:
+                    throw new \RuntimeException('Server configuration error: Missing temporary upload folder.');
+                case UPLOAD_ERR_CANT_WRITE:
+                    throw new \RuntimeException('Server disk error: Failed to write file to disk. Disk quota may be full.');
+                default:
+                    throw new \RuntimeException('File upload failed: ' . $file->getErrorString() . ' (Code: ' . $errorCode . ')');
+            }
+        }
+
+        if ($file->hasMoved()) {
+            return null;
+        }
+
+        $allowedExts = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'pdf', 'doc', 'docx', 'xls', 'xlsx'];
+        $clientExt = $file->getClientExtension();
+        $ext = strtolower(!empty($clientExt) ? $clientExt : pathinfo($file->getClientName(), PATHINFO_EXTENSION));
+        if (!in_array($ext, $allowedExts)) {
+            throw new \RuntimeException('Invalid file extension (.' . htmlspecialchars($ext) . '). Allowed: ' . implode(', ', $allowedExts));
+        }
+
+        if ($file->getSize() > 10 * 1024 * 1024) {
+            throw new \RuntimeException('File size exceeds the 10MB limit.');
+        }
+
+        // Determine target directory with write fallback
+        $relPath = 'uploads/gemba_audit/';
+        $targetDir = FCPATH . $relPath;
+        if (!is_dir($targetDir)) {
+            @mkdir($targetDir, 0777, true);
+        }
+        @chmod($targetDir, 0777);
+        if (!is_dir($targetDir) || !is_writable($targetDir)) {
+            $relPath = 'uploads/nc_photo/';
+            $targetDir = FCPATH . $relPath;
+            if (!is_dir($targetDir)) {
+                @mkdir($targetDir, 0777, true);
+            }
+            @chmod($targetDir, 0777);
+        }
+
+        if (!is_dir($targetDir) || !is_writable($targetDir)) {
+            throw new \RuntimeException('Target upload directory is not writable. Please ensure uploads/ folder has write permissions (chmod 755 or 777).');
+        }
+
+        $newName = $file->getRandomName();
+
+        try {
+            $file->move($targetDir, $newName);
+            return $relPath . $newName;
+        } catch (\Throwable $e) {
+            // Check if failure is due to disk quota or permissions
+            $lastError = error_get_last();
+            $message = !empty($lastError['message']) ? strip_tags($lastError['message']) : $e->getMessage();
+
+            if (stripos($message, 'quota') !== false || stripos($message, 'space') !== false) {
+                throw new \RuntimeException('Server disk quota exceeded: Unable to save attachment. Please clear temporary files or upgrade hosting storage.');
+            }
+            if (stripos($message, 'permission') !== false || stripos($message, 'denied') !== false) {
+                throw new \RuntimeException('Upload permission denied: Unable to save file to ' . basename($targetDir) . '. Please check directory permissions.');
+            }
+
+            // Fallback attempt to nc_photo if target was gemba_audit
+            if ($relPath !== 'uploads/nc_photo/' && is_dir(FCPATH . 'uploads/nc_photo/') && is_writable(FCPATH . 'uploads/nc_photo/')) {
+                try {
+                    $file->move(FCPATH . 'uploads/nc_photo/', $newName);
+                    return 'uploads/nc_photo/' . $newName;
+                } catch (\Throwable $e2) {
+                    // Fall through to error reporting below
+                }
+            }
+
+            throw new \RuntimeException('Could not move uploaded file: ' . $message . '. Please verify server disk quota and directory permissions.');
+        }
+    }
+
     public function create()
     {
         gemba_require_write_access();
@@ -396,10 +494,20 @@ class GembaAudit extends BaseController
                     $postData['nc_status'] = 0;
                 }
 
+                // Handle optional attachment upload with error handling
+                try {
+                    $attachmentFile = $this->request->getFile('attachment');
+                    if ($uploadedName = $this->handleAttachmentUpload($attachmentFile)) {
+                        $postData['attachment'] = $uploadedName;
+                    }
+                } catch (\Throwable $e) {
+                    return redirect()->to(site_url('gemba-audit/create'))->withInput()->with('error', $e->getMessage());
+                }
+
                 $this->model->insert($postData);
-                return redirect()->to('/gemba-audit')->with('success', 'Gemba Audit created successfully.');
+                return redirect()->to(site_url('gemba-audit'))->with('success', 'Gemba Audit created successfully.');
             } else {
-                return redirect()->back()->withInput()->with('errors', $this->validator->getErrors());
+                return redirect()->to(site_url('gemba-audit/create'))->withInput()->with('errors', $this->validator->getErrors());
             }
         }
 
@@ -415,13 +523,13 @@ class GembaAudit extends BaseController
         $db = \Config\Database::connect();
         $data['audit'] = $this->model->find($id);
         if (!$data['audit']) {
-            return redirect()->to('/gemba-audit')->with('error', 'Record not found.');
+            return redirect()->to(site_url('gemba-audit'))->with('error', 'Record not found.');
         }
 
         // Security Check: Protect HSE-managed audits from manual tampering
         $isHseMapped = (!empty($data['audit']['hse_audit_id']) && strtolower(trim($data['audit']['audit_category'] ?? '')) == 'hse audit');
         if ($isHseMapped) {
-            return redirect()->to('/gemba-audit')->with('error', 'This audit record is managed in the HSE module and cannot be modified directly in Gemba Audit.');
+            return redirect()->to(site_url('gemba-audit'))->with('error', 'This audit record is managed in the HSE module and cannot be modified directly in Gemba Audit.');
         }
 
         if ($this->request->getMethod() === 'post') {
@@ -496,11 +604,23 @@ class GembaAudit extends BaseController
                         $postData['nc_closed_date'] = date('Y-m-d H:i:s');
                     }
                 }
+                // Handle optional attachment upload on edit with exception handling
+                try {
+                    $attachmentFile = $this->request->getFile('attachment');
+                    if ($uploadedName = $this->handleAttachmentUpload($attachmentFile)) {
+                        $postData['attachment'] = $uploadedName;
+                    } else {
+                        // Retain existing attachment if no new file is uploaded
+                        unset($postData['attachment']);
+                    }
+                } catch (\Throwable $e) {
+                    return redirect()->to(site_url('gemba-audit/edit/' . $id))->withInput()->with('error', $e->getMessage());
+                }
 
                 $this->model->update($id, $postData);
-                return redirect()->to('/gemba-audit')->with('success', 'Gemba Audit updated successfully.');
+                return redirect()->to(site_url('gemba-audit'))->with('success', 'Gemba Audit updated successfully.');
             } else {
-                return redirect()->back()->withInput()->with('errors', $this->validator->getErrors());
+                return redirect()->to(site_url('gemba-audit/edit/' . $id))->withInput()->with('errors', $this->validator->getErrors());
             }
         }
 
@@ -514,7 +634,7 @@ class GembaAudit extends BaseController
     {
         $data['audit'] = $this->model->find($id);
         if (!$data['audit']) {
-            return redirect()->to('/gemba-audit')->with('error', 'Record not found.');
+            return redirect()->to(site_url('gemba-audit'))->with('error', 'Record not found.');
         }
         return view('Master/gemba_audit/view', $data);
     }
@@ -526,17 +646,20 @@ class GembaAudit extends BaseController
         if ($audit) {
             $isHseMapped = (!empty($audit['hse_audit_id']) && strtolower(trim($audit['audit_category'] ?? '')) == 'hse audit');
             if ($isHseMapped) {
-                return redirect()->to('/gemba-audit')->with('error', 'This audit record is managed in the HSE module and cannot be deleted here.');
+                return redirect()->to(site_url('gemba-audit'))->with('error', 'This audit record is managed in the HSE module and cannot be deleted here.');
             }
 
             $this->model->update($id, ['status' => 2, 'updated_by' => session()->get('user_name'), 'update_date' => date('Y-m-d H:i:s')]);
-            return redirect()->to('/gemba-audit')->with('success', 'Gemba Audit deleted successfully.');
+            return redirect()->to(site_url('gemba-audit'))->with('success', 'Gemba Audit deleted successfully.');
         }
-        return redirect()->to('/gemba-audit')->with('error', 'Record not found.');
+        return redirect()->to(site_url('gemba-audit'))->with('error', 'Record not found.');
     }
 
     public function cascadingDropdown()
     {
+        if (isset($_SESSION['_ci_previous_url']) && strpos($_SESSION['_ci_previous_url'], 'cascading-dropdown') !== false) {
+            unset($_SESSION['_ci_previous_url']);
+        }
         $request = service('request');
         $category = trim((string)$request->getGet('audit_category'));
         $db = \Config\Database::connect();
@@ -605,6 +728,9 @@ class GembaAudit extends BaseController
 
     public function getSiteDetails()
     {
+        if (isset($_SESSION['_ci_previous_url']) && strpos($_SESSION['_ci_previous_url'], 'getSiteDetails') !== false) {
+            unset($_SESSION['_ci_previous_url']);
+        }
         $request = service('request');
         $siteName = trim((string)$request->getGet('site_name'));
         $db = \Config\Database::connect();
@@ -1430,10 +1556,10 @@ class GembaAudit extends BaseController
             }
 
             if ($failedCount > 0) {
-                return redirect()->to(base_url('gemba-audit/import'))->with('success', "Import completed with validation errors. {$insertedCount} records inserted, {$updatedCount} updated, {$failedCount} failed.");
+                return redirect()->to(site_url('gemba-audit/import'))->with('success', "Import completed with validation errors. {$insertedCount} records inserted, {$updatedCount} updated, {$failedCount} failed.");
             }
 
-            return redirect()->to(base_url('gemba-audit/import'))->with('success', "All records imported successfully! {$insertedCount} records inserted, {$updatedCount} updated.");
+            return redirect()->to(site_url('gemba-audit/import'))->with('success', "All records imported successfully! {$insertedCount} records inserted, {$updatedCount} updated.");
         }
 
         // GET request - render UI
@@ -1451,7 +1577,7 @@ class GembaAudit extends BaseController
     {
         $errors = session()->get('gemba_import_errors');
         if (empty($errors)) {
-            return redirect()->to(base_url('gemba-audit/import'))->with('error', 'No error report available.');
+            return redirect()->to(site_url('gemba-audit/import'))->with('error', 'No error report available.');
         }
 
         $filename = "Gemba_Import_Error_Report_" . date('Ymd_His') . ".csv";

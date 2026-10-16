@@ -16,7 +16,11 @@ START TRANSACTION;
 -- MariaDB 10.2+ / MySQL 8.0.29+ supports IF NOT EXISTS.
 -- (If your server is an older MySQL version and throws "Duplicate column name", you can safely ignore it)
 ALTER TABLE `alert_users` 
-  ADD COLUMN IF NOT EXISTS `audit_type` VARCHAR(20) NOT NULL DEFAULT 'Both' COMMENT 'OE, HSE, or Both' AFTER `role_id`;
+  ADD COLUMN IF NOT EXISTS `audit_type` VARCHAR(20) NOT NULL DEFAULT 'Both' COMMENT 'OE, HSE, or Both' AFTER `user_designation`;
+
+-- 1.2 Add 'attachment' column to alert_gemba_audits (Used for audit photos & document proof)
+ALTER TABLE `alert_gemba_audits`
+  ADD COLUMN IF NOT EXISTS `attachment` VARCHAR(255) NULL AFTER `observation_point`;
 
 
 -- ====================================================================

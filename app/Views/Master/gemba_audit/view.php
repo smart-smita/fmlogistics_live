@@ -5,7 +5,16 @@
     <div class="card shadow-sm">
         <div class="card-header d-flex justify-content-between align-items-center">
             <h3 class="card-title">View Gemba Audit: <?= htmlspecialchars($audit['unique_no'] ?? '') ?></h3>
-            <a href="<?= base_url('gemba-audit') ?>" class="btn btn-secondary">Back to List</a>
+            <div>
+                <?php if (gemba_can_write() && empty($audit['hse_audit_id'])): ?>
+                    <a href="<?= site_url('gemba-audit/edit/' . $audit['gemba_sr_no']) ?>" class="btn btn-primary btn-sm me-2">
+                        <i class="fas fa-edit me-1"></i> Edit Audit
+                    </a>
+                <?php endif; ?>
+                <a href="<?= site_url('gemba-audit') ?>" class="btn btn-secondary btn-sm">
+                    <i class="fas fa-arrow-left me-1"></i> Back to List
+                </a>
+            </div>
         </div>
         <div class="card-body">
             <!-- 1. Audit Header -->
@@ -94,6 +103,54 @@
                 <div class="col-md-4"><strong>NC/Recommendation:</strong> <br><?= htmlspecialchars($audit['nc_recommendation'] ?? '') ?></div>
                 <div class="col-md-4"><strong>Action Category:</strong> <br><?= htmlspecialchars($audit['action_category'] ?? '') ?></div>
                 <div class="col-md-4"><strong>QHSE Remarks:</strong> <br><?= htmlspecialchars($audit['qhse_remarks'] ?? '') ?></div>
+            </div>
+
+            <!-- Attachment / Photo -->
+            <div class="row mb-4">
+                <div class="col-md-12">
+                    <strong class="d-block mb-1"><i class="fas fa-paperclip text-primary me-1"></i> Attachment / Photo:</strong>
+                    <?php if (!empty($audit['attachment'])): 
+                        $rawAtt = $audit['attachment'];
+                        if (strpos($rawAtt, 'uploads/') === 0) {
+                            $fileUrl = base_url($rawAtt);
+                            $fileName = basename($rawAtt);
+                        } else {
+                            $attDir = 'uploads/gemba_audit/';
+                            if (!file_exists(FCPATH . 'uploads/gemba_audit/' . $rawAtt) && file_exists(FCPATH . 'uploads/nc_photo/' . $rawAtt)) {
+                                $attDir = 'uploads/nc_photo/';
+                            }
+                            $fileUrl = base_url($attDir . $rawAtt);
+                            $fileName = $rawAtt;
+                        }
+                        $ext = strtolower(pathinfo($fileName, PATHINFO_EXTENSION));
+                    ?>
+                        <div class="p-3 border rounded bg-light">
+                            <?php if (in_array($ext, ['jpg', 'jpeg', 'png', 'gif', 'webp'])): ?>
+                                <div class="mb-3">
+                                    <a href="<?= $fileUrl ?>" target="_blank" title="Click to view full image">
+                                        <img src="<?= $fileUrl ?>" alt="Attachment Preview" class="img-thumbnail shadow-sm" style="max-height: 250px;">
+                                    </a>
+                                </div>
+                            <?php endif; ?>
+                            <div class="d-flex align-items-center gap-2 flex-wrap">
+                                <a href="<?= $fileUrl ?>" target="_blank" class="btn btn-sm btn-primary">
+                                    <i class="fas fa-external-link-alt me-1"></i> View / Open File
+                                </a>
+                                <a href="<?= $fileUrl ?>" download class="btn btn-sm btn-outline-secondary">
+                                    <i class="fas fa-download me-1"></i> Download (<?= htmlspecialchars(basename($rawAtt)) ?>)
+                                </a>
+                                <span class="badge bg-light text-dark border">
+                                    <i class="fas fa-folder-open text-muted me-1"></i> <?= htmlspecialchars($rawAtt) ?>
+                                </span>
+                            </div>
+                        </div>
+                    <?php else: ?>
+                        <div class="alert alert-secondary py-2 mb-0 d-flex align-items-center">
+                            <i class="fas fa-info-circle text-muted me-2"></i>
+                            <span>No attachment file has been uploaded for this audit point.</span>
+                        </div>
+                    <?php endif; ?>
+                </div>
             </div>
 
             <!-- 7. Scope & Remarks -->

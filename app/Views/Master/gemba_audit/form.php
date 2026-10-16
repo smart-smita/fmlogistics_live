@@ -8,9 +8,17 @@
         </div>
         <div class="card-body">
 
+            <?php if (session()->getFlashdata('error')): ?>
+                <div class="alert alert-danger alert-dismissible fade show d-flex align-items-center mb-3" role="alert">
+                    <i class="fas fa-exclamation-circle fs-4 me-2"></i>
+                    <div><?= session()->getFlashdata('error') ?></div>
+                    <button type="button" class="btn-close ms-auto" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+            <?php endif; ?>
+
             <?php if (session()->getFlashdata('errors')): ?>
                 <div class="alert alert-danger">
-                    <ul>
+                    <ul class="mb-0">
                         <?php foreach (session()->getFlashdata('errors') as $error): ?>
                             <li><?= $error ?></li>
                         <?php endforeach; ?>
@@ -18,10 +26,10 @@
                 </div>
             <?php endif; ?>
 
-            <form method="POST"
+            <form method="POST" enctype="multipart/form-data"
 action="<?= isset($audit['gemba_sr_no']) 
-    ? base_url('gemba-audit/edit/' . $audit['gemba_sr_no']) 
-    : base_url('gemba-audit/create') ?>">
+    ? site_url('gemba-audit/edit/' . $audit['gemba_sr_no']) 
+    : site_url('gemba-audit/create') ?>">
                 <?= csrf_field() ?>
 
                 <h5 class="mb-3 text-primary border-bottom pb-2">Audit Header</h5>
@@ -263,6 +271,47 @@ action="<?= isset($audit['gemba_sr_no'])
                     </div>
                 </div>
 
+                <div class="row mb-4">
+                    <div class="col-md-12">
+                        <label class="form-label">Attachment / Photo (Optional)</label>
+                        <input type="file" name="attachment" class="form-control" accept=".jpg,.jpeg,.png,.gif,.webp,.pdf,.doc,.docx,.xls,.xlsx">
+                        <small class="text-muted">Allowed formats: Images (JPG, PNG, WebP), PDF, Word, Excel. Max size: 10MB.</small>
+                        <?php if (!empty($audit['attachment'])): 
+                            $rawAtt = $audit['attachment'];
+                            if (strpos($rawAtt, 'uploads/') === 0) {
+                                $attUrl = base_url($rawAtt);
+                                $displayFileName = basename($rawAtt);
+                            } else {
+                                $attDir = 'uploads/gemba_audit/';
+                                if (!file_exists(FCPATH . 'uploads/gemba_audit/' . $rawAtt) && file_exists(FCPATH . 'uploads/nc_photo/' . $rawAtt)) {
+                                    $attDir = 'uploads/nc_photo/';
+                                }
+                                $attUrl = base_url($attDir . $rawAtt);
+                                $displayFileName = $rawAtt;
+                            }
+                            $ext = strtolower(pathinfo($displayFileName, PATHINFO_EXTENSION));
+                        ?>
+                            <div class="mt-2 p-2 border rounded bg-light d-flex align-items-center justify-content-between">
+                                <div>
+                                    <i class="fas fa-paperclip text-primary me-2"></i>
+                                    <strong>Current Attachment:</strong> 
+                                    <a href="<?= $attUrl ?>" target="_blank" class="text-decoration-underline ms-1">
+                                        <?= htmlspecialchars($rawAtt) ?>
+                                    </a>
+                                </div>
+                                <div class="d-flex align-items-center">
+                                    <?php if (in_array($ext, ['jpg', 'jpeg', 'png', 'gif', 'webp'])): ?>
+                                        <a href="<?= $attUrl ?>" target="_blank" class="me-2">
+                                            <img src="<?= $attUrl ?>" alt="Thumbnail" class="img-thumbnail" style="max-height: 40px;">
+                                        </a>
+                                    <?php endif; ?>
+                                    <span class="badge bg-secondary">Leave empty to keep existing</span>
+                                </div>
+                            </div>
+                        <?php endif; ?>
+                    </div>
+                </div>
+
                 <h5 class="mb-3 text-primary border-bottom pb-2">Risk Assessment</h5>
                 <div class="row mb-3">
                     <div class="col-md-3">
@@ -497,7 +546,7 @@ action="<?= isset($audit['gemba_sr_no'])
                 </div>
 
                 <div class="d-flex justify-content-end mt-4">
-                    <a href="<?= base_url('gemba-audit') ?>" class="btn btn-secondary me-2">Cancel</a>
+                    <a href="<?= site_url('gemba-audit') ?>" class="btn btn-secondary me-2">Cancel</a>
                     <button type="submit" class="btn btn-primary">Save Gemba Audit</button>
                 </div>
             </form>
@@ -561,8 +610,16 @@ action="<?= isset($audit['gemba_sr_no'])
         if (siteSelect) {
             siteSelect.addEventListener('change', function () {
                 if (this.value && this.value !== '__other__') {
-                    fetch('<?= base_url('gemba-audit/getSiteDetails') ?>?site_name=' + encodeURIComponent(this.value))
-                        .then(res => res.json())
+                    fetch('<?= site_url('gemba-audit/getSiteDetails') ?>?site_name=' + encodeURIComponent(this.value), {
+                        headers: {
+                            'X-Requested-With': 'XMLHttpRequest',
+                            'Accept': 'application/json'
+                        }
+                    })
+                        .then(res => {
+                            if (!res.ok) throw new Error('HTTP Status: ' + res.status);
+                            return res.json();
+                        })
                         .then(data => {
                             if (data && data.site_name) {
                                 let t1 = document.getElementById('site_type_1');
@@ -579,7 +636,8 @@ action="<?= isset($audit['gemba_sr_no'])
                                 if (data.cluster_manager_spoc && cm && !cm.disabled) updateDropdown(cm, data.cluster_manager_spoc);
                                 if (data.account_manager && am && !am.disabled) updateDropdown(am, data.account_manager);
                             }
-                        });
+                        })
+                        .catch(err => console.error('Site details fetch error:', err));
                 }
             });
         }
@@ -606,8 +664,16 @@ action="<?= isset($audit['gemba_sr_no'])
                 return;
             }
 
-            fetch('<?= base_url('gemba-audit/cascading-dropdown') ?>?audit_category=' + encodeURIComponent(category))
-                .then(res => res.json())
+            fetch('<?= site_url('gemba-audit/cascading-dropdown') ?>?audit_category=' + encodeURIComponent(category), {
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Accept': 'application/json'
+                }
+            })
+                .then(res => {
+                    if (!res.ok) throw new Error('HTTP Status: ' + res.status);
+                    return res.json();
+                })
                 .then(data => {
                     let tHTML = '<option value="">Select Audit Type</option>';
                     let hasSelectedType = false;
@@ -651,7 +717,8 @@ action="<?= isset($audit['gemba_sr_no'])
                     } else if (docWrap) {
                         docWrap.classList.add('d-none');
                     }
-                });
+                })
+                .catch(err => console.error('Cascading dropdown fetch error:', err));
         }
 
         categorySelect.addEventListener('change', function () {

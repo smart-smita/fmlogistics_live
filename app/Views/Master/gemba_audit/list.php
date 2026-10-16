@@ -2,6 +2,21 @@
 
 <?= $this->section('main_body') ?>
 <div class="container-fluid mt-4">
+    <?php if (session()->getFlashdata('success')): ?>
+        <div class="alert alert-success alert-dismissible fade show d-flex align-items-center mb-4 shadow-sm" role="alert">
+            <i class="fas fa-check-circle fs-4 me-2 text-success"></i>
+            <div><strong>Success:</strong> <?= session()->getFlashdata('success') ?></div>
+            <button type="button" class="btn-close ms-auto" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    <?php endif; ?>
+    <?php if (session()->getFlashdata('error')): ?>
+        <div class="alert alert-danger alert-dismissible fade show d-flex align-items-center mb-4 shadow-sm" role="alert">
+            <i class="fas fa-exclamation-triangle fs-4 me-2 text-danger"></i>
+            <div><strong>Error:</strong> <?= session()->getFlashdata('error') ?></div>
+            <button type="button" class="btn-close ms-auto" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    <?php endif; ?>
+
     <!-- Filters Card -->
     <div class="card shadow-sm mb-5">
         <div class="card-header border-0 pt-5">
@@ -14,10 +29,10 @@
             </h3>
             <div class="card-toolbar">
                 <?php if (gemba_can_write()): ?>
-                <a href="<?= base_url('gemba-audit/import') ?>" class="btn btn-sm btn-info me-2">
+                <a href="<?= site_url('gemba-audit/import') ?>" class="btn btn-sm btn-info me-2">
                     <i class="fas fa-file-import me-2"></i>Import Excel/CSV
                 </a>
-                <a href="<?= base_url('gemba-audit/create') ?>" class="btn btn-sm btn-primary">
+                <a href="<?= site_url('gemba-audit/create') ?>" class="btn btn-sm btn-primary">
                     <i class="fas fa-plus me-2"></i>Create New
                 </a>
                 <?php endif; ?>
@@ -114,7 +129,7 @@
         function reloadDataTable() {
             if ($.fn.DataTable.isDataTable(tableId)) {
                 const params = $('#gemba_filter_form').serialize();
-                const newUrl = '<?= base_url("gemba-audit/table_ajax") ?>?' + params;
+                const newUrl = '<?= site_url("gemba-audit/table_ajax") ?>?' + params;
                 $(tableId).DataTable().ajax.url(newUrl).load();
             }
         }
@@ -122,7 +137,7 @@
         // Export CSV
         $('#btn_export_csv').on('click', function () {
             const params = $('#gemba_filter_form').serialize();
-            window.location.href = '<?= base_url("gemba-audit/gemba_export") ?>?' + params;
+            window.location.href = '<?= site_url("gemba-audit/gemba_export") ?>?' + params;
         });
 
 

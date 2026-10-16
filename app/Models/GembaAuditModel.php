@@ -89,7 +89,8 @@ class GembaAuditModel extends Model
         'working_uploaded_file',
         'working_date',
         'closed_remarks',
-        'closed_uploaded_file'
+        'closed_uploaded_file',
+        'attachment'
     ];
 
     protected $useTimestamps = true;
