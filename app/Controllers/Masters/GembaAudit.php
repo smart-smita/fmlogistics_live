@@ -349,8 +349,8 @@ class GembaAudit extends BaseController
             $postData = $this->processOtherInputs($postData, $db);
             $postData['status'] = 1; // 1: active
 
-            if (empty($postData['unique_no'])) {
-                $postData['unique_no'] = 'S' . rand(1000, 9999);
+            if (empty($postData['unique_no']) || $this->model->where('unique_no', $postData['unique_no'])->countAllResults() > 0) {
+                $postData['unique_no'] = $this->model->generateUniqueNo();
             }
 
             $rules = [
@@ -404,7 +404,8 @@ class GembaAudit extends BaseController
         }
 
         $dropdownData = $this->getFormDropdownData();
-        $data = array_merge(['audit' => ['unique_no' => 'S' . rand(1000, 9999)]], $dropdownData);
+        $generatedUniqueNo = $this->model->generateUniqueNo();
+        $data = array_merge(['audit' => ['unique_no' => $generatedUniqueNo]], $dropdownData);
         return view('Master/gemba_audit/form', $data);
     }
 
@@ -1361,7 +1362,7 @@ class GembaAudit extends BaseController
                     $autoNcStatus = 1; // Working
                 }
 
-                    $mappedRow['unique_no'] = 'GMB-' . date('Ymd') . '-' . sprintf('%04d', rand(0, 9999));
+                    $mappedRow['unique_no'] = $this->model->generateUniqueNo();
                     $mappedRow['created_by'] = $currentUser;
                     $mappedRow['updated_by'] = $currentUser;
                     $mappedRow['status'] = 1;

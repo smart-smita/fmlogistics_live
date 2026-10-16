@@ -26,14 +26,12 @@ action="<?= isset($audit['gemba_sr_no'])
 
                 <h5 class="mb-3 text-primary border-bottom pb-2">Audit Header</h5>
                 <div class="row mb-3">
-                    <?php if (isset($audit['gemba_sr_no'])): ?>
                     <div class="col-md-3">
                         <label class="form-label">Unique No</label>
                         <input type="text" name="unique_no" class="form-control bg-light"
                             value="<?= old('unique_no', $audit['unique_no'] ?? '') ?>" readonly>
                     </div>
-                    <?php endif; ?>
-                    <div class="col-md-4">
+                    <div class="col-md-3">
                         <label class="form-label">Region <span class="text-danger">*</span></label>
                         <select name="region" class="form-select" required>
                             <option value="">Select Region</option>
@@ -51,7 +49,7 @@ action="<?= isset($audit['gemba_sr_no'])
                             <?php endif; ?>
                         </select>
                     </div>
-                    <div class="col-md-4">
+                    <div class="col-md-3">
                         <label class="form-label">Auditor Name <span class="text-danger">*</span></label>
                         <select name="auditor_name" class="form-select" required>
                             <option value="">Select Auditor</option>
@@ -67,7 +65,7 @@ action="<?= isset($audit['gemba_sr_no'])
                             <?php endif; ?>
                         </select>
                     </div>
-                    <div class="col-md-4">
+                    <div class="col-md-3">
                         <label class="form-label">Audit Category <span class="text-danger">*</span></label>
                         <select name="audit_category" id="audit_category" class="form-select" required>
                             <option value="">Select Category</option>

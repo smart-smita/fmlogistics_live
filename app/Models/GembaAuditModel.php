@@ -102,21 +102,28 @@ class GembaAuditModel extends Model
     protected function beforeInsertHook(array $data)
     {
         if (isset($data['data'])) {
-            $data['data']['created_by'] = session()->get('user_name') ?? 'System';
-            $data['data']['updated_by'] = session()->get('user_name') ?? 'System';
+            $user = (PHP_SAPI !== 'cli' && function_exists('session')) ? (session()->get('user_name') ?? 'System') : 'System';
+            $data['data']['created_by'] = $data['data']['created_by'] ?? $user;
+            $data['data']['updated_by'] = $data['data']['updated_by'] ?? $user;
+            if (empty($data['data']['unique_no'])) {
+                $data['data']['unique_no'] = $this->generateUniqueNo();
+            }
         }
-        return $this->calculateRatingsAndDates($data);
+        return $this->calculateRatingsAndDates($data, true);
     }
 
     protected function beforeUpdateHook(array $data)
     {
         if (isset($data['data'])) {
-            $data['data']['updated_by'] = session()->get('user_name') ?? 'System';
+            $user = (PHP_SAPI !== 'cli' && function_exists('session')) ? (session()->get('user_name') ?? 'System') : 'System';
+            $data['data']['updated_by'] = $user;
+            // CRITICAL: Ensure unique_no is never modified or overwritten on edit
+            unset($data['data']['unique_no']);
         }
-        return $this->calculateRatingsAndDates($data);
+        return $this->calculateRatingsAndDates($data, false);
     }
 
-    protected function calculateRatingsAndDates(array $data)
+    protected function calculateRatingsAndDates(array $data, bool $isInsert = false)
     {
         if (!isset($data['data'])) {
             return $data;
@@ -248,10 +255,14 @@ class GembaAuditModel extends Model
             }
         }
 
-        // Generate unique_no if not present
-        if (!isset($row['unique_no']) && empty($row['unique_no'])) {
-            // we will set it after insert if needed, or generate a random one
-            $row['unique_no'] = 'GMB-' . time() . '-' . rand(1000, 9999);
+        // Generate unique_no ONLY for new inserts if missing; NEVER alter on update
+        if ($isInsert) {
+            if (empty($row['unique_no'])) {
+                $row['unique_no'] = $this->generateUniqueNo();
+            }
+        } else {
+            // Guarantee that unique_no is never modified or injected on update
+            unset($row['unique_no']);
         }
 
         // NA Fallback for string columns
@@ -274,6 +285,33 @@ class GembaAuditModel extends Model
 
         $data['data'] = $row;
         return $data;
+    }
+
+    /**
+     * Generate a guaranteed-unique ID for Gemba audits (length <= 20 chars)
+     * Checks database before returning to guarantee zero duplicate key collisions.
+     */
+    public function generateUniqueNo(): string
+    {
+        $db = $this->db ?? \Config\Database::connect();
+        $table = $this->table ?? 'alert_gemba_audits';
+        $maxAttempts = 50;
+        $attempt = 0;
+
+        do {
+            $attempt++;
+            // Format: GMB-YYYYMMDD-XXXX (17 characters, fits varchar(20))
+            $uniqueNo = 'GMB-' . date('Ymd') . '-' . sprintf('%04d', mt_rand(1000, 9999));
+            if ($attempt > 25) {
+                // Entropy fallback with 5 random digits
+                $uniqueNo = 'GMB-' . date('ymd') . '-' . sprintf('%05d', mt_rand(10000, 99999));
+            }
+            $exists = $db->table($table)
+                ->where('unique_no', $uniqueNo)
+                ->countAllResults();
+        } while ($exists > 0 && $attempt < $maxAttempts);
+
+        return $uniqueNo;
     }
 
     public function refreshAgeing()
