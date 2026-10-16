@@ -8,7 +8,7 @@ class CreateSoftwareDocumentsTables extends Migration
 {
     public function up()
     {
-        // 1. software_documents
+        // 1. alert_software_documents
         $this->forge->addField([
             'id' => [
                 'type'           => 'INT',
@@ -134,9 +134,9 @@ class CreateSoftwareDocumentsTables extends Migration
             ],
         ]);
         $this->forge->addKey('id', true);
-        $this->forge->createTable('software_documents');
+        $this->forge->createTable('alert_software_documents');
 
-        // 2. software_document_versions
+        // 2. alert_software_document_versions
         $this->forge->addField([
             'id' => [
                 'type'           => 'INT',
@@ -191,9 +191,9 @@ class CreateSoftwareDocumentsTables extends Migration
             ],
         ]);
         $this->forge->addKey('id', true);
-        $this->forge->createTable('software_document_versions');
+        $this->forge->createTable('alert_software_document_versions');
 
-        // 3. software_document_downloads
+        // 3. alert_software_document_downloads
         $this->forge->addField([
             'id' => [
                 'type'           => 'INT',
@@ -217,13 +217,13 @@ class CreateSoftwareDocumentsTables extends Migration
             ],
         ]);
         $this->forge->addKey('id', true);
-        $this->forge->createTable('software_document_downloads');
+        $this->forge->createTable('alert_software_document_downloads');
     }
 
     public function down()
     {
-        $this->forge->dropTable('software_documents');
-        $this->forge->dropTable('software_document_versions');
-        $this->forge->dropTable('software_document_downloads');
+        $this->forge->dropTable('alert_software_documents');
+        $this->forge->dropTable('alert_software_document_versions');
+        $this->forge->dropTable('alert_software_document_downloads');
     }
 }

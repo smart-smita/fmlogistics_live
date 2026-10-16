@@ -5,6 +5,15 @@ use App\Controllers\BaseController;
 use App\Models\GembaAuditModel;
 use Config\Database;
 
+if (!function_exists('App\Controllers\Masters\verifySiteAccess')) {
+    function verifySiteAccess($siteName = null, $module = 'GEMBA', $checkUser = null) {
+        if (function_exists('\verifySiteAccess')) {
+            return \verifySiteAccess($siteName, $module, $checkUser);
+        }
+        return GembaNcTracker::checkSiteAccessStatic($siteName, $module, $checkUser);
+    }
+}
+
 class GembaNcTracker extends BaseController
 {
     protected $gembaModel;
@@ -13,7 +22,7 @@ class GembaNcTracker extends BaseController
 
     public function __construct()
     {
-        helper(['form', 'url', 'designation_acl', 'gemba_acl', 'hse_acl']);
+        helper(['form', 'url', 'designation_acl', 'gemba_acl', 'hse_acl', 'gemba_hse_sync']);
         $this->gembaModel = new GembaAuditModel();
         $this->db = Database::connect();
         $this->ensure_stage_columns();
@@ -1503,6 +1512,7 @@ class GembaNcTracker extends BaseController
 
     private function execute_gemba_only_nc_action($gembaSrNo, $action, $postData = [], $userId = null, $userName = null)
     {
+        helper(['form', 'url', 'designation_acl', 'gemba_acl', 'hse_acl', 'gemba_hse_sync']);
         $db = db_connect();
         $now = date('Y-m-d H:i:s');
         $closeDate = $postData['close_date'] ?? null;
@@ -1524,16 +1534,7 @@ class GembaNcTracker extends BaseController
             if (!empty($current['account_manager']) && strtolower(trim($current['account_manager'])) === $loginUserLower) {
                 $isAssignedAM = true;
             } else if (!empty($siteName)) {
-                $amSiteCount = $db->query("
-                    SELECT COUNT(*) as cnt FROM (
-                        SELECT client_name FROM alert_client WHERE LOWER(TRIM(account_manager)) = ? AND (TRIM(client_name) = ? OR TRIM(location) = ?) AND status != 2
-                        UNION
-                        SELECT client_name FROM alert_hse_client_master WHERE LOWER(TRIM(account_manager)) = ? AND (TRIM(client_name) = ? OR TRIM(location) = ?) AND status != 2
-                        UNION
-                        SELECT location_name FROM alert_location_master WHERE LOWER(TRIM(account_manager)) = ? AND TRIM(location_name) = ? AND status != 2
-                    ) AS t
-                ", [$loginUserLower, $siteName, $siteName, $loginUserLower, $siteName, $siteName, $loginUserLower, $siteName])->getRowArray();
-                $isAssignedAM = ($amSiteCount['cnt'] ?? 0) > 0;
+                $isAssignedAM = verifySiteAccess($siteName, 'GEMBA', $userName);
             }
         }
 
@@ -1543,19 +1544,9 @@ class GembaNcTracker extends BaseController
             if (!empty($current['cluster_manager_spoc']) && strtolower(trim($current['cluster_manager_spoc'])) === $loginUserLower) {
                 $isAssignedCM = true;
             } else if (!empty($siteName)) {
-                $cmSiteCount = $db->query("
-                    SELECT COUNT(*) as cnt FROM (
-                        SELECT client_name FROM alert_client WHERE LOWER(TRIM(cluster)) = ? AND (TRIM(client_name) = ? OR TRIM(location) = ?) AND status != 2
-                        UNION
-                        SELECT client_name FROM alert_hse_client_master WHERE LOWER(TRIM(cluster)) = ? AND (TRIM(client_name) = ? OR TRIM(location) = ?) AND status != 2
-                        UNION
-                        SELECT location_name FROM alert_location_master WHERE LOWER(TRIM(cluster_name)) = ? AND TRIM(location_name) = ? AND status != 2
-                    ) AS t
-                ", [$loginUserLower, $siteName, $siteName, $loginUserLower, $siteName, $siteName, $loginUserLower, $siteName])->getRowArray();
-                $isAssignedCM = ($cmSiteCount['cnt'] ?? 0) > 0;
+                $isAssignedCM = verifySiteAccess($siteName, 'GEMBA', $userName);
             }
         }
-
 
         $isSuperAdmin = isSuperAdmin();
         $isAuditor = isAuditor();
@@ -1627,12 +1618,12 @@ class GembaNcTracker extends BaseController
                     }
                     break;
                 case 5:
-                    if ($action === 'auditor' && ($isSuperAdmin || $isAssignedCM || $isAssignedAM)) {
+                    if ($action === 'auditor' && ($isSuperAdmin || $isAuditor || $isAssignedCM || $isAssignedAM)) {
                         $gembaUpdate['nc_status'] = 2;
                         $gembaUpdate['nc_auditor_reviewed_by'] = $actionBy;
                         $gembaUpdate['nc_auditor_reviewed_date'] = $now;
                     }
-                    if ($action === 'auditor_direct_close' && $isAuditor) {
+                    if ($action === 'auditor_direct_close' && ($isAuditor || $isSuperAdmin)) {
                         $gembaUpdate['nc_status'] = 3;
                         $gembaUpdate['nc_cluster_reviewed_by'] = $actionBy;
                         $gembaUpdate['nc_cluster_reviewed_date'] = $now;
@@ -1722,6 +1713,24 @@ class GembaNcTracker extends BaseController
             } catch (\Throwable $e) {}
         }
 
+        // Log audit trail for Gemba
+        if (isset($gembaUpdate['nc_status']) && $currentStatus != $gembaUpdate['nc_status']) {
+            try {
+                $auditRemarks = 'Status changed to ' . $gembaUpdate['nc_status'];
+                if ($action === '0' && !empty($postData['rejection_reason'])) {
+                    $auditRemarks = 'Rejected. Reason: ' . $postData['rejection_reason'];
+                }
+                $db->table('alert_gemba_nc_audit_trail')->insert([
+                    'gemba_audit_id' => $gembaSrNo,
+                    'action_by' => $userName,
+                    'action_date' => $now,
+                    'status_from' => $currentStatus,
+                    'status_to' => $gembaUpdate['nc_status'],
+                    'remarks' => $auditRemarks
+                ]);
+            } catch (\Throwable $e) {}
+        }
+
         return [
             'status' => 1, 
             'message' => 'NC updated successfully', 
@@ -1729,5 +1738,68 @@ class GembaNcTracker extends BaseController
             'old_status' => $currentStatus, 
             'gemba_sr_no' => $gembaSrNo
         ];
+    }
+
+    public function verifySiteAccess($siteName = null, $module = 'GEMBA', $checkUser = null)
+    {
+        return self::checkSiteAccessStatic($siteName, $module, $checkUser);
+    }
+
+    public static function checkSiteAccessStatic($siteName = null, $module = 'GEMBA', $checkUser = null)
+    {
+        if (function_exists('isSuperAdmin') && isSuperAdmin()) return true;
+        if (function_exists('isAuditor') && isAuditor()) return true;
+        if (function_exists('isHigherAuthority') && isHigherAuthority()) return false;
+        if (empty($siteName)) return true;
+
+        $userName = !empty($checkUser) 
+            ? strtolower(trim($checkUser)) 
+            : strtolower(trim((function_exists('getUserName') ? getUserName() : '') ?: (session()->get('user_name') ?? '')));
+        if (empty($userName)) return false;
+
+        $db = \Config\Database::connect();
+        $isAM = (function_exists('isAccountManager') && isAccountManager()) || in_array(strtolower(trim(session()->get('role') ?? '')), ['account manager', 'account_manager']);
+        $isCM = (function_exists('isClusterManager') && isClusterManager()) || in_array(strtolower(trim(session()->get('role') ?? '')), ['cluster manager', 'cluster_manager']);
+
+        if ($isAM) {
+            $row = $db->query("
+                SELECT COUNT(*) AS cnt FROM (
+                    SELECT client_name FROM alert_client
+                        WHERE LOWER(TRIM(account_manager)) = ? AND (TRIM(client_name) = ? OR TRIM(location) = ?) AND status != 2
+                    UNION
+                    SELECT client_name FROM alert_hse_client_master
+                        WHERE LOWER(TRIM(account_manager)) = ? AND (TRIM(client_name) = ? OR TRIM(location) = ?) AND status != 2
+                    UNION
+                    SELECT location_name FROM alert_location_master
+                        WHERE LOWER(TRIM(account_manager)) = ? AND TRIM(location_name) = ? AND status != 2
+                ) AS t
+            ", [$userName, $siteName, $siteName, $userName, $siteName, $siteName, $userName, $siteName])->getRowArray();
+            return ($row['cnt'] ?? 0) > 0;
+        }
+
+        if ($isCM) {
+            $row = $db->query("
+                SELECT COUNT(*) AS cnt FROM (
+                    SELECT client_name FROM alert_client
+                        WHERE LOWER(TRIM(cluster)) = ? AND (TRIM(client_name) = ? OR TRIM(location) = ?) AND status != 2
+                    UNION
+                    SELECT client_name FROM alert_hse_client_master
+                        WHERE LOWER(TRIM(cluster)) = ? AND (TRIM(client_name) = ? OR TRIM(location) = ?) AND status != 2
+                    UNION
+                    SELECT location_name FROM alert_location_master
+                        WHERE LOWER(TRIM(cluster_name)) = ? AND TRIM(location_name) = ? AND status != 2
+                ) AS t
+            ", [$userName, $siteName, $siteName, $userName, $siteName, $siteName, $userName, $siteName])->getRowArray();
+            return ($row['cnt'] ?? 0) > 0;
+        }
+
+        return true;
+    }
+
+    public function get_nc_action_history()
+    {
+        $clientCtrl = new Client();
+        $clientCtrl->initController($this->request, $this->response, $this->logger);
+        return $clientCtrl->get_nc_action_history();
     }
 }

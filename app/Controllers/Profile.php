@@ -31,6 +31,7 @@ class Profile extends BaseController
             employee_reporting_to,
             status,
             admin_flag,
+            audit_type,
             last_date,
             default_date,
             update_date
@@ -81,7 +82,14 @@ class Profile extends BaseController
         $data['target_user'] = $targetUser;
         $data['auditor_list'] = $auditorList;
 
-        // If Auditor, prepare initial summary statistics for instant initial page render (Yearly Scope)
+        // Determine auditor scope (OE, HSE, or Both)
+        $auditScope = trim($targetUser['audit_type'] ?? 'Both');
+        if (empty($auditScope)) {
+            $auditScope = 'Both';
+        }
+        $data['audit_scope'] = $auditScope;
+
+        // Prepare initial summary statistics for instant initial page render (Yearly Scope)
         $currentYear = (int)date('Y');
         $data['current_year'] = $currentYear;
         $data['years_list'] = [2026, 2025, 2024, 2023, 2022];
@@ -146,7 +154,7 @@ class Profile extends BaseController
             return $this->response->setJSON(['status' => 0, 'message' => 'Current password is wrong.']);
         }
 
-        // Save password as it is (plain text)
+        // Save password
         $updateQuery = "UPDATE alert_users SET user_password = ?, update_date = NOW() WHERE user_id = ?";
         $db->query($updateQuery, [$new_password, $user_id]);
 
@@ -232,13 +240,26 @@ class Profile extends BaseController
         $auditorId = (int)$targetUser['user_id'];
         $auditorName = trim($targetUser['user_name'] ?? '');
 
-        // Filters: Year, Date Range, Module, Status
+        // Scope resolution (OE, HSE, or Both)
+        $auditScope = trim($targetUser['audit_type'] ?? 'Both');
+        if (empty($auditScope)) {
+            $auditScope = 'Both';
+        }
+
+        // Filters: Year, Date Range, Module ('all', 'OE', 'Gemba_HSE'), Status
         $requestedYear = trim($this->request->getVar('year') ?? date('Y'));
         $dateRange = trim($this->request->getVar('date_range') ?? 'yearly');
         $customStart = trim($this->request->getVar('start_date') ?? '');
         $customEnd = trim($this->request->getVar('end_date') ?? '');
-        $selectedModule = trim($this->request->getVar('module') ?? 'all'); // all, OE, HSE, Gemba
-        $selectedStatus = trim($this->request->getVar('status') ?? 'all'); // all, completed, pending, overdue, due
+        $selectedModule = trim($this->request->getVar('module') ?? 'all'); // 'all', 'OE', 'Gemba_HSE'
+        $selectedStatus = trim($this->request->getVar('status') ?? 'all'); // 'all', 'completed', 'pending', 'overdue', 'due'
+
+        // If auditor scope is restricted to OE or HSE, strictly enforce module filter accordingly
+        if (strcasecmp($auditScope, 'OE') === 0) {
+            $selectedModule = 'OE';
+        } elseif (strcasecmp($auditScope, 'HSE') === 0) {
+            $selectedModule = 'Gemba_HSE';
+        }
 
         // Resolve Year and Date Boundaries
         $yearInt = is_numeric($requestedYear) ? (int)$requestedYear : (int)date('Y');
@@ -265,26 +286,29 @@ class Profile extends BaseController
             }
         }
 
-        // 1. Module-Separated KPI Metrics (OE, HSE, Gemba)
+        // 1. Two-Category KPI Metrics (OE and Gemba/HSE)
         $kpis = $this->calculateAuditorKpis($db, $auditorId, $auditorName, $yearInt, $fromDate, $toDate, $selectedModule);
 
-        // 2. Graph 1: Performed vs Pending Audits (Grouped by module)
-        $performedVsPendingChart = $this->getPerformedVsPendingChart($kpis);
+        // 2. Graph 1: Performed vs Pending Audits (OE, Gemba/HSE, or Both based on scope)
+        $performedVsPendingChart = $this->getPerformedVsPendingChart($kpis, $selectedModule);
 
-        // 3. Graph 2: Audit Due and Overdue Status (Upcoming, Due, Overdue, Completed)
-        $dueOverdueStatusChart = $this->getDueOverdueStatusChart($kpis);
+        // 3. Graph 2: Audit Due and Overdue Status (OE, Gemba/HSE, or Both based on scope)
+        $dueOverdueStatusChart = $this->getDueOverdueStatusChart($kpis, $selectedModule);
 
-        // 4. Graph 3: Monthly Audit Trend (Per Yearly Scope - 12 Months)
+        // 4. Graph 3: Monthly Audit Trend (Per Yearly Scope - 12 Months: OE vs Gemba/HSE)
         $monthlyTrendChart = $this->getMonthlyTrendChart($db, $auditorId, $auditorName, $yearInt, $selectedModule);
 
-        // 5. Graph 4: Re-Audit Analysis (Latest Performed vs Previous Re-Audits)
-        $reauditChart = $this->getReauditPerformanceChart($kpis);
+        // 5. Graph 4: Re-Audit Analysis (Performed vs Re-Audits)
+        $reauditChart = $this->getReauditPerformanceChart($kpis, $selectedModule);
 
         // 6. Dedicated NC Analytics (Status Distribution & Action Progress)
-        $ncAnalytics = $this->getNcAnalytics($kpis);
+        $ncAnalytics = $this->getNcAnalytics($kpis, $selectedModule);
 
         // 7. Audit Schedule and Report Table (Site-level schedules with next audit dates)
-        $scheduleTable = $this->getAuditScheduleTable($db, $auditorId, $auditorName, $selectedModule, $selectedStatus, $yearInt);
+        $scheduleTable = $this->getAuditScheduleTable($db, $auditorId, $auditorName, $selectedModule, $selectedStatus, $yearInt, $fromDate, $toDate);
+
+        // 8. Latest NCs Report Table (Combined Gemba/HSE NCs and OE NCs with full details)
+        $latestNcsTable = $this->getLatestNcsTable($db, $auditorId, $auditorName, $selectedModule, $selectedStatus, $yearInt, $fromDate, $toDate);
 
         return $this->response->setJSON([
             'status' => 1,
@@ -293,7 +317,8 @@ class Profile extends BaseController
                 'user_name' => $auditorName,
                 'designation' => $targetUser['user_designation'] ?? 'Auditor',
                 'email' => $targetUser['user_email'] ?? '',
-                'emp_code' => $targetUser['user_emp_code'] ?? ''
+                'emp_code' => $targetUser['user_emp_code'] ?? '',
+                'audit_scope' => $auditScope
             ],
             'kpis' => $kpis,
             'charts' => [
@@ -304,6 +329,7 @@ class Profile extends BaseController
                 'nc_analytics' => $ncAnalytics
             ],
             'schedule_table' => $scheduleTable,
+            'latest_ncs' => $latestNcsTable,
             'filters_applied' => [
                 'year' => $requestedYear,
                 'date_range' => $dateRange,
@@ -316,7 +342,9 @@ class Profile extends BaseController
     }
 
     /**
-     * Calculates complete module-separated KPIs for OE, HSE, and Gemba
+     * Calculates complete KPIs for the 2 audit categories:
+     * 1. OE Audit
+     * 2. Gemba/HSE Audit (HSE combined into Gemba/HSE without duplicate counting)
      */
     private function calculateAuditorKpis($db, int $auditorId, string $auditorName, $year = null, $fromDate = null, $toDate = null, $selectedModule = 'all'): array
     {
@@ -328,28 +356,25 @@ class Profile extends BaseController
         $yearFilter = is_numeric($year) ? (int)$year : null;
 
         // ════════════════════════════════════════════════════════════
-        // SECTION A: OE AUDIT DASHBOARD (Monthly Frequency - 1 Month)
+        // CATEGORY 1: OE AUDIT DASHBOARD (Monthly Frequency)
         // ════════════════════════════════════════════════════════════
         $oeTotal = 0;
-        $oeLatest = 0;
+        $oePerformed = 0;
         $oeReaudits = 0;
         $oePending = 0;
         $oeDue = 0;
         $oeOverdue = 0;
-        $oeCompleted = 0;
         $oeLastDate = '-';
         $oeNextDate = '-';
         $oeTotalNc = 0;
         $oeOpenNc = 0;
         $oeWorkingNc = 0;
-        $oeClusterReviewNc = 0;
-        $oeAuditorReviewNc = 0;
+        $oeReviewNc = 0;
         $oeClosedNc = 0;
-        $oePendingActions = 0;
-        $oeCompletedActions = 0;
-        $oeOverdueActions = 0;
 
-        if ($selectedModule === 'all' || strtolower($selectedModule) === 'oe') {
+        $checkOe = ($selectedModule === 'all' || strcasecmp($selectedModule, 'oe') === 0);
+
+        if ($checkOe) {
             $oeWhere = "(audit_by_user_id = {$auditorId} OR LOWER(TRIM(auditor_name)) IN ({$inAliases}))";
             if ($fromDate && $toDate) {
                 $oeWhere .= " AND audit_date >= '{$fromDate}' AND audit_date <= '{$toDate}'";
@@ -357,13 +382,14 @@ class Profile extends BaseController
                 $oeWhere .= " AND YEAR(audit_date) = {$yearFilter}";
             }
 
-            // Master query
+            // OE Master query: reaudit = 0 is original performed audit; reaudit > 0 is re-audit
             $oeAuditSql = "SELECT 
                 COUNT(*) as total_oe,
-                SUM(IF(reaudit = 0, 1, 0)) as latest_oe,
+                SUM(IF(reaudit = 0, 1, 0)) as performed_oe,
                 SUM(IF(reaudit > 0, 1, 0)) as reaudit_oe,
                 MAX(audit_date) as last_oe_date,
                 SUM(IF(next_date IS NOT NULL AND next_date != '0000-00-00' AND next_date >= '{$today}', 1, 0)) as pending_oe,
+                SUM(IF(next_date IS NOT NULL AND next_date != '0000-00-00' AND next_date > DATE_ADD('{$today}', INTERVAL 15 DAY), 1, 0)) as upcoming_oe,
                 SUM(IF(next_date IS NOT NULL AND next_date != '0000-00-00' AND next_date BETWEEN '{$today}' AND DATE_ADD('{$today}', INTERVAL 15 DAY), 1, 0)) as due_oe,
                 SUM(IF(next_date IS NOT NULL AND next_date != '0000-00-00' AND next_date < '{$today}', 1, 0)) as overdue_oe
             FROM alert_final_structured_audit
@@ -372,31 +398,32 @@ class Profile extends BaseController
 
             if ($oeRes) {
                 $oeTotal = (int)($oeRes['total_oe'] ?? 0);
-                $oeLatest = (int)($oeRes['latest_oe'] ?? 0);
+                $oePerformed = (int)($oeRes['performed_oe'] ?? 0);
                 $oeReaudits = (int)($oeRes['reaudit_oe'] ?? 0);
                 $oePending = (int)($oeRes['pending_oe'] ?? 0);
+                $oeUpcoming = (int)($oeRes['upcoming_oe'] ?? 0);
                 $oeDue = (int)($oeRes['due_oe'] ?? 0);
                 $oeOverdue = (int)($oeRes['overdue_oe'] ?? 0);
-                $oeCompleted = $oeLatest;
                 if (!empty($oeRes['last_oe_date'])) {
                     $oeLastDate = $oeRes['last_oe_date'];
-                    // OE 1 Month Monthly Frequency
                     $oeNextDate = date('Y-m-d', strtotime('+1 month', strtotime($oeLastDate)));
                 }
             }
 
-            // OE NC query
+            // OE NC query: Matches Oe_nc_tracker by taking only latest pending NCs
+            // (Excludes historical re-audited records unless status is Closed(3) or Forced Closed(5))
+            // Statuses: 0 = Open, 1 & 4 = Working/Draft, 6 & 2 = Pending Review, 3 & 5 = Closed/Forced Closed
             $oeNcSql = "SELECT 
                 COUNT(*) as total_nc,
-                SUM(IF(d.status = 0, 1, 0)) as open_nc,
-                SUM(IF(d.status = 1, 1, 0)) as working_nc,
-                SUM(IF(d.status = 6, 1, 0)) as cluster_review_nc,
-                SUM(IF(d.status = 2, 1, 0)) as auditor_review_nc,
-                SUM(IF(d.status = 3, 1, 0)) as closed_nc
+                SUM(IF(d.audit_finding = 'NO' AND d.status = 0, 1, 0)) as open_nc,
+                SUM(IF(d.audit_finding = 'NO' AND d.status IN (1, 4), 1, 0)) as working_nc,
+                SUM(IF(d.audit_finding = 'NO' AND d.status IN (6, 2), 1, 0)) as review_nc,
+                SUM(IF(d.status IN (3, 5), 1, 0)) as closed_nc
             FROM alert_final_structured_audit_details d
             JOIN alert_final_structured_audit a ON a.structured_audit_id = d.structured_audit_id
             WHERE (a.audit_by_user_id = {$auditorId} OR LOWER(TRIM(a.auditor_name)) IN ({$inAliases}))
-              AND d.audit_finding = 'NO'";
+              AND (a.reaudit = 0 OR d.status IN (3, 5))
+              AND (d.audit_finding = 'NO' OR d.status IN (3, 5))";
             if ($fromDate && $toDate) {
                 $oeNcSql .= " AND a.audit_date >= '{$fromDate}' AND a.audit_date <= '{$toDate}'";
             } elseif ($yearFilter) {
@@ -407,37 +434,54 @@ class Profile extends BaseController
                 $oeTotalNc = (int)($oeNcRes['total_nc'] ?? 0);
                 $oeOpenNc = (int)($oeNcRes['open_nc'] ?? 0);
                 $oeWorkingNc = (int)($oeNcRes['working_nc'] ?? 0);
-                $oeClusterReviewNc = (int)($oeNcRes['cluster_review_nc'] ?? 0);
-                $oeAuditorReviewNc = (int)($oeNcRes['auditor_review_nc'] ?? 0);
+                $oeReviewNc = (int)($oeNcRes['review_nc'] ?? 0);
                 $oeClosedNc = (int)($oeNcRes['closed_nc'] ?? 0);
-                $oePendingActions = $oeOpenNc + $oeWorkingNc + $oeClusterReviewNc + $oeAuditorReviewNc;
-                $oeCompletedActions = $oeClosedNc;
             }
         }
 
         // ════════════════════════════════════════════════════════════
-        // SECTION B: HSE AUDIT DASHBOARD (Quarterly - 3 Months)
+        // CATEGORY 2: GEMBA/HSE AUDIT DASHBOARD (Combined)
+        // HSE is part of Gemba/HSE. Zero duplicate counting.
         // ════════════════════════════════════════════════════════════
         $hseTotal = 0;
-        $hseLatest = 0;
+        $hsePerformed = 0;
         $hseReaudits = 0;
         $hsePending = 0;
+        $hseUpcoming = 0;
         $hseDue = 0;
         $hseOverdue = 0;
-        $hseCompleted = 0;
         $hseLastDate = '-';
-        $hseNextDate = '-';
+
+        $gembaWalks = 0;
+        $gembaPending = 0;
+        $gembaUpcoming = 0;
+        $gembaDue = 0;
+        $gembaOverdue = 0;
+        $gembaLastDate = '-';
+
+        $gembaHseTotalNc = 0;
+        $gembaHseOpenNc = 0;
+        $gembaHseWorkingNc = 0;
+        $gembaHseReviewNc = 0;
+        $gembaHseClosedNc = 0;
+
         $hseTotalNc = 0;
         $hseOpenNc = 0;
         $hseWorkingNc = 0;
-        $hseClusterReviewNc = 0;
-        $hseAuditorReviewNc = 0;
+        $hseReviewNc = 0;
         $hseClosedNc = 0;
-        $hsePendingActions = 0;
-        $hseCompletedActions = 0;
-        $hseOverdueActions = 0;
 
-        if ($selectedModule === 'all' || strtolower($selectedModule) === 'hse') {
+        $gembaTotalNc = 0;
+        $gembaOpenNc = 0;
+        $gembaWorkingNc = 0;
+        $gembaReviewNc = 0;
+        $gembaClosedNc = 0;
+
+        $checkGembaHse = ($selectedModule === 'all' || in_array(strtolower($selectedModule), ['gemba_hse', 'gemba/hse', 'gemba', 'hse']));
+
+        if ($checkGembaHse) {
+            // Part 2.1: HSE Audits from alert_hse_audit_master
+            // HSE schedule is evaluated using a 3-month cycle (quarterly) from audit_date
             $hseWhere = "(LOWER(TRIM(auditor_name)) IN ({$inAliases}) OR LOWER(TRIM(perform_audit_by)) IN ({$inAliases}))";
             if ($fromDate && $toDate) {
                 $hseWhere .= " AND audit_date >= '{$fromDate}' AND audit_date <= '{$toDate}'";
@@ -445,288 +489,313 @@ class Profile extends BaseController
                 $hseWhere .= " AND SUBSTRING(audit_date, 1, 4) = '{$yearFilter}'";
             }
 
-            // HSE Master query
+            // HSE Performed audits = distinct audit_no; Re-audits = total - distinct audit_no
             $hseAuditSql = "SELECT 
                 COUNT(*) as total_hse,
-                COUNT(DISTINCT audit_no) as latest_hse,
+                COUNT(DISTINCT audit_no) as performed_hse,
                 (COUNT(*) - COUNT(DISTINCT audit_no)) as reaudit_hse,
                 MAX(audit_date) as last_hse_date,
-                SUM(IF(report_date IS NOT NULL AND report_date != '0000-00-00' AND report_date >= '{$today}', 1, 0)) as pending_hse,
-                SUM(IF(report_date IS NOT NULL AND report_date != '0000-00-00' AND report_date BETWEEN '{$today}' AND DATE_ADD('{$today}', INTERVAL 15 DAY), 1, 0)) as due_hse,
-                SUM(IF(report_date IS NOT NULL AND report_date != '0000-00-00' AND report_date < '{$today}', 1, 0)) as overdue_hse
+                SUM(IF(COALESCE(NULLIF(next_date, '0000-00-00'), NULLIF(report_date, '0000-00-00'), DATE_ADD(audit_date, INTERVAL 3 MONTH)) >= '{$today}', 1, 0)) as pending_hse,
+                SUM(IF(COALESCE(NULLIF(next_date, '0000-00-00'), NULLIF(report_date, '0000-00-00'), DATE_ADD(audit_date, INTERVAL 3 MONTH)) > DATE_ADD('{$today}', INTERVAL 15 DAY), 1, 0)) as upcoming_hse,
+                SUM(IF(COALESCE(NULLIF(next_date, '0000-00-00'), NULLIF(report_date, '0000-00-00'), DATE_ADD(audit_date, INTERVAL 3 MONTH)) BETWEEN '{$today}' AND DATE_ADD('{$today}', INTERVAL 15 DAY), 1, 0)) as due_hse,
+                SUM(IF(COALESCE(NULLIF(next_date, '0000-00-00'), NULLIF(report_date, '0000-00-00'), DATE_ADD(audit_date, INTERVAL 3 MONTH)) < '{$today}', 1, 0)) as overdue_hse
             FROM alert_hse_audit_master
             WHERE {$hseWhere}";
             $hseRes = $db->query($hseAuditSql)->getRowArray();
 
             if ($hseRes) {
                 $hseTotal = (int)($hseRes['total_hse'] ?? 0);
-                $hseLatest = (int)($hseRes['latest_hse'] ?? 0);
+                $hsePerformed = (int)($hseRes['performed_hse'] ?? 0);
                 $hseReaudits = max(0, (int)($hseRes['reaudit_hse'] ?? 0));
                 $hsePending = (int)($hseRes['pending_hse'] ?? 0);
+                $hseUpcoming = (int)($hseRes['upcoming_hse'] ?? 0);
                 $hseDue = (int)($hseRes['due_hse'] ?? 0);
                 $hseOverdue = (int)($hseRes['overdue_hse'] ?? 0);
-                $hseCompleted = $hseLatest;
-                if (!empty($hseRes['last_hse_date'])) {
-                    $hseLastDate = $hseRes['last_hse_date'];
-                    // HSE 3 Months Quarterly Frequency
-                    $hseNextDate = date('Y-m-d', strtotime('+3 months', strtotime($hseLastDate)));
-                }
+                $hseLastDate = $hseRes['last_hse_date'] ?: '-';
             }
 
-            // HSE NC query
-            $hseNcSql = "SELECT 
-                COUNT(*) as total_nc,
-                SUM(IF(d.nc_status = 0, 1, 0)) as open_nc,
-                SUM(IF(d.nc_status = 1, 1, 0)) as working_nc,
-                SUM(IF(d.nc_status = 5, 1, 0)) as cluster_review_nc,
-                SUM(IF(d.nc_status = 2, 1, 0)) as auditor_review_nc,
-                SUM(IF(d.nc_status = 3, 1, 0)) as closed_nc
-            FROM alert_hse_audit_details d
-            JOIN alert_hse_audit_master m ON m.hse_audit_id = d.hse_audit_id
-            WHERE (LOWER(TRIM(m.auditor_name)) IN ({$inAliases}) OR LOWER(TRIM(m.perform_audit_by)) IN ({$inAliases}))
-              AND d.finding = 'NO'";
+            // Part 2.2: Gemba/HSE NCs from alert_gemba_audits (Directly matching Masters/GembaNcTracker)
+            // alert_gemba_audits is the authoritative store for all Gemba walk observation points
+            // and synced HSE audit NC points. Applies exact deduplication for latest HSE re-audits.
+            $gembaHseNcWhere = "status = 1 AND LOWER(TRIM(auditor_name)) IN ({$inAliases})";
+            $gembaHseNcWhere .= " AND (
+                source_module != 'hse_audit'
+                OR (source_module = 'hse_audit' AND hse_detail_id IN (
+                    SELECT latest_detail_id FROM (
+                        SELECT MAX(d2.id) AS latest_detail_id
+                        FROM alert_hse_audit_details d2
+                        INNER JOIN alert_hse_audit_master latest_master ON latest_master.hse_audit_id = d2.hse_audit_id
+                        INNER JOIN (
+                            SELECT audit_no, MAX(hse_audit_id) AS latest_hse_audit_id
+                            FROM alert_hse_audit_master
+                            GROUP BY audit_no
+                        ) latest_audit ON latest_audit.latest_hse_audit_id = latest_master.hse_audit_id
+                        GROUP BY latest_master.audit_no, d2.question_id
+                    ) as temp_latest_nc
+                ))
+            )";
             if ($fromDate && $toDate) {
-                $hseNcSql .= " AND m.audit_date >= '{$fromDate}' AND m.audit_date <= '{$toDate}'";
+                $gembaHseNcWhere .= " AND audit_report_date >= '{$fromDate}' AND audit_report_date <= '{$toDate}'";
             } elseif ($yearFilter) {
-                $hseNcSql .= " AND SUBSTRING(m.audit_date, 1, 4) = '{$yearFilter}'";
+                $gembaHseNcWhere .= " AND YEAR(audit_report_date) = {$yearFilter}";
             }
-            $hseNcRes = $db->query($hseNcSql)->getRowArray();
-            if ($hseNcRes) {
-                $hseTotalNc = (int)($hseNcRes['total_nc'] ?? 0);
-                $hseOpenNc = (int)($hseNcRes['open_nc'] ?? 0);
-                $hseWorkingNc = (int)($hseNcRes['working_nc'] ?? 0);
-                $hseClusterReviewNc = (int)($hseNcRes['cluster_review_nc'] ?? 0);
-                $hseAuditorReviewNc = (int)($hseNcRes['auditor_review_nc'] ?? 0);
-                $hseClosedNc = (int)($hseNcRes['closed_nc'] ?? 0);
-                $hsePendingActions = $hseOpenNc + $hseWorkingNc + $hseClusterReviewNc + $hseAuditorReviewNc;
-                $hseCompletedActions = $hseClosedNc;
+
+            $gembaHseNcSql = "SELECT 
+                COUNT(*) as total_nc,
+                SUM(CASE WHEN nc_status = 0 THEN 1 ELSE 0 END) as open_nc,
+                SUM(CASE WHEN nc_status = 1 THEN 1 ELSE 0 END) as working_nc,
+                SUM(CASE WHEN nc_status IN (2, 5) THEN 1 ELSE 0 END) as review_nc,
+                SUM(CASE WHEN nc_status = 3 THEN 1 ELSE 0 END) as closed_nc,
+                SUM(CASE WHEN source_module = 'hse_audit' THEN 1 ELSE 0 END) as hse_total_nc,
+                SUM(CASE WHEN source_module = 'hse_audit' AND nc_status = 0 THEN 1 ELSE 0 END) as hse_open_nc,
+                SUM(CASE WHEN source_module = 'hse_audit' AND nc_status = 1 THEN 1 ELSE 0 END) as hse_working_nc,
+                SUM(CASE WHEN source_module = 'hse_audit' AND nc_status IN (2, 5) THEN 1 ELSE 0 END) as hse_review_nc,
+                SUM(CASE WHEN source_module = 'hse_audit' AND nc_status = 3 THEN 1 ELSE 0 END) as hse_closed_nc,
+                SUM(CASE WHEN source_module != 'hse_audit' OR source_module IS NULL THEN 1 ELSE 0 END) as gemba_total_nc,
+                SUM(CASE WHEN (source_module != 'hse_audit' OR source_module IS NULL) AND nc_status = 0 THEN 1 ELSE 0 END) as gemba_open_nc,
+                SUM(CASE WHEN (source_module != 'hse_audit' OR source_module IS NULL) AND nc_status = 1 THEN 1 ELSE 0 END) as gemba_working_nc,
+                SUM(CASE WHEN (source_module != 'hse_audit' OR source_module IS NULL) AND nc_status IN (2, 5) THEN 1 ELSE 0 END) as gemba_review_nc,
+                SUM(CASE WHEN (source_module != 'hse_audit' OR source_module IS NULL) AND nc_status = 3 THEN 1 ELSE 0 END) as gemba_closed_nc
+            FROM alert_gemba_audits
+            WHERE {$gembaHseNcWhere}";
+            $gembaHseNcRes = $db->query($gembaHseNcSql)->getRowArray();
+
+            if ($gembaHseNcRes) {
+                $gembaHseTotalNc = (int)($gembaHseNcRes['total_nc'] ?? 0);
+                $gembaHseOpenNc = (int)($gembaHseNcRes['open_nc'] ?? 0);
+                $gembaHseWorkingNc = (int)($gembaHseNcRes['working_nc'] ?? 0);
+                $gembaHseReviewNc = (int)($gembaHseNcRes['review_nc'] ?? 0);
+                $gembaHseClosedNc = (int)($gembaHseNcRes['closed_nc'] ?? 0);
+
+                $hseTotalNc = (int)($gembaHseNcRes['hse_total_nc'] ?? 0);
+                $hseOpenNc = (int)($gembaHseNcRes['hse_open_nc'] ?? 0);
+                $hseWorkingNc = (int)($gembaHseNcRes['hse_working_nc'] ?? 0);
+                $hseReviewNc = (int)($gembaHseNcRes['hse_review_nc'] ?? 0);
+                $hseClosedNc = (int)($gembaHseNcRes['hse_closed_nc'] ?? 0);
+
+                $gembaTotalNc = (int)($gembaHseNcRes['gemba_total_nc'] ?? 0);
+                $gembaOpenNc = (int)($gembaHseNcRes['gemba_open_nc'] ?? 0);
+                $gembaWorkingNc = (int)($gembaHseNcRes['gemba_working_nc'] ?? 0);
+                $gembaReviewNc = (int)($gembaHseNcRes['gemba_review_nc'] ?? 0);
+                $gembaClosedNc = (int)($gembaHseNcRes['gemba_closed_nc'] ?? 0);
             }
-        }
 
-        // ════════════════════════════════════════════════════════════
-        // SECTION C: GEMBA AUDIT DASHBOARD (Walk / Event Workflow)
-        // ════════════════════════════════════════════════════════════
-        $gembaTotal = 0;
-        $gembaLatest = 0;
-        $gembaReaudits = 0;
-        $gembaPending = 0;
-        $gembaDue = 0;
-        $gembaOverdue = 0;
-        $gembaCompleted = 0;
-        $gembaLastDate = '-';
-        $gembaNextDate = 'Workflow Driven';
-        $gembaTotalNc = 0;
-        $gembaOpenNc = 0;
-        $gembaWorkingNc = 0;
-        $gembaClusterReviewNc = 0;
-        $gembaAuditorReviewNc = 0;
-        $gembaClosedNc = 0;
-        $gembaPendingActions = 0;
-        $gembaCompletedActions = 0;
-        $gembaOverdueActions = 0;
-
-        if ($selectedModule === 'all' || strtolower($selectedModule) === 'gemba') {
-            $gembaWhere = "LOWER(TRIM(auditor_name)) IN ({$inAliases})";
+            // Part 2.3: Pure Gemba Walk Sessions and Schedule from alert_gemba_audits
+            $gembaWhere = "status = 1 AND LOWER(TRIM(auditor_name)) IN ({$inAliases}) AND (source_module != 'hse_audit' OR source_module IS NULL)";
             if ($fromDate && $toDate) {
                 $gembaWhere .= " AND audit_report_date >= '{$fromDate}' AND audit_report_date <= '{$toDate}'";
             } elseif ($yearFilter) {
                 $gembaWhere .= " AND YEAR(audit_report_date) = {$yearFilter}";
             }
 
-            // Gemba Walks and Observations
             $gembaAuditSql = "SELECT 
-                COUNT(*) as total_points,
-                COUNT(DISTINCT site_name, audit_report_date) as total_events,
+                COUNT(DISTINCT site_name, audit_report_date) as total_walks,
                 MAX(audit_report_date) as last_gemba_date,
-                SUM(IF(nc_status = 2, 1, 0)) as auditor_review_gemba,
-                SUM(IF(nc_status IN (0, 1, 5, 2), 1, 0)) as pending_gemba,
-                SUM(IF(target_date < '{$today}' AND target_date != '0000-00-00' AND nc_status NOT IN (3, 4), 1, 0)) as overdue_gemba,
-                SUM(IF(target_date BETWEEN '{$today}' AND DATE_ADD('{$today}', INTERVAL 15 DAY) AND nc_status NOT IN (3, 4), 1, 0)) as due_gemba,
-                SUM(IF(nc_status = 0, 1, 0)) as open_nc,
-                SUM(IF(nc_status = 1, 1, 0)) as working_nc,
-                SUM(IF(nc_status = 5, 1, 0)) as cluster_review_nc,
-                SUM(IF(nc_status = 3, 1, 0)) as closed_nc
+                SUM(IF(target_date IS NOT NULL AND target_date != '0000-00-00' AND target_date >= '{$today}' AND nc_status NOT IN (3, 4), 1, 0)) as pending_gemba,
+                SUM(IF(target_date IS NOT NULL AND target_date != '0000-00-00' AND target_date > DATE_ADD('{$today}', INTERVAL 15 DAY) AND nc_status NOT IN (3, 4), 1, 0)) as upcoming_gemba,
+                SUM(IF(target_date IS NOT NULL AND target_date != '0000-00-00' AND target_date BETWEEN '{$today}' AND DATE_ADD('{$today}', INTERVAL 15 DAY) AND nc_status NOT IN (3, 4), 1, 0)) as due_gemba,
+                SUM(IF(target_date IS NOT NULL AND target_date != '0000-00-00' AND target_date < '{$today}' AND nc_status NOT IN (3, 4), 1, 0)) as overdue_gemba
             FROM alert_gemba_audits
             WHERE {$gembaWhere}";
             $gembaRes = $db->query($gembaAuditSql)->getRowArray();
 
             if ($gembaRes) {
-                $gembaTotal = (int)($gembaRes['total_events'] ?? 0);
-                $gembaLatest = $gembaTotal;
-                $gembaReaudits = 0; // Gemba does not have formal re-audit structure
-                $gembaPending = (int)($gembaRes['auditor_review_gemba'] ?? 0);
+                $gembaWalks = (int)($gembaRes['total_walks'] ?? 0);
+                $gembaPending = (int)($gembaRes['pending_gemba'] ?? 0);
+                $gembaUpcoming = (int)($gembaRes['upcoming_gemba'] ?? 0);
                 $gembaDue = (int)($gembaRes['due_gemba'] ?? 0);
                 $gembaOverdue = (int)($gembaRes['overdue_gemba'] ?? 0);
-                $gembaCompleted = (int)($gembaRes['closed_nc'] ?? 0);
                 $gembaLastDate = $gembaRes['last_gemba_date'] ?: '-';
-
-                $gembaTotalNc = (int)($gembaRes['total_points'] ?? 0);
-                $gembaOpenNc = (int)($gembaRes['open_nc'] ?? 0);
-                $gembaWorkingNc = (int)($gembaRes['working_nc'] ?? 0);
-                $gembaClusterReviewNc = (int)($gembaRes['cluster_review_nc'] ?? 0);
-                $gembaAuditorReviewNc = (int)($gembaRes['auditor_review_gemba'] ?? 0);
-                $gembaClosedNc = (int)($gembaRes['closed_nc'] ?? 0);
-                $gembaPendingActions = (int)($gembaRes['pending_gemba'] ?? 0);
-                $gembaCompletedActions = $gembaClosedNc;
-                $gembaOverdueActions = $gembaOverdue;
             }
         }
 
-        // Summary Aggregates
-        $totalAuditsPerformed = $oeTotal + $hseTotal + $gembaTotal;
-        $totalPendingAudits = $oePending + $hsePending + $gembaPending;
-        $totalOverdueAudits = $oeOverdue + $hseOverdue + $gembaOverdue;
-        $totalDueAudits = $oeDue + $hseDue + $gembaDue;
-        $totalReaudits = $oeReaudits + $hseReaudits;
-        $totalNcCompleted = $oeCompletedActions + $hseCompletedActions + $gembaCompletedActions;
-        $totalNcPending = $oePendingActions + $hsePendingActions + $gembaPendingActions;
-        $totalNcOverdue = $oeOverdueActions + $hseOverdueActions + $gembaOverdueActions;
+        // Combined Gemba/HSE Metrics (Zero double-counting)
+        $gembaHseTotalAudits = $hseTotal + $gembaWalks;
+        $gembaHsePerformedAudits = $hsePerformed + $gembaWalks;
+        $gembaHseReaudits = $hseReaudits;
+        $gembaHsePendingAudits = $hsePending + $gembaPending;
+        $gembaHseUpcomingAudits = $hseUpcoming + $gembaUpcoming;
+        $gembaHseDueAudits = $hseDue + $gembaDue;
+        $gembaHseOverdueAudits = $hseOverdue + $gembaOverdue;
+
+        $gembaHseLastDate = '-';
+        if ($hseLastDate !== '-' && $gembaLastDate !== '-') {
+            $gembaHseLastDate = (strtotime($hseLastDate) > strtotime($gembaLastDate)) ? $hseLastDate : $gembaLastDate;
+        } elseif ($hseLastDate !== '-') {
+            $gembaHseLastDate = $hseLastDate;
+        } elseif ($gembaLastDate !== '-') {
+            $gembaHseLastDate = $gembaLastDate;
+        }
+
+        // Summary Aggregates across the 2 categories
+        $totalAudits = $oeTotal + $gembaHseTotalAudits;
+        $totalPerformed = $oePerformed + $gembaHsePerformedAudits;
+        $totalReaudits = $oeReaudits + $gembaHseReaudits;
+        $totalPending = $oePending + $gembaHsePendingAudits;
+        $totalUpcoming = ($oeUpcoming ?? 0) + $gembaHseUpcomingAudits;
+        $totalDue = $oeDue + $gembaHseDueAudits;
+        $totalOverdue = $oeOverdue + $gembaHseOverdueAudits;
+
+        $totalNc = $oeTotalNc + $gembaHseTotalNc;
+        $totalOpenNc = $oeOpenNc + $gembaHseOpenNc;
+        $totalWorkingNc = $oeWorkingNc + $gembaHseWorkingNc;
+        $totalReviewNc = $oeReviewNc + $gembaHseReviewNc;
+        $totalClosedNc = $oeClosedNc + $gembaHseClosedNc;
 
         return [
-            // Backward-compatible top-level keys
-            'total_audits_performed' => $totalAuditsPerformed,
-            'pending_audits' => $totalPendingAudits,
-            'overdue_audits' => $totalOverdueAudits,
-            'due_audits' => $totalDueAudits,
-            'reaudits_performed' => $totalReaudits,
-            'nc_actions_completed' => $totalNcCompleted,
-            'nc_actions_pending' => $totalNcPending,
-            'nc_actions_overdue' => $totalNcOverdue,
-            'oe_audits' => $oeTotal,
-            'hse_audits' => $hseTotal,
-            'gemba_audits' => $gembaTotal,
-            'oe_reaudits' => $oeReaudits,
-            'hse_reaudits' => $hseReaudits,
-            'oe_pending' => $oePending,
-            'hse_pending' => $hsePending,
-            'gemba_pending' => $gembaPending,
-
-            // Section 3: Distinct Module-Specific Structures
+            // Overall summary
             'summary' => [
-                'total_audits_performed' => $totalAuditsPerformed,
-                'pending_audits' => $totalPendingAudits,
-                'overdue_audits' => $totalOverdueAudits,
-                'due_audits' => $totalDueAudits,
-                'reaudits_performed' => $totalReaudits,
-                'nc_actions_completed' => $totalNcCompleted,
-                'nc_actions_pending' => $totalNcPending,
-                'nc_actions_overdue' => $totalNcOverdue
+                'total_audits' => $totalAudits,
+                'performed_audits' => $totalPerformed,
+                'reaudits' => $totalReaudits,
+                'pending_audits' => $totalPending,
+                'upcoming_audits' => $totalUpcoming,
+                'due_audits' => $totalDue,
+                'overdue_audits' => $totalOverdue,
+                'total_ncs' => $totalNc,
+                'open_ncs' => $totalOpenNc,
+                'working_ncs' => $totalWorkingNc,
+                'review_ncs' => $totalReviewNc,
+                'closed_ncs' => $totalClosedNc,
+                'actions_completed' => $totalClosedNc,
+                'actions_pending' => $totalOpenNc + $totalWorkingNc + $totalReviewNc
             ],
+
+            // Category 1: OE Audits
             'oe' => [
                 'total_audits' => $oeTotal,
-                'latest_performed' => $oeLatest,
-                'reaudits_performed' => $oeReaudits,
+                'performed_audits' => $oePerformed,
+                'reaudits' => $oeReaudits,
                 'pending_audits' => $oePending,
+                'upcoming_audits' => $oeUpcoming ?? 0,
                 'due_audits' => $oeDue,
                 'overdue_audits' => $oeOverdue,
-                'completed_audits' => $oeCompleted,
                 'last_audit_date' => $oeLastDate,
                 'next_audit_date' => $oeNextDate,
                 'frequency' => '1 Month (Monthly)',
                 'total_ncs' => $oeTotalNc,
                 'open_ncs' => $oeOpenNc,
                 'working_ncs' => $oeWorkingNc,
-                'cluster_review_ncs' => $oeClusterReviewNc,
-                'auditor_review_ncs' => $oeAuditorReviewNc,
+                'review_ncs' => $oeReviewNc,
                 'closed_ncs' => $oeClosedNc,
-                'pending_actions' => $oePendingActions,
-                'completed_actions' => $oeCompletedActions,
-                'overdue_actions' => $oeOverdueActions
+                'pending_actions' => $oeOpenNc + $oeWorkingNc + $oeReviewNc
             ],
-            'hse' => [
-                'total_audits' => $hseTotal,
-                'latest_performed' => $hseLatest,
-                'reaudits_performed' => $hseReaudits,
-                'pending_audits' => $hsePending,
-                'due_audits' => $hseDue,
-                'overdue_audits' => $hseOverdue,
-                'completed_audits' => $hseCompleted,
-                'last_audit_date' => $hseLastDate,
-                'next_audit_date' => $hseNextDate,
-                'frequency' => '3 Months (Quarterly)',
-                'total_ncs' => $hseTotalNc,
-                'open_ncs' => $hseOpenNc,
-                'working_ncs' => $hseWorkingNc,
-                'cluster_review_ncs' => $hseClusterReviewNc,
-                'auditor_review_ncs' => $hseAuditorReviewNc,
-                'closed_ncs' => $hseClosedNc,
-                'pending_actions' => $hsePendingActions,
-                'completed_actions' => $hseCompletedActions,
-                'overdue_actions' => $hseOverdueActions
-            ],
-            'gemba' => [
-                'total_audits' => $gembaTotal,
-                'latest_performed' => $gembaLatest,
-                'previous_audits' => $gembaReaudits,
-                'pending_audits' => $gembaPending,
-                'due_audits' => $gembaDue,
-                'overdue_audits' => $gembaOverdue,
-                'completed_audits' => $gembaCompleted,
-                'last_audit_date' => $gembaLastDate,
-                'next_audit_date' => $gembaNextDate,
-                'frequency' => 'Walk / Event-Based',
-                'total_ncs' => $gembaTotalNc,
-                'open_ncs' => $gembaOpenNc,
-                'working_ncs' => $gembaWorkingNc,
-                'cluster_review_ncs' => $gembaClusterReviewNc,
-                'auditor_review_ncs' => $gembaAuditorReviewNc,
-                'closed_ncs' => $gembaClosedNc,
-                'pending_actions' => $gembaPendingActions,
-                'completed_actions' => $gembaCompletedActions,
-                'overdue_actions' => $gembaOverdueActions
-            ]
-        ];
-    }
 
-    /**
-     * Graph 1: Performed vs Pending Audits
-     */
-    private function getPerformedVsPendingChart(array $kpis): array
-    {
-        return [
-            'categories' => ['OE Audits', 'HSE Audits', 'Gemba Audits'],
-            'series' => [
-                [
-                    'name' => 'Audits Performed',
-                    'data' => [
-                        (int)$kpis['oe']['latest_performed'],
-                        (int)$kpis['hse']['latest_performed'],
-                        (int)$kpis['gemba']['latest_performed']
-                    ]
+            // Category 2: Gemba/HSE Audits (Combined)
+            'gemba_hse' => [
+                'total_audits' => $gembaHseTotalAudits,
+                'performed_audits' => $gembaHsePerformedAudits,
+                'reaudits' => $gembaHseReaudits,
+                'pending_audits' => $gembaHsePendingAudits,
+                'upcoming_audits' => $gembaHseUpcomingAudits,
+                'due_audits' => $gembaHseDueAudits,
+                'overdue_audits' => $gembaHseOverdueAudits,
+                'last_audit_date' => $gembaHseLastDate,
+                'next_audit_date' => '3 Months / Event Workflow',
+                'frequency' => 'Quarterly & Walk Workflow',
+                'total_ncs' => $gembaHseTotalNc,
+                'open_ncs' => $gembaHseOpenNc,
+                'working_ncs' => $gembaHseWorkingNc,
+                'review_ncs' => $gembaHseReviewNc,
+                'closed_ncs' => $gembaHseClosedNc,
+                'pending_actions' => $gembaHseOpenNc + $gembaHseWorkingNc + $gembaHseReviewNc,
+
+                // Component breakdown for transparency
+                'hse_portion' => [
+                    'total_audits' => $hseTotal,
+                    'performed_audits' => $hsePerformed,
+                    'reaudits' => $hseReaudits,
+                    'pending_audits' => $hsePending,
+                    'total_ncs' => $hseTotalNc,
+                    'open_ncs' => $hseOpenNc,
+                    'working_ncs' => $hseWorkingNc,
+                    'review_ncs' => $hseReviewNc,
+                    'closed_ncs' => $hseClosedNc
                 ],
-                [
-                    'name' => 'Pending Audits',
-                    'data' => [
-                        (int)$kpis['oe']['pending_audits'],
-                        (int)$kpis['hse']['pending_audits'],
-                        (int)$kpis['gemba']['pending_audits']
-                    ]
-                ],
-                [
-                    'name' => 'Overdue Audits',
-                    'data' => [
-                        (int)$kpis['oe']['overdue_audits'],
-                        (int)$kpis['hse']['overdue_audits'],
-                        (int)$kpis['gemba']['overdue_audits']
-                    ]
+                'gemba_portion' => [
+                    'walk_sessions' => $gembaWalks,
+                    'pending_audits' => $gembaPending,
+                    'total_ncs' => $gembaTotalNc,
+                    'open_ncs' => $gembaOpenNc,
+                    'working_ncs' => $gembaWorkingNc,
+                    'review_ncs' => $gembaReviewNc,
+                    'closed_ncs' => $gembaClosedNc
                 ]
             ]
         ];
     }
 
     /**
-     * Graph 2: Audit Due and Overdue Status
+     * Graph 1: Performed vs Pending Audits (OE, Gemba/HSE, or Both based on scope)
      */
-    private function getDueOverdueStatusChart(array $kpis): array
+    private function getPerformedVsPendingChart(array $kpis, string $selectedModule = 'all'): array
     {
-        $completed = (int)$kpis['summary']['total_audits_performed'];
-        $pending = (int)$kpis['summary']['pending_audits'];
-        $due = (int)$kpis['summary']['due_audits'];
-        $overdue = (int)$kpis['summary']['overdue_audits'];
+        $checkOe = ($selectedModule === 'all' || strcasecmp($selectedModule, 'oe') === 0);
+        $checkGembaHse = ($selectedModule === 'all' || in_array(strtolower($selectedModule), ['gemba_hse', 'gemba/hse', 'gemba', 'hse']));
 
-        $upcoming = max(0, $pending - $due);
+        $categories = [];
+        $performed = [];
+        $reaudits = [];
+        $pending = [];
+        $overdue = [];
+
+        if ($checkOe) {
+            $categories[] = 'OE Audits';
+            $performed[] = (int)($kpis['oe']['performed_audits'] ?? 0);
+            $reaudits[] = (int)($kpis['oe']['reaudits'] ?? 0);
+            $pending[] = (int)($kpis['oe']['pending_audits'] ?? 0);
+            $overdue[] = (int)($kpis['oe']['overdue_audits'] ?? 0);
+        }
+
+        if ($checkGembaHse) {
+            $categories[] = 'Gemba/HSE Audits';
+            $performed[] = (int)($kpis['gemba_hse']['performed_audits'] ?? 0);
+            $reaudits[] = (int)($kpis['gemba_hse']['reaudits'] ?? 0);
+            $pending[] = (int)($kpis['gemba_hse']['pending_audits'] ?? 0);
+            $overdue[] = (int)($kpis['gemba_hse']['overdue_audits'] ?? 0);
+        }
 
         return [
+            'categories' => $categories,
+            'series' => [
+                [
+                    'name' => 'Performed Audits',
+                    'data' => $performed
+                ],
+                [
+                    'name' => 'Re-Audits',
+                    'data' => $reaudits
+                ],
+                [
+                    'name' => 'Pending Audits',
+                    'data' => $pending
+                ],
+                [
+                    'name' => 'Overdue Audits',
+                    'data' => $overdue
+                ]
+            ]
+        ];
+    }
+
+    /**
+     * Graph 2: Audit Due and Overdue Status (Donut Chart) - Dynamically Scoped to OE or Gemba/HSE
+     */
+    private function getDueOverdueStatusChart(array $kpis, string $selectedModule = 'all'): array
+    {
+        $isOeOnly = (strcasecmp($selectedModule, 'oe') === 0);
+        $source = $isOeOnly ? ($kpis['oe'] ?? []) : ($kpis['gemba_hse'] ?? []);
+        $title = $isOeOnly ? 'Graph 2: OE Audit Schedule Health' : 'Graph 2: Gemba/HSE Schedule Health';
+        $badge = $isOeOnly ? 'OE Only' : 'Gemba/HSE (3-Month Cycle)';
+        $completed = (int)($source['performed_audits'] ?? 0);
+        $upcoming = (int)($source['upcoming_audits'] ?? 0);
+        $due = (int)($source['due_audits'] ?? 0);
+        $overdue = (int)($source['overdue_audits'] ?? 0);
+
+        return [
+            'title' => $title,
+            'scope_badge' => $badge,
+            'module' => $isOeOnly ? 'OE' : 'Gemba_HSE',
             'labels' => ['Completed', 'Upcoming', 'Due Soon (15d)', 'Overdue'],
             'series' => [$completed, $upcoming, $due, $overdue],
             'totals' => [
@@ -739,7 +808,7 @@ class Profile extends BaseController
     }
 
     /**
-     * Graph 3: Monthly Audit Trend (Per Yearly Scope - 12 Months)
+     * Graph 3: Monthly Audit Trend (Per Yearly Scope - 12 Months: OE vs Gemba/HSE)
      */
     private function getMonthlyTrendChart($db, int $auditorId, string $auditorName, int $year, string $selectedModule): array
     {
@@ -751,11 +820,13 @@ class Profile extends BaseController
         $monthLabels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
         $oeSeries = array_fill_keys($monthKeys, 0);
-        $hseSeries = array_fill_keys($monthKeys, 0);
-        $gembaSeries = array_fill_keys($monthKeys, 0);
+        $gembaHseSeries = array_fill_keys($monthKeys, 0);
+
+        $checkOe = ($selectedModule === 'all' || strcasecmp($selectedModule, 'oe') === 0);
+        $checkGembaHse = ($selectedModule === 'all' || in_array(strtolower($selectedModule), ['gemba_hse', 'gemba/hse', 'gemba', 'hse']));
 
         // 1. OE Monthly
-        if ($selectedModule === 'all' || strtolower($selectedModule) === 'oe') {
+        if ($checkOe) {
             $oeSql = "SELECT DATE_FORMAT(audit_date, '%m') as m, COUNT(*) as c
                       FROM alert_final_structured_audit
                       WHERE (audit_by_user_id = {$auditorId} OR LOWER(TRIM(auditor_name)) IN ({$inAliases}))
@@ -769,8 +840,9 @@ class Profile extends BaseController
             }
         }
 
-        // 2. HSE Monthly
-        if ($selectedModule === 'all' || strtolower($selectedModule) === 'hse') {
+        // 2. Gemba/HSE Monthly (HSE Audits + Pure Gemba Walks)
+        if ($checkGembaHse) {
+            // HSE audits
             $hseSql = "SELECT SUBSTRING(audit_date, 6, 2) as m, COUNT(*) as c
                        FROM alert_hse_audit_master
                        WHERE (LOWER(TRIM(auditor_name)) IN ({$inAliases}) OR LOWER(TRIM(perform_audit_by)) IN ({$inAliases}))
@@ -778,36 +850,32 @@ class Profile extends BaseController
                        GROUP BY m";
             $hseRows = $db->query($hseSql)->getResultArray();
             foreach ($hseRows as $r) {
-                if (isset($hseSeries[$r['m']])) {
-                    $hseSeries[$r['m']] = (int)$r['c'];
+                if (isset($gembaHseSeries[$r['m']])) {
+                    $gembaHseSeries[$r['m']] += (int)$r['c'];
                 }
             }
-        }
 
-        // 3. Gemba Monthly (Walks)
-        if ($selectedModule === 'all' || strtolower($selectedModule) === 'gemba') {
+            // Pure Gemba walks
             $gembaSql = "SELECT DATE_FORMAT(audit_report_date, '%m') as m, COUNT(DISTINCT site_name, audit_report_date) as c
                          FROM alert_gemba_audits
                          WHERE LOWER(TRIM(auditor_name)) IN ({$inAliases})
+                           AND (source_module != 'hse_audit' OR source_module IS NULL)
                            AND YEAR(audit_report_date) = {$year}
                          GROUP BY m";
             $gembaRows = $db->query($gembaSql)->getResultArray();
             foreach ($gembaRows as $r) {
-                if (isset($gembaSeries[$r['m']])) {
-                    $gembaSeries[$r['m']] = (int)$r['c'];
+                if (isset($gembaHseSeries[$r['m']])) {
+                    $gembaHseSeries[$r['m']] += (int)$r['c'];
                 }
             }
         }
 
         $series = [];
-        if ($selectedModule === 'all' || strtolower($selectedModule) === 'oe') {
+        if ($checkOe) {
             $series[] = ['name' => 'OE Audits (Monthly)', 'data' => array_values($oeSeries)];
         }
-        if ($selectedModule === 'all' || strtolower($selectedModule) === 'hse') {
-            $series[] = ['name' => 'HSE Audits (Quarterly)', 'data' => array_values($hseSeries)];
-        }
-        if ($selectedModule === 'all' || strtolower($selectedModule) === 'gemba') {
-            $series[] = ['name' => 'Gemba Audits (Walks)', 'data' => array_values($gembaSeries)];
+        if ($checkGembaHse) {
+            $series[] = ['name' => 'Gemba/HSE Audits (Combined)', 'data' => array_values($gembaHseSeries)];
         }
 
         return [
@@ -818,101 +886,117 @@ class Profile extends BaseController
     }
 
     /**
-     * Graph 4: Re-Audit Analysis
+     * Graph 4: Re-Audit Analysis (OE, Gemba/HSE, or Both based on scope)
      */
-    private function getReauditPerformanceChart(array $kpis): array
+    private function getReauditPerformanceChart(array $kpis, string $selectedModule = 'all'): array
     {
+        $checkOe = ($selectedModule === 'all' || strcasecmp($selectedModule, 'oe') === 0);
+        $checkGembaHse = ($selectedModule === 'all' || in_array(strtolower($selectedModule), ['gemba_hse', 'gemba/hse', 'gemba', 'hse']));
+
+        $categories = [];
+        $performedData = [];
+        $reauditData = [];
+
+        if ($checkOe) {
+            $categories[] = 'OE Audits';
+            $performedData[] = (int)($kpis['oe']['performed_audits'] ?? 0);
+            $reauditData[] = (int)($kpis['oe']['reaudits'] ?? 0);
+        }
+        if ($checkGembaHse) {
+            $categories[] = 'Gemba/HSE Audits';
+            $performedData[] = (int)($kpis['gemba_hse']['performed_audits'] ?? 0);
+            $reauditData[] = (int)($kpis['gemba_hse']['reaudits'] ?? 0);
+        }
+
         return [
-            'categories' => ['OE Audits', 'HSE Audits'],
+            'categories' => $categories,
             'series' => [
                 [
-                    'name' => 'Latest Performed Audits',
-                    'data' => [
-                        (int)$kpis['oe']['latest_performed'],
-                        (int)$kpis['hse']['latest_performed']
-                    ]
+                    'name' => 'Performed Audits (Original)',
+                    'data' => $performedData
                 ],
                 [
-                    'name' => 'Previous Audits / Re-Audits',
-                    'data' => [
-                        (int)$kpis['oe']['reaudits_performed'],
-                        (int)$kpis['hse']['reaudits_performed']
-                    ]
+                    'name' => 'Follow-up Re-Audits',
+                    'data' => $reauditData
                 ]
             ],
             'totals' => [
-                'latest_total' => (int)$kpis['oe']['latest_performed'] + (int)$kpis['hse']['latest_performed'],
-                'reaudit_total' => (int)$kpis['oe']['reaudits_performed'] + (int)$kpis['hse']['reaudits_performed']
+                'performed_total' => array_sum($performedData),
+                'reaudit_total' => array_sum($reauditData)
             ]
         ];
     }
 
     /**
-     * Dedicated NC Analytics (Status Distribution & Action Progress)
+     * Dedicated NC Analytics (Status Distribution & Action Progress for OE, Gemba/HSE, or Both)
      */
-    private function getNcAnalytics(array $kpis): array
+    private function getNcAnalytics(array $kpis, string $selectedModule = 'all'): array
     {
+        $checkOe = ($selectedModule === 'all' || strcasecmp($selectedModule, 'oe') === 0);
+        $checkGembaHse = ($selectedModule === 'all' || in_array(strtolower($selectedModule), ['gemba_hse', 'gemba/hse', 'gemba', 'hse']));
+
+        $categories = [];
+        $openData = [];
+        $workingData = [];
+        $reviewData = [];
+        $closedData = [];
+
+        if ($checkOe) {
+            $categories[] = 'OE Audit NCs';
+            $openData[] = (int)($kpis['oe']['open_ncs'] ?? 0);
+            $workingData[] = (int)($kpis['oe']['working_ncs'] ?? 0);
+            $reviewData[] = (int)($kpis['oe']['review_ncs'] ?? 0);
+            $closedData[] = (int)($kpis['oe']['closed_ncs'] ?? 0);
+        }
+        if ($checkGembaHse) {
+            $categories[] = 'Gemba/HSE Audit NCs';
+            $openData[] = (int)($kpis['gemba_hse']['open_ncs'] ?? 0);
+            $workingData[] = (int)($kpis['gemba_hse']['working_ncs'] ?? 0);
+            $reviewData[] = (int)($kpis['gemba_hse']['review_ncs'] ?? 0);
+            $closedData[] = (int)($kpis['gemba_hse']['closed_ncs'] ?? 0);
+        }
+
+        // Action progress totals
+        $source = ($checkOe && !$checkGembaHse) ? ($kpis['oe'] ?? []) : ((!$checkOe && $checkGembaHse) ? ($kpis['gemba_hse'] ?? []) : ($kpis['summary'] ?? []));
+
         return [
             'distribution' => [
-                'categories' => ['OE Module', 'HSE Module', 'Gemba Module'],
+                'categories' => $categories,
                 'series' => [
                     [
                         'name' => 'Open',
-                        'data' => [
-                            (int)$kpis['oe']['open_ncs'],
-                            (int)$kpis['hse']['open_ncs'],
-                            (int)$kpis['gemba']['open_ncs']
-                        ]
+                        'data' => $openData
                     ],
                     [
-                        'name' => 'Working',
-                        'data' => [
-                            (int)$kpis['oe']['working_ncs'],
-                            (int)$kpis['hse']['working_ncs'],
-                            (int)$kpis['gemba']['working_ncs']
-                        ]
+                        'name' => 'Under Action / Working',
+                        'data' => $workingData
                     ],
                     [
-                        'name' => 'Cluster Review',
-                        'data' => [
-                            (int)$kpis['oe']['cluster_review_ncs'],
-                            (int)$kpis['hse']['cluster_review_ncs'],
-                            (int)$kpis['gemba']['cluster_review_ncs']
-                        ]
+                        'name' => 'Pending Review',
+                        'data' => $reviewData
                     ],
                     [
-                        'name' => 'Auditor Review',
-                        'data' => [
-                            (int)$kpis['oe']['auditor_review_ncs'],
-                            (int)$kpis['hse']['auditor_review_ncs'],
-                            (int)$kpis['gemba']['auditor_review_ncs']
-                        ]
-                    ],
-                    [
-                        'name' => 'Closed',
-                        'data' => [
-                            (int)$kpis['oe']['closed_ncs'],
-                            (int)$kpis['hse']['closed_ncs'],
-                            (int)$kpis['gemba']['closed_ncs']
-                        ]
+                        'name' => 'Closed / Resolved',
+                        'data' => $closedData
                     ]
                 ]
             ],
             'action_progress' => [
-                'labels' => ['Completed Actions', 'Pending Review Actions', 'Overdue Actions'],
+                'labels' => ['Closed / Resolved', 'Pending Review', 'Under Action', 'Open'],
                 'series' => [
-                    (int)$kpis['summary']['nc_actions_completed'],
-                    (int)$kpis['summary']['nc_actions_pending'],
-                    (int)$kpis['summary']['nc_actions_overdue']
+                    (int)($source['closed_ncs'] ?? 0),
+                    (int)($source['review_ncs'] ?? 0),
+                    (int)($source['working_ncs'] ?? 0),
+                    (int)($source['open_ncs'] ?? 0)
                 ]
             ]
         ];
     }
 
     /**
-     * Section 6: Audit Schedule and Report Table
+     * Audit Schedule and Status Report Table (Grouped by OE and Gemba/HSE)
      */
-    private function getAuditScheduleTable($db, int $auditorId, string $auditorName, string $selectedModule, string $selectedStatus, int $year): array
+    private function getAuditScheduleTable($db, int $auditorId, string $auditorName, string $selectedModule, string $selectedStatus, int $year, $fromDate = null, $toDate = null): array
     {
         $today = date('Y-m-d');
         $aliases = $this->getAuditorAliases($db, $auditorId, $auditorName);
@@ -920,11 +1004,20 @@ class Profile extends BaseController
         $inAliases = implode(', ', $escapedAliases);
 
         $table = [];
+        $checkOe = ($selectedModule === 'all' || strcasecmp($selectedModule, 'oe') === 0);
+        $checkGembaHse = ($selectedModule === 'all' || in_array(strtolower($selectedModule), ['gemba_hse', 'gemba/hse', 'gemba', 'hse']));
 
         // 1. OE Sites Schedule
-        if ($selectedModule === 'all' || strtolower($selectedModule) === 'oe') {
+        if ($checkOe) {
+            $oeWhere = "(a.audit_by_user_id = {$auditorId} OR LOWER(TRIM(a.auditor_name)) IN ({$inAliases}))";
+            if ($fromDate && $toDate) {
+                $oeWhere .= " AND a.audit_date >= '{$fromDate}' AND a.audit_date <= '{$toDate}'";
+            } elseif ($year) {
+                $oeWhere .= " AND YEAR(a.audit_date) = {$year}";
+            }
+
             $oeSql = "SELECT 
-                'OE' as module,
+                'OE' as category,
                 a.client_name,
                 a.location as site_name,
                 a.structured_audit_id as audit_id,
@@ -938,15 +1031,8 @@ class Profile extends BaseController
                 (SELECT COUNT(*) FROM alert_final_structured_audit_details d WHERE d.structured_audit_id = a.structured_audit_id AND d.audit_finding = 'NO') as total_ncs,
                 (SELECT COUNT(*) FROM alert_final_structured_audit_details d WHERE d.structured_audit_id = a.structured_audit_id AND d.audit_finding = 'NO' AND d.status IN (0, 1, 6, 2)) as pending_nc_actions
             FROM alert_final_structured_audit a
-            INNER JOIN (
-                SELECT location, MAX(audit_date) as max_date
-                FROM alert_final_structured_audit
-                WHERE (audit_by_user_id = {$auditorId} OR LOWER(TRIM(auditor_name)) IN ({$inAliases}))
-                GROUP BY location
-            ) latest ON latest.location = a.location AND latest.max_date = a.audit_date
-            WHERE (a.audit_by_user_id = {$auditorId} OR LOWER(TRIM(auditor_name)) IN ({$inAliases}))
-            GROUP BY a.location
-            ORDER BY next_audit_date ASC";
+            WHERE {$oeWhere}
+            ORDER BY a.audit_date DESC";
 
             $oeRows = $db->query($oeSql)->getResultArray();
             foreach ($oeRows as $r) {
@@ -954,7 +1040,7 @@ class Profile extends BaseController
                     continue;
                 }
                 $table[] = [
-                    'module' => 'OE',
+                    'category' => 'OE',
                     'client_name' => $r['client_name'] ?: 'FM Logistic',
                     'site_name' => $r['site_name'] ?: 'N/A',
                     'latest_audit_date' => !empty($r['latest_audit_date']) ? date('d-M-Y', strtotime($r['latest_audit_date'])) : '-',
@@ -971,30 +1057,33 @@ class Profile extends BaseController
             }
         }
 
-        // 2. HSE Sites Schedule
-        if ($selectedModule === 'all' || strtolower($selectedModule) === 'hse') {
+        // 2. Gemba/HSE Sites Schedule (HSE Audits + Pure Gemba Walks)
+        if ($checkGembaHse) {
+            // Part 2.1: HSE Audits
+            $hseWhere = "(LOWER(TRIM(m.auditor_name)) IN ({$inAliases}) OR LOWER(TRIM(m.perform_audit_by)) IN ({$inAliases}))";
+            if ($fromDate && $toDate) {
+                $hseWhere .= " AND m.audit_date >= '{$fromDate}' AND m.audit_date <= '{$toDate}'";
+            } elseif ($year) {
+                $hseWhere .= " AND SUBSTRING(m.audit_date, 1, 4) = '{$year}'";
+            }
+
             $hseSql = "SELECT 
-                'HSE' as module,
+                'Gemba/HSE' as category,
                 m.client_name,
                 m.location as site_name,
                 m.hse_audit_id as audit_id,
                 m.audit_no,
                 m.audit_date as latest_audit_date,
                 m.report_date,
-                IF(m.report_date != '0000-00-00' AND m.report_date IS NOT NULL, m.report_date, DATE_ADD(m.audit_date, INTERVAL 3 MONTH)) as next_audit_date,
+                COALESCE(NULLIF(m.next_date, '0000-00-00'), NULLIF(m.report_date, '0000-00-00'), DATE_ADD(m.audit_date, INTERVAL 3 MONTH)) as next_audit_date,
                 '3 Months (Quarterly)' as audit_frequency,
                 IF(m.hse_audit_id = (SELECT MAX(h2.hse_audit_id) FROM alert_hse_audit_master h2 WHERE h2.audit_no = m.audit_no), 'Performed Audit', 'Re-Audit') as audit_type,
-                IF(m.report_date < '{$today}' AND m.report_date != '0000-00-00', 'Overdue', IF(m.report_date <= DATE_ADD('{$today}', INTERVAL 15 DAY), 'Due', 'Upcoming')) as audit_status,
+                IF(COALESCE(NULLIF(m.next_date, '0000-00-00'), NULLIF(m.report_date, '0000-00-00'), DATE_ADD(m.audit_date, INTERVAL 3 MONTH)) < '{$today}', 'Overdue', IF(COALESCE(NULLIF(m.next_date, '0000-00-00'), NULLIF(m.report_date, '0000-00-00'), DATE_ADD(m.audit_date, INTERVAL 3 MONTH)) <= DATE_ADD('{$today}', INTERVAL 15 DAY), 'Due', 'Upcoming')) as audit_status,
                 (SELECT COUNT(*) FROM alert_hse_audit_details d WHERE d.hse_audit_id = m.hse_audit_id AND d.finding = 'NO') as total_ncs,
                 (SELECT COUNT(*) FROM alert_hse_audit_details d WHERE d.hse_audit_id = m.hse_audit_id AND d.finding = 'NO' AND d.nc_status IN (0, 1, 5, 2)) as pending_nc_actions
             FROM alert_hse_audit_master m
-            INNER JOIN (
-                SELECT location, MAX(hse_audit_id) as max_id
-                FROM alert_hse_audit_master
-                WHERE (LOWER(TRIM(auditor_name)) IN ({$inAliases}) OR LOWER(TRIM(perform_audit_by)) IN ({$inAliases}))
-                GROUP BY location
-            ) latest ON latest.max_id = m.hse_audit_id
-            ORDER BY next_audit_date ASC";
+            WHERE {$hseWhere}
+            ORDER BY m.audit_date DESC";
 
             $hseRows = $db->query($hseSql)->getResultArray();
             foreach ($hseRows as $r) {
@@ -1002,7 +1091,7 @@ class Profile extends BaseController
                     continue;
                 }
                 $table[] = [
-                    'module' => 'HSE',
+                    'category' => 'Gemba/HSE',
                     'client_name' => $r['client_name'] ?: 'FM Logistic',
                     'site_name' => $r['site_name'] ?: 'N/A',
                     'latest_audit_date' => !empty($r['latest_audit_date']) ? date('d-M-Y', strtotime($r['latest_audit_date'])) : '-',
@@ -1013,16 +1102,21 @@ class Profile extends BaseController
                     'audit_status' => $r['audit_status'],
                     'total_ncs' => (int)$r['total_ncs'],
                     'pending_nc_actions' => (int)$r['pending_nc_actions'],
-                    'action_url' => base_url('Masters/Hse_nc_tracker'),
-                    'action_text' => 'View Details'
+                    'action_url' => base_url('Masters/GembaNcTracker'),
+                    'action_text' => 'View Gemba/HSE NCs'
                 ];
             }
-        }
 
-        // 3. Gemba Sites Schedule
-        if ($selectedModule === 'all' || strtolower($selectedModule) === 'gemba') {
+            // Part 2.2: Pure Gemba Walks
+            $gembaWhere = "LOWER(TRIM(g.auditor_name)) IN ({$inAliases}) AND (g.source_module != 'hse_audit' OR g.source_module IS NULL)";
+            if ($fromDate && $toDate) {
+                $gembaWhere .= " AND g.audit_report_date >= '{$fromDate}' AND g.audit_report_date <= '{$toDate}'";
+            } elseif ($year) {
+                $gembaWhere .= " AND YEAR(g.audit_report_date) = {$year}";
+            }
+
             $gembaSql = "SELECT 
-                'Gemba' as module,
+                'Gemba/HSE' as category,
                 g.site_name as client_name,
                 g.site_name,
                 g.gemba_sr_no as audit_id,
@@ -1036,8 +1130,8 @@ class Profile extends BaseController
                 COUNT(*) as total_ncs,
                 SUM(IF(g.nc_status IN (0, 1, 5, 2), 1, 0)) as pending_nc_actions
             FROM alert_gemba_audits g
-            WHERE LOWER(TRIM(g.auditor_name)) IN ({$inAliases})
-            GROUP BY g.site_name
+            WHERE {$gembaWhere}
+            GROUP BY g.site_name, g.audit_report_date
             ORDER BY latest_audit_date DESC";
 
             $gembaRows = $db->query($gembaSql)->getResultArray();
@@ -1046,7 +1140,7 @@ class Profile extends BaseController
                     continue;
                 }
                 $table[] = [
-                    'module' => 'Gemba',
+                    'category' => 'Gemba/HSE',
                     'client_name' => $r['client_name'] ?: 'FM Logistic',
                     'site_name' => $r['site_name'] ?: 'N/A',
                     'latest_audit_date' => !empty($r['latest_audit_date']) ? date('d-M-Y', strtotime($r['latest_audit_date'])) : '-',
@@ -1058,11 +1152,160 @@ class Profile extends BaseController
                     'total_ncs' => (int)$r['total_ncs'],
                     'pending_nc_actions' => (int)$r['pending_nc_actions'],
                     'action_url' => base_url('Masters/GembaNcTracker/template_type_filter/pending'),
-                    'action_text' => 'Open Points'
+                    'action_text' => 'View Gemba Points'
                 ];
             }
         }
 
         return $table;
+    }
+
+    /**
+     * Latest NC Reports Table:
+     * Returns the latest NCs across OE and Gemba/HSE (including latest HSE NCs)
+     * with NC number, site, audit category, audit date, description, responsible person, current status, due date.
+     */
+    private function getLatestNcsTable($db, int $auditorId, string $auditorName, string $selectedModule, string $selectedStatus, int $year, $fromDate = null, $toDate = null): array
+    {
+        $aliases = $this->getAuditorAliases($db, $auditorId, $auditorName);
+        $escapedAliases = array_map(function($a) use ($db) { return $db->escape($a); }, $aliases);
+        $inAliases = implode(', ', $escapedAliases);
+
+        $ncs = [];
+        $checkOe = ($selectedModule === 'all' || strcasecmp($selectedModule, 'oe') === 0);
+        $checkGembaHse = ($selectedModule === 'all' || in_array(strtolower($selectedModule), ['gemba_hse', 'gemba/hse', 'gemba', 'hse']));
+
+        // 1. Latest OE NCs (Only latest pending NCs, matching Oe_nc_tracker)
+        if ($checkOe) {
+            $oeWhere = "(a.audit_by_user_id = {$auditorId} OR LOWER(TRIM(a.auditor_name)) IN ({$inAliases}))";
+            $oeWhere .= " AND (a.reaudit = 0 OR d.status IN (3, 5))";
+            $oeWhere .= " AND (d.audit_finding = 'NO' OR d.status IN (3, 5))";
+            if ($fromDate && $toDate) {
+                $oeWhere .= " AND a.audit_date >= '{$fromDate}' AND a.audit_date <= '{$toDate}'";
+            } elseif ($year) {
+                $oeWhere .= " AND YEAR(a.audit_date) = {$year}";
+            }
+
+            $oeNcSql = "SELECT 
+                d.audit_details_id as nc_id,
+                a.audit_no,
+                a.location as site_name,
+                'OE' as category,
+                'OE Audit' as audit_type,
+                a.audit_date,
+                d.audit_question as description,
+                a.auditee_name as responsible,
+                d.status as nc_status,
+                CASE 
+                    WHEN d.status = 0 THEN 'Open'
+                    WHEN d.status IN (1, 4) THEN 'Under Action'
+                    WHEN d.status = 6 THEN 'Cluster Review'
+                    WHEN d.status = 2 THEN 'Auditor Review'
+                    WHEN d.status = 3 THEN 'Closed'
+                    WHEN d.status = 5 THEN 'Forced Closed'
+                    ELSE 'Pending'
+                END as status_label,
+                a.next_date as due_date
+            FROM alert_final_structured_audit_details d
+            JOIN alert_final_structured_audit a ON a.structured_audit_id = d.structured_audit_id
+            WHERE {$oeWhere}
+            ORDER BY a.audit_date DESC LIMIT 100";
+
+            $oeRows = $db->query($oeNcSql)->getResultArray();
+            foreach ($oeRows as $r) {
+                $ncs[] = [
+                    'nc_id' => 'OE-' . $r['nc_id'],
+                    'audit_no' => $r['audit_no'] ?: 'OE Audit',
+                    'site_name' => $r['site_name'] ?: 'N/A',
+                    'category' => 'OE',
+                    'audit_type' => $r['audit_type'],
+                    'audit_date' => !empty($r['audit_date']) ? date('d-M-Y', strtotime($r['audit_date'])) : '-',
+                    'raw_date' => $r['audit_date'] ?: '1970-01-01',
+                    'description' => $r['description'] ?: 'No observation point text',
+                    'responsible' => $r['responsible'] ?: 'Auditee / CM',
+                    'nc_status' => (int)$r['nc_status'],
+                    'status_label' => $r['status_label'],
+                    'due_date' => (!empty($r['due_date']) && $r['due_date'] !== '0000-00-00') ? date('d-M-Y', strtotime($r['due_date'])) : 'Monthly Cycle',
+                    'action_url' => base_url('Masters/Oe_nc_tracker'),
+                    'action_text' => 'Track OE NC'
+                ];
+            }
+        }
+
+        // 2. Latest Gemba/HSE NCs (Directly from alert_gemba_audits, strictly matching Masters/GembaNcTracker)
+        if ($checkGembaHse) {
+            $gembaWhere = "g.status = 1 AND LOWER(TRIM(g.auditor_name)) IN ({$inAliases})";
+            $gembaWhere .= " AND (
+                g.source_module != 'hse_audit'
+                OR (g.source_module = 'hse_audit' AND g.hse_detail_id IN (
+                    SELECT latest_detail_id FROM (
+                        SELECT MAX(d2.id) AS latest_detail_id
+                        FROM alert_hse_audit_details d2
+                        INNER JOIN alert_hse_audit_master latest_master ON latest_master.hse_audit_id = d2.hse_audit_id
+                        INNER JOIN (
+                            SELECT audit_no, MAX(hse_audit_id) AS latest_hse_audit_id
+                            FROM alert_hse_audit_master
+                            GROUP BY audit_no
+                        ) latest_audit ON latest_audit.latest_hse_audit_id = latest_master.hse_audit_id
+                        GROUP BY latest_master.audit_no, d2.question_id
+                    ) as temp_latest_nc
+                ))
+            )";
+            if ($fromDate && $toDate) {
+                $gembaWhere .= " AND g.audit_report_date >= '{$fromDate}' AND g.audit_report_date <= '{$toDate}'";
+            } elseif ($year) {
+                $gembaWhere .= " AND YEAR(g.audit_report_date) = {$year}";
+            }
+
+            $gembaNcSql = "SELECT 
+                g.gemba_sr_no as nc_id,
+                g.unique_no as audit_no,
+                g.site_name,
+                'Gemba/HSE' as category,
+                IF(g.source_module = 'hse_audit', 'HSE Audit', 'Gemba Walk') as audit_type,
+                g.audit_report_date as audit_date,
+                g.observation_point as description,
+                COALESCE(NULLIF(g.account_manager, ''), NULLIF(g.cluster_manager_spoc, ''), 'Site Spoc / AM') as responsible,
+                g.nc_status,
+                CASE 
+                    WHEN g.nc_status = 0 THEN 'Open'
+                    WHEN g.nc_status = 1 THEN 'Under Action'
+                    WHEN g.nc_status = 5 THEN 'Cluster Review'
+                    WHEN g.nc_status = 2 THEN 'Auditor Review'
+                    WHEN g.nc_status = 3 THEN 'Closed'
+                    ELSE 'Pending'
+                END as status_label,
+                g.target_date as due_date
+            FROM alert_gemba_audits g
+            WHERE {$gembaWhere}
+            ORDER BY g.audit_report_date DESC LIMIT 100";
+
+            $gembaRows = $db->query($gembaNcSql)->getResultArray();
+            foreach ($gembaRows as $r) {
+                $ncs[] = [
+                    'nc_id' => ($r['audit_type'] === 'HSE Audit' ? 'HSE-' : 'GMB-') . $r['nc_id'],
+                    'audit_no' => $r['audit_no'] ?: 'Gemba/HSE',
+                    'site_name' => $r['site_name'] ?: 'N/A',
+                    'category' => 'Gemba/HSE',
+                    'audit_type' => $r['audit_type'],
+                    'audit_date' => !empty($r['audit_date']) ? date('d-M-Y', strtotime($r['audit_date'])) : '-',
+                    'raw_date' => $r['audit_date'] ?: '1970-01-01',
+                    'description' => $r['description'] ?: 'Observation Point',
+                    'responsible' => $r['responsible'] ?: 'Site Spoc / AM',
+                    'nc_status' => (int)$r['nc_status'],
+                    'status_label' => $r['status_label'],
+                    'due_date' => (!empty($r['due_date']) && $r['due_date'] !== '0000-00-00') ? date('d-M-Y', strtotime($r['due_date'])) : 'Target Date',
+                    'action_url' => base_url('Masters/GembaNcTracker'),
+                    'action_text' => 'Track NC'
+                ];
+            }
+        }
+
+        // Sort combined NCs chronologically (latest first)
+        usort($ncs, function($a, $b) {
+            return strcmp($b['raw_date'], $a['raw_date']);
+        });
+
+        return $ncs;
     }
 }

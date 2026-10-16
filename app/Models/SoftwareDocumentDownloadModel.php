@@ -6,7 +6,7 @@ use CodeIgniter\Model;
 
 class SoftwareDocumentDownloadModel extends Model
 {
-    protected $table            = 'software_document_downloads';
+    protected $table            = 'alert_software_document_downloads';
     protected $primaryKey       = 'id';
     protected $useAutoIncrement = true;
     protected $returnType       = 'array';

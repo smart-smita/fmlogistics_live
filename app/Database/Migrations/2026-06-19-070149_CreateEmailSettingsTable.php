@@ -26,11 +26,11 @@ class CreateEmailSettingsTable extends Migration
             'updated_at'      => ['type' => 'DATETIME', 'null' => true],
         ]);
         $this->forge->addKey('id', true);
-        $this->forge->createTable('email_settings');
+        $this->forge->createTable('alert_email_settings');
         
         // Insert default row
         $db = \Config\Database::connect();
-        $db->table('email_settings')->insert([
+        $db->table('alert_email_settings')->insert([
             'email_enabled'   => 1,
             'smtp_host'       => '',
             'smtp_port'       => '',
@@ -46,6 +46,6 @@ class CreateEmailSettingsTable extends Migration
 
     public function down()
     {
-        $this->forge->dropTable('email_settings');
+        $this->forge->dropTable('alert_email_settings');
     }
 }

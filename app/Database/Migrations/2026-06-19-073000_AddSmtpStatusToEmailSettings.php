@@ -20,12 +20,12 @@ class AddSmtpStatusToEmailSettings extends Migration
                 'null' => true,
             ],
         ];
-        $this->forge->addColumn('email_settings', $fields);
+        $this->forge->addColumn('alert_email_settings', $fields);
     }
 
     public function down()
     {
-        $this->forge->dropColumn('email_settings', 'smtp_status');
-        $this->forge->dropColumn('email_settings', 'last_test_email_date');
+        $this->forge->dropColumn('alert_email_settings', 'smtp_status');
+        $this->forge->dropColumn('alert_email_settings', 'last_test_email_date');
     }
 }

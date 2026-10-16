@@ -168,19 +168,19 @@ protected $BaseModel;
         echo json_encode($responce);
     }
     public function save_details($id=null,$action=null){
-                $request = service('request');
-                $postData = $request->getVar();
-    // print_r($postData);
-    // exit();
-                if(isset($postData['honeypot']))
-                    {
-                        // if($postData['honeypot'] != ""){
-                        //     $responce['status'] = "0";
-                        //     $responce['message'] = "Data insertion faild";
-                        //     die;
-                        // }
-                     unset($postData['honeypot']);   
-                    }
+        helper('designation_acl');
+        if (!isSuperAdmin() && !isAdmin() && !isAuditor() && !isClusterManager() && !isHigherAuthority()) {
+            $responce['status'] = "0";
+            $responce['message'] = 'Unauthorized access. You do not have permission to modify site allocations.';
+            return $this->response->setJSON($responce);
+        }
+
+        $request = service('request');
+        $postData = $request->getVar();
+        if(isset($postData['honeypot']))
+        {
+            unset($postData['honeypot']);   
+        }
                     
                 if(isset($id)){
                         $responce['message'] = "Data updation faild";

@@ -8,9 +8,9 @@ class ClientSiteDependencySyncService
 {
     protected $db;
 
-    public function __construct()
+    public function __construct($db = null)
     {
-        $this->db = Database::connect();
+        $this->db = $db ?? Database::connect('default');
     }
 
     /**
@@ -54,10 +54,11 @@ class ClientSiteDependencySyncService
         $oldStatus = $oldData['status'] ?? null;
         $newStatus = $newData['status'] ?? $oldStatus;
 
+        $clientId = !empty($oldData['client_id']) ? (int)$oldData['client_id'] : (!empty($oldData['id']) ? (int)$oldData['id'] : (!empty($newData['client_id']) ? (int)$newData['client_id'] : (!empty($newData['id']) ? (int)$newData['id'] : 0)));
+        $renameRemarks = trim($newData['rename_remarks'] ?? $newData['reassignment_reason'] ?? $newData['remarks'] ?? '');
+
         // First handle rename via ClientSiteRenameService if client_name changed
         if (!empty($newClientName) && !empty($oldClientName) && $newClientName !== $oldClientName) {
-            $clientId = !empty($oldData['client_id']) ? (int)$oldData['client_id'] : (!empty($oldData['id']) ? (int)$oldData['id'] : (!empty($newData['client_id']) ? (int)$newData['client_id'] : (!empty($newData['id']) ? (int)$newData['id'] : null)));
-            $renameRemarks = trim($newData['rename_remarks'] ?? $newData['reassignment_reason'] ?? $newData['remarks'] ?? '');
             $renameService = new ClientSiteRenameService();
             $renameRes = $renameService->renameOeClient($oldClientName, $newClientName, $userId, $userName, $clientId, $renameRemarks);
             if ($renameRes['status'] === 0) {
@@ -113,13 +114,12 @@ class ClientSiteDependencySyncService
             }
         }
 
-        // 2. Sync OE Audit Master (alert_final_structured_audit)
+        // 2. Sync OE Audit Master (alert_final_structured_audit) - location, region
         if ($this->db->tableExists('alert_final_structured_audit')) {
             $oeAuditData = [];
             if (isset($changes['location'])) $oeAuditData['location'] = $newLocation;
             if (isset($changes['region'])) $oeAuditData['region'] = $newRegion;
-            if (isset($changes['cluster'])) $oeAuditData['cluster_name'] = $newCluster;
-            if (isset($changes['account_manager'])) $oeAuditData['client_manager_name'] = $newAccountManager;
+            // cluster_name and client_manager_name are handled with status-aware logic below
 
             $oeAuditData = $this->filterExistingFields('alert_final_structured_audit', $oeAuditData);
 
@@ -148,8 +148,7 @@ class ClientSiteDependencySyncService
             $normalAuditData = [];
             if (isset($changes['location'])) $normalAuditData['location'] = $newLocation;
             if (isset($changes['region'])) $normalAuditData['region'] = $newRegion;
-            if (isset($changes['cluster'])) $normalAuditData['cluster_name'] = $newCluster;
-            if (isset($changes['account_manager'])) $normalAuditData['client_manager_name'] = $newAccountManager;
+            // cluster_name and client_manager_name are handled with status-aware logic below
 
             $normalAuditData = $this->filterExistingFields('alert_normal_audit', $normalAuditData);
 
@@ -171,6 +170,27 @@ class ClientSiteDependencySyncService
                     $totalAffected += $cnt;
                 }
             }
+        }
+
+        // 4. Status-Aware Manager Reassignment (Preserves Closed Audits, Reassigns Active/Open)
+        if (isset($changes['cluster']) || isset($changes['account_manager'])) {
+            $mgrService = new \App\Services\AccountManagerReassignmentService($this->db);
+            $mgrRes = $mgrService->reassignOeClient(
+                (int)$clientId,
+                $oldAccountManager,
+                $newAccountManager,
+                $effectiveClientName,
+                $newLocation,
+                $userId,
+                $userName,
+                $renameRemarks ?: 'Reassigned via OE Client Master update',
+                $oldData,
+                $oldCluster,
+                $newCluster
+            );
+            $affectedCounts['oe_manager_eligible_reassigned'] = $mgrRes['eligible_count'] ?? 0;
+            $affectedCounts['oe_manager_closed_preserved'] = $mgrRes['closed_count'] ?? 0;
+            $totalAffected += ($mgrRes['eligible_count'] ?? 0);
         }
 
 
@@ -220,10 +240,11 @@ class ClientSiteDependencySyncService
         $oldStatus = $oldData['status'] ?? null;
         $newStatus = $newData['status'] ?? $oldStatus;
 
+        $clientId = !empty($oldData['client_id']) ? (int)$oldData['client_id'] : (!empty($oldData['id']) ? (int)$oldData['id'] : (!empty($newData['client_id']) ? (int)$newData['client_id'] : (!empty($newData['id']) ? (int)$newData['id'] : 0)));
+        $renameRemarks = trim($newData['rename_remarks'] ?? $newData['reassignment_reason'] ?? $newData['remarks'] ?? '');
+
         // First handle rename via ClientSiteRenameService if client_name changed
         if (!empty($newClientName) && !empty($oldClientName) && $newClientName !== $oldClientName) {
-            $clientId = !empty($oldData['client_id']) ? (int)$oldData['client_id'] : (!empty($oldData['id']) ? (int)$oldData['id'] : (!empty($newData['client_id']) ? (int)$newData['client_id'] : (!empty($newData['id']) ? (int)$newData['id'] : null)));
-            $renameRemarks = trim($newData['rename_remarks'] ?? $newData['reassignment_reason'] ?? $newData['remarks'] ?? '');
             $renameService = new ClientSiteRenameService();
             $renameRes = $renameService->renameHseClient($oldClientName, $newClientName, $userId, $userName, $clientId, $renameRemarks);
             if ($renameRes['status'] === 0) {
@@ -300,13 +321,12 @@ class ClientSiteDependencySyncService
             }
         }
 
-        // 3. Sync HSE Audit Master (alert_hse_audit_master)
+        // 3. Sync HSE Audit Master (alert_hse_audit_master) - location, region
         if ($this->db->tableExists('alert_hse_audit_master')) {
             $hseAuditData = [];
             if (isset($changes['location'])) $hseAuditData['location'] = $newLocation;
             if (isset($changes['region'])) $hseAuditData['region'] = $newRegion;
-            if (isset($changes['cluster'])) $hseAuditData['cluster_name'] = $newCluster;
-            if (isset($changes['account_manager'])) $hseAuditData['account_manager'] = $newAccountManager;
+            // cluster_name and account_manager are handled with status-aware logic below
 
             $hseAuditData = $this->filterExistingFields('alert_hse_audit_master', $hseAuditData);
 
@@ -330,13 +350,12 @@ class ClientSiteDependencySyncService
             }
         }
 
-        // 4. Sync Gemba Audits (alert_gemba_audits)
+        // 4. Sync Gemba Audits (alert_gemba_audits) - location, region
         if ($this->db->tableExists('alert_gemba_audits')) {
             $gembaAuditData = [];
             if (isset($changes['location'])) $gembaAuditData['site_name'] = $newLocation;
             if (isset($changes['region'])) $gembaAuditData['region'] = $newRegion;
-            if (isset($changes['cluster'])) $gembaAuditData['cluster_manager_spoc'] = $newCluster;
-            if (isset($changes['account_manager'])) $gembaAuditData['account_manager'] = $newAccountManager;
+            // cluster_manager_spoc and account_manager are handled with status-aware logic below
 
             $gembaAuditData = $this->filterExistingFields('alert_gemba_audits', $gembaAuditData);
 
@@ -358,6 +377,29 @@ class ClientSiteDependencySyncService
                     $totalAffected += $cnt;
                 }
             }
+        }
+
+        // 5. Status-Aware Manager Reassignment (Preserves Closed Audits, Reassigns Active/Open)
+        if (isset($changes['cluster']) || isset($changes['account_manager'])) {
+            $mgrService = new \App\Services\AccountManagerReassignmentService($this->db);
+            $mgrRes = $mgrService->reassignHseClient(
+                (int)$clientId,
+                $oldAccountManager,
+                $newAccountManager,
+                $effectiveClientName,
+                $newLocation,
+                $userId,
+                $userName,
+                $renameRemarks ?: 'Reassigned via HSE Client Master update',
+                $oldData,
+                $oldCluster,
+                $newCluster
+            );
+            $affectedCounts['hse_manager_eligible_reassigned'] = $mgrRes['hse_eligible_count'] ?? 0;
+            $affectedCounts['hse_manager_closed_preserved'] = $mgrRes['hse_closed_count'] ?? 0;
+            $affectedCounts['gemba_manager_eligible_reassigned'] = $mgrRes['gemba_eligible_count'] ?? 0;
+            $affectedCounts['gemba_manager_closed_preserved'] = $mgrRes['gemba_closed_count'] ?? 0;
+            $totalAffected += ($mgrRes['hse_eligible_count'] ?? 0) + ($mgrRes['gemba_eligible_count'] ?? 0);
         }
 
 
@@ -406,6 +448,9 @@ class ClientSiteDependencySyncService
 
         $oldStatus = $oldData['status'] ?? null;
         $newStatus = $newData['status'] ?? $oldStatus;
+
+        $locId = !empty($oldData['location_id']) ? (int)$oldData['location_id'] : (!empty($oldData['id']) ? (int)$oldData['id'] : (!empty($newData['location_id']) ? (int)$newData['location_id'] : (!empty($newData['id']) ? (int)$newData['id'] : 0)));
+        $renameRemarks = trim($newData['rename_remarks'] ?? $newData['reassignment_reason'] ?? $newData['remarks'] ?? '');
 
         $effectiveLocName = !empty($newLocName) ? $newLocName : $oldLocName;
         $effectiveAuditType = !empty($newAuditType) ? $newAuditType : $oldAuditType;
@@ -461,8 +506,7 @@ class ClientSiteDependencySyncService
                 $oeAuditData['location'] = $newLocName;
             }
             if (isset($changes['region'])) $oeAuditData['region'] = $newRegion;
-            if (isset($changes['cluster'])) $oeAuditData['cluster_name'] = $newCluster;
-            if (isset($changes['account_manager'])) $oeAuditData['client_manager_name'] = $newAccountManager;
+            // cluster_name and client_manager_name are handled with status-aware logic below
 
             $oeAuditData = $this->filterExistingFields('alert_final_structured_audit', $oeAuditData);
 
@@ -492,8 +536,7 @@ class ClientSiteDependencySyncService
                 $normalAuditData['location'] = $newLocName;
             }
             if (isset($changes['region'])) $normalAuditData['region'] = $newRegion;
-            if (isset($changes['cluster'])) $normalAuditData['cluster_name'] = $newCluster;
-            if (isset($changes['account_manager'])) $normalAuditData['client_manager_name'] = $newAccountManager;
+            // cluster_name and client_manager_name are handled with status-aware logic below
 
             $normalAuditData = $this->filterExistingFields('alert_normal_audit', $normalAuditData);
 
@@ -579,8 +622,7 @@ class ClientSiteDependencySyncService
                 $hseAuditData['location'] = $newLocName;
             }
             if (isset($changes['region'])) $hseAuditData['region'] = $newRegion;
-            if (isset($changes['cluster'])) $hseAuditData['cluster_name'] = $newCluster;
-            if (isset($changes['account_manager'])) $hseAuditData['account_manager'] = $newAccountManager;
+            // cluster_name and account_manager are handled with status-aware logic below
 
             $hseAuditData = $this->filterExistingFields('alert_hse_audit_master', $hseAuditData);
 
@@ -607,8 +649,7 @@ class ClientSiteDependencySyncService
             $gembaAuditData = [];
             if (isset($changes['location_name'])) $gembaAuditData['site_name'] = $newLocName;
             if (isset($changes['region'])) $gembaAuditData['region'] = $newRegion;
-            if (isset($changes['cluster'])) $gembaAuditData['cluster_manager_spoc'] = $newCluster;
-            if (isset($changes['account_manager'])) $gembaAuditData['account_manager'] = $newAccountManager;
+            // cluster_manager_spoc and account_manager are handled with status-aware logic below
 
             $gembaAuditData = $this->filterExistingFields('alert_gemba_audits', $gembaAuditData);
 
@@ -628,6 +669,24 @@ class ClientSiteDependencySyncService
                     $totalAffected += $cnt;
                 }
             }
+        }
+
+        // 8. Status-Aware Manager Reassignment (Preserves Closed Audits, Reassigns Active/Open)
+        if (isset($changes['cluster']) || isset($changes['account_manager'])) {
+            $mgrService = new \App\Services\AccountManagerReassignmentService($this->db);
+            $mgrRes = $mgrService->reassignLocationMaster(
+                (int)$locId,
+                $oldAccountManager,
+                $newAccountManager,
+                $effectiveLocName,
+                $effectiveAuditType,
+                $userId,
+                $userName,
+                $renameRemarks ?: 'Reassigned via Location Master update',
+                $oldData,
+                $oldCluster,
+                $newCluster
+            );
         }
 
         $this->db->transComplete();

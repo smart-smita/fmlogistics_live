@@ -6,7 +6,7 @@ use CodeIgniter\Model;
 
 class SoftwareDefinitionModel extends Model
 {
-    protected $table            = 'software_definitions';
+    protected $table            = 'alert_software_definitions';
     protected $primaryKey       = 'id';
     protected $useAutoIncrement = true;
     protected $returnType       = 'array';

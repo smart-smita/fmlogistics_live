@@ -6,7 +6,7 @@ use CodeIgniter\Model;
 
 class SoftwareDocumentVersionModel extends Model
 {
-    protected $table            = 'software_document_versions';
+    protected $table            = 'alert_software_document_versions';
     protected $primaryKey       = 'id';
     protected $useAutoIncrement = true;
     protected $returnType       = 'array';

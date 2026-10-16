@@ -118,14 +118,6 @@
 
 								<?php if (function_exists('canAccessHseModule') ? canAccessHseModule() : true): ?>
 								<div class="menu-item">
-									<a class="menu-link" href="<?= base_url('Customer/Audit_Dashboard_HSE/HSE_Audit') ?>">
-										<span class="menu-icon">
-											<span class="fas fa-shield-alt"></span>
-										</span>
-										<span class="menu-title">HSE Audit Dashboard</span></span>
-									</a>
-								</div>
-								<div class="menu-item">
 									<a class="menu-link" href="<?= base_url('Customer/Gemba_Dashboard') ?>">
 										<span class="menu-icon">
 											<span class="fas fa-chart-line"></span>
@@ -142,7 +134,7 @@
 								<div class="menu-item">
 									<a class="menu-link" href="<?= base_url('Profile') ?>">
 										<span class="menu-icon">
-											<span class="fas fa-user-check text-primary"></span>
+											<span class="fas fa-user-check text-white"></span>
 										</span>
 										<span class="menu-title fw-bold">Auditor Dashboard</span>
 									</a>

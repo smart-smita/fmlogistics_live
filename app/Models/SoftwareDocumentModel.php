@@ -6,7 +6,7 @@ use CodeIgniter\Model;
 
 class SoftwareDocumentModel extends Model
 {
-    protected $table            = 'software_documents';
+    protected $table            = 'alert_software_documents';
     protected $primaryKey       = 'id';
     protected $useAutoIncrement = true;
     protected $returnType       = 'array';

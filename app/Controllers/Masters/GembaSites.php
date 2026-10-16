@@ -235,12 +235,12 @@ class GembaSites extends BaseController
                         }
                     }
 
-                    if (($catChanged || !empty($detailsChanged)) && $db->tableExists('Gemba_history')) {
+                    if (($catChanged || !empty($detailsChanged)) && $db->tableExists('alert_gemba_history')) {
                         $remark = $catChanged ? 'Site Category Changed' : 'Site Details Updated';
                         $changeType = $catChanged ? 'CATEGORY_CHANGE' : 'DETAILS_UPDATE';
                         $affectedFields = $catChanged ? 'site_category' : implode(',', $detailsChanged);
 
-                        $db->table('Gemba_history')->insert([
+                        $db->table('alert_gemba_history')->insert([
                             'client_id'            => $oldRec['client_id'] ?? null,
                             'site_id'              => $id,
                             'change_type'          => $changeType,

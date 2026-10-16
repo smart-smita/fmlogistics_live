@@ -21,6 +21,26 @@ if (!function_exists('gemba_can_write')) {
             return true;
         }
 
+        if (function_exists('isHigherAuthority') && isHigherAuthority()) {
+            return false;
+        }
+
+        if (function_exists('isSuperAdmin') && isSuperAdmin()) {
+            return true;
+        }
+
+        if (function_exists('isAuditor') && isAuditor()) {
+            return true;
+        }
+
+        if (function_exists('isClusterManager') && isClusterManager()) {
+            return true;
+        }
+
+        if (function_exists('isAccountManager') && isAccountManager()) {
+            return true;
+        }
+
         if (!session()->get('role')) {
             return false;
         }
@@ -33,7 +53,13 @@ if (!function_exists('gemba_can_write')) {
             'super admin',
             'admin',
             'auditor',
-            'engineer'
+            'engineer',
+            'cluster manager',
+            'cluster_manager',
+            'account manager',
+            'account_manager',
+            'wh manager',
+            'wh_manager'
         ];
 
         return in_array($role, $write_roles, true);
@@ -257,3 +283,78 @@ if (!function_exists('near_miss_has_location_access')) {
         return false;
     }
 }
+
+if (!function_exists('verifySiteAccess')) {
+    /**
+     * Verifies whether the currently logged-in Account Manager or Cluster Manager
+     * has access to the given site name across OE, HSE, and Location master tables.
+     *
+     * @param string|null $siteName  The site/location name from the Gemba audit record
+     * @param string $module         'OE', 'HSE', 'GEMBA'
+     * @param string|null $checkUser Optional username override
+     * @return bool
+     */
+    function verifySiteAccess(?string $siteName = null, string $module = 'GEMBA', ?string $checkUser = null): bool
+    {
+        if (function_exists('isSuperAdmin') && isSuperAdmin()) {
+            return true;
+        }
+        if (function_exists('isAuditor') && isAuditor()) {
+            return true;
+        }
+        if (function_exists('isHigherAuthority') && isHigherAuthority()) {
+            return false;
+        }
+
+        if (empty($siteName)) {
+            return true;
+        }
+
+        $userName = !empty($checkUser) 
+            ? strtolower(trim($checkUser)) 
+            : strtolower(trim((function_exists('getUserName') ? getUserName() : '') ?: (session()->get('user_name') ?? '')));
+            
+        if (empty($userName)) {
+            return false;
+        }
+
+        $db = \Config\Database::connect();
+        $isAM = (function_exists('isAccountManager') && isAccountManager()) || in_array(strtolower(trim(session()->get('role') ?? '')), ['account manager', 'account_manager']);
+        $isCM = (function_exists('isClusterManager') && isClusterManager()) || in_array(strtolower(trim(session()->get('role') ?? '')), ['cluster manager', 'cluster_manager']);
+
+        if ($isAM) {
+            $row = $db->query("
+                SELECT COUNT(*) AS cnt FROM (
+                    SELECT client_name FROM alert_client
+                        WHERE LOWER(TRIM(account_manager)) = ? AND (TRIM(client_name) = ? OR TRIM(location) = ?) AND status != 2
+                    UNION
+                    SELECT client_name FROM alert_hse_client_master
+                        WHERE LOWER(TRIM(account_manager)) = ? AND (TRIM(client_name) = ? OR TRIM(location) = ?) AND status != 2
+                    UNION
+                    SELECT location_name FROM alert_location_master
+                        WHERE LOWER(TRIM(account_manager)) = ? AND TRIM(location_name) = ? AND status != 2
+                ) AS t
+            ", [$userName, $siteName, $siteName, $userName, $siteName, $siteName, $userName, $siteName])->getRowArray();
+            return ($row['cnt'] ?? 0) > 0;
+        }
+
+        if ($isCM) {
+            $row = $db->query("
+                SELECT COUNT(*) AS cnt FROM (
+                    SELECT client_name FROM alert_client
+                        WHERE LOWER(TRIM(cluster)) = ? AND (TRIM(client_name) = ? OR TRIM(location) = ?) AND status != 2
+                    UNION
+                    SELECT client_name FROM alert_hse_client_master
+                        WHERE LOWER(TRIM(cluster)) = ? AND (TRIM(client_name) = ? OR TRIM(location) = ?) AND status != 2
+                    UNION
+                    SELECT location_name FROM alert_location_master
+                        WHERE LOWER(TRIM(cluster_name)) = ? AND TRIM(location_name) = ? AND status != 2
+                ) AS t
+            ", [$userName, $siteName, $siteName, $userName, $siteName, $siteName, $userName, $siteName])->getRowArray();
+            return ($row['cnt'] ?? 0) > 0;
+        }
+
+        return true;
+    }
+}
+

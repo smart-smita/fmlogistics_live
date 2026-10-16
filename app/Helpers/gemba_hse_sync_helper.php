@@ -140,13 +140,13 @@ if (!function_exists('execute_hse_gemba_nc_action')) {
                     }
                     break;
                 case 5:
-                    if ($action === 'auditor' && ($isSuperAdmin || $isAssignedCM || $isAssignedAM)) {
+                    if ($action === 'auditor' && ($isSuperAdmin || $isAuditor || $isAssignedCM || $isAssignedAM)) {
                         $update['nc_status'] = 2;
                         $update['nc_auditor_reviewed_by'] = $actionBy;
                         $update['nc_auditor_reviewed_date'] = $now;
                         $update['update_date'] = $now;
                     }
-                    if ($action === 'auditor_direct_close' && $isAuditor) {
+                    if ($action === 'auditor_direct_close' && ($isAuditor || $isSuperAdmin)) {
                         $update['nc_status'] = 3;
                         $update['nc_cluster_reviewed_by'] = $actionBy;
                         $update['nc_cluster_reviewed_date'] = $now;

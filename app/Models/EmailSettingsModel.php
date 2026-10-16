@@ -6,7 +6,7 @@ use CodeIgniter\Model;
 
 class EmailSettingsModel extends Model
 {
-    protected $table            = 'email_settings';
+    protected $table            = 'alert_email_settings';
     protected $primaryKey       = 'id';
     protected $useAutoIncrement = true;
     protected $returnType       = 'array';

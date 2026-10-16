@@ -15,7 +15,7 @@
 -- --------------------------------------------------------------------
 -- 1. Create the 3 Centralized History Tables
 -- --------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS `OE_history` (
+CREATE TABLE IF NOT EXISTS `alert_oe_history` (
   `history_id` INT AUTO_INCREMENT PRIMARY KEY,
   `client_id` INT NOT NULL,
   `site_id` INT NULL,
@@ -47,7 +47,7 @@ CREATE TABLE IF NOT EXISTS `OE_history` (
   INDEX `idx_oe_created_at` (`created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS `HSE_history` (
+CREATE TABLE IF NOT EXISTS `alert_hse_history` (
   `history_id` INT AUTO_INCREMENT PRIMARY KEY,
   `client_id` INT NOT NULL,
   `site_id` INT NULL,
@@ -83,7 +83,7 @@ CREATE TABLE IF NOT EXISTS `HSE_history` (
   INDEX `idx_hse_created_at` (`created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS `Gemba_history` (
+CREATE TABLE IF NOT EXISTS `alert_gemba_history` (
   `history_id` INT AUTO_INCREMENT PRIMARY KEY,
   `client_id` INT NULL COMMENT 'HSE Client ID if linked',
   `site_id` INT NOT NULL COMMENT 'alert_gemba_sites.id',
@@ -118,10 +118,15 @@ CREATE TABLE IF NOT EXISTS `Gemba_history` (
 -- --------------------------------------------------------------------
 -- 2. Create the 3 Exact-Column Audit Backup Tables (For Direct Export/Import)
 -- --------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS `OE_audit_backup` (
+CREATE TABLE IF NOT EXISTS `alert_oe_audit_backup` (
   `backup_id` INT AUTO_INCREMENT PRIMARY KEY,
   `history_id` INT NULL COMMENT 'Links to OE_history.history_id',
   `backed_up_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `old_cluster` VARCHAR(255) NULL,
+  `new_cluster` VARCHAR(255) NULL,
+  `old_account_manager` VARCHAR(255) NULL,
+  `new_account_manager` VARCHAR(255) NULL,
+  `reassignment_status` VARCHAR(50) NULL COMMENT 'PRESERVED_CLOSED | REASSIGNED_ACTIVE',
   `structured_audit_id` int(11) NOT NULL,
   `audit_no` text NOT NULL,
   `audit_name` text NOT NULL,
@@ -152,10 +157,15 @@ CREATE TABLE IF NOT EXISTS `OE_audit_backup` (
   INDEX `idx_oe_backup_audit` (`structured_audit_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS `HSE_audit_backup` (
+CREATE TABLE IF NOT EXISTS `alert_hse_audit_backup` (
   `backup_id` INT AUTO_INCREMENT PRIMARY KEY,
   `history_id` INT NULL COMMENT 'Links to HSE_history.history_id',
   `backed_up_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `old_cluster` VARCHAR(255) NULL,
+  `new_cluster` VARCHAR(255) NULL,
+  `old_account_manager` VARCHAR(255) NULL,
+  `new_account_manager` VARCHAR(255) NULL,
+  `reassignment_status` VARCHAR(50) NULL COMMENT 'PRESERVED_CLOSED | REASSIGNED_ACTIVE',
   `hse_audit_id` int(11) NOT NULL,
   `audit_no` text NOT NULL,
   `audit_name` text NOT NULL,
@@ -182,10 +192,15 @@ CREATE TABLE IF NOT EXISTS `HSE_audit_backup` (
   INDEX `idx_hse_backup_audit` (`hse_audit_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS `Gemba_audit_backup` (
+CREATE TABLE IF NOT EXISTS `alert_gemba_audit_backup` (
   `backup_id` INT AUTO_INCREMENT PRIMARY KEY,
   `history_id` INT NULL COMMENT 'Links to Gemba_history.history_id',
   `backed_up_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `old_cluster` VARCHAR(255) NULL,
+  `new_cluster` VARCHAR(255) NULL,
+  `old_account_manager` VARCHAR(255) NULL,
+  `new_account_manager` VARCHAR(255) NULL,
+  `reassignment_status` VARCHAR(50) NULL COMMENT 'PRESERVED_CLOSED | REASSIGNED_ACTIVE',
   `gemba_sr_no` int(10) unsigned NOT NULL,
   `unique_no` varchar(20) DEFAULT NULL,
   `region` varchar(50) NOT NULL DEFAULT 'South',

@@ -215,14 +215,19 @@ class Client extends BaseController
         echo json_encode($responce);
     }
     public function save_details($id=null,$action=null){
-                $request = service('request');
-                $postData = $request->getVar();
-    // print_r($postData);
-    // exit();
-                if(isset($postData['honeypot']))
-                    {
-                     unset($postData['honeypot']);   
-                    }
+        helper('designation_acl');
+        if (!isSuperAdmin() && !isAdmin() && !isAuditor() && !isClusterManager() && !isHigherAuthority()) {
+            $responce['status'] = "0";
+            $responce['message'] = 'Unauthorized access. You do not have permission to modify site allocations.';
+            return $this->response->setJSON($responce);
+        }
+
+        $request = service('request');
+        $postData = $request->getVar();
+        if(isset($postData['honeypot']))
+        {
+            unset($postData['honeypot']);   
+        }
                     
                 // Backend validation if not an action (status change)
                 if(!isset($action)) {
@@ -269,119 +274,6 @@ class Client extends BaseController
 
                     $db = \Config\Database::connect();
                     $db->transStart();
-
-                    // Check for CM/AM reassignment and record history
-                    if (!isset($action) && (
-                        (isset($postData['cluster']) && $oldData['cluster'] != $postData['cluster']) ||
-                        (isset($postData['account_manager']) && $oldData['account_manager'] != $postData['account_manager'])
-                    )) {
-                        $reason = $postData['reassignment_reason'] ?? 'Reassigned via Client Master update';
-                        $cmChanged = (isset($postData['cluster']) && $oldData['cluster'] != $postData['cluster']);
-                        $amChanged = (isset($postData['account_manager']) && $oldData['account_manager'] != $postData['account_manager']);
-
-                        if ($cmChanged && $amChanged) {
-                            $remark = 'Cluster Manager & Account Manager Changed';
-                            $affectedFields = 'cluster,account_manager';
-                        } elseif ($cmChanged) {
-                            $remark = 'Cluster Manager Changed';
-                            $affectedFields = 'cluster';
-                        } else {
-                            $remark = 'Account Manager Changed';
-                            $affectedFields = 'account_manager';
-                        }
-
-                        $clientNameEscaped = $db->escape(trim($oldData['client_name']));
-                        $affectedAudits = $db->query("
-                            SELECT structured_audit_id FROM alert_final_structured_audit 
-                            WHERE TRIM(location) = TRIM({$clientNameEscaped}) OR TRIM(client_name) = TRIM({$clientNameEscaped})
-                        ")->getResultArray();
-                        $affectedAuditIds = array_column($affectedAudits, 'structured_audit_id');
-                        $affectedAuditCount = count($affectedAuditIds);
-
-                        $affectedNcCount = 0;
-                        if (!empty($affectedAuditIds)) {
-                            $affectedNcCount = $db->table('alert_final_structured_audit_details')
-                                ->whereIn('structured_audit_id', $affectedAuditIds)
-                                ->where('audit_finding', 'NO')
-                                ->countAllResults();
-                        }
-
-                        // 1. Centralized OE_history logging
-                        if ($db->tableExists('OE_history')) {
-                            $db->table('OE_history')->insert([
-                                'client_id'             => $id,
-                                'change_type'           => 'ALLOCATION',
-                                'remark'                => $remark,
-                                'reason'                => $reason,
-                                'prev_client_name'      => $oldData['client_name'],
-                                'prev_location'         => $oldData['location'] ?? null,
-                                'prev_region'           => $oldData['region'] ?? null,
-                                'prev_cluster'          => $oldData['cluster'] ?? null,
-                                'prev_account_manager'  => $oldData['account_manager'] ?? null,
-                                'prev_email'            => $oldData['email'] ?? null,
-                                'prev_status'           => isset($oldData['status']) ? (int)$oldData['status'] : null,
-                                'new_client_name'       => $oldData['client_name'],
-                                'new_location'          => $oldData['location'] ?? null,
-                                'new_region'            => $oldData['region'] ?? null,
-                                'new_cluster'           => $postData['cluster'] ?? $oldData['cluster'],
-                                'new_account_manager'   => $postData['account_manager'] ?? $oldData['account_manager'],
-                                'new_email'             => $oldData['email'] ?? null,
-                                'new_status'            => isset($oldData['status']) ? (int)$oldData['status'] : null,
-                                'affected_fields'       => $affectedFields,
-                                'affected_audit_count'  => $affectedAuditCount,
-                                'affected_nc_count'     => $affectedNcCount,
-                                'affected_audit_ids'    => !empty($affectedAuditIds) ? json_encode($affectedAuditIds) : null,
-                                'changed_by_user_id'    => session()->get('user_id') ?? 0,
-                                'changed_by_user_name'  => session()->get('user_name') ?? 'System',
-                                'created_at'            => date('Y-m-d H:i:s')
-                            ]);
-                            $oeHistId = $db->insertID();
-
-                            // Dump matching OE audits as-is into OE_audit_backup for direct export/restore
-                            $oeAudits = $db->query("
-                                SELECT * FROM alert_final_structured_audit 
-                                WHERE TRIM(location) = TRIM({$clientNameEscaped}) OR TRIM(client_name) = TRIM({$clientNameEscaped})
-                            ")->getResultArray();
-
-                            if (!empty($oeAudits) && $db->tableExists('OE_audit_backup')) {
-                                $now = date('Y-m-d H:i:s');
-                                foreach ($oeAudits as $oeRow) {
-                                    $backupRow = $oeRow;
-                                    $backupRow['history_id'] = $oeHistId;
-                                    $backupRow['backed_up_at'] = $now;
-                                    unset($backupRow['backup_id']);
-                                    $db->table('OE_audit_backup')->insert($backupRow);
-                                }
-                            }
-                        }
-
-                        // 3. Update ALL Audits under this client so that ALL records (including Forced Closed, Closed, and Open NCs) show under the new cluster and account manager
-                        $updateData = [];
-                        if (isset($postData['cluster']) && $oldData['cluster'] != $postData['cluster']) {
-                            $updateData['cluster_name'] = $postData['cluster'];
-                        }
-                        if (isset($postData['account_manager']) && $oldData['account_manager'] != $postData['account_manager']) {
-                            $updateData['client_manager_name'] = $postData['account_manager'];
-                        }
-                        
-                        if (!empty($updateData)) {
-                            if (!empty($affectedAuditIds)) {
-                                $db->table('alert_final_structured_audit')
-                                    ->whereIn('structured_audit_id', $affectedAuditIds)
-                                    ->update($updateData);
-                            } else {
-                                $db->table('alert_final_structured_audit')
-                                    ->where("(TRIM(client_name) = TRIM({$clientNameEscaped}) OR TRIM(location) = TRIM({$clientNameEscaped}))")
-                                    ->update($updateData);
-                            }
-
-                            if ($db->tableExists('alert_normal_audit')) {
-                                $db->table('alert_normal_audit')
-                                    ->where("(TRIM(client_name) = TRIM({$clientNameEscaped}) OR TRIM(location) = TRIM({$clientNameEscaped}))")
-                                    ->update($updateData);
-                            }
-                        }
-                    }
 
                     // Synchronize OE Client changes (client_name, location, cluster, account_manager, region, status) across all OE dependent tables
                     $postData['client_id'] = $id;
@@ -607,5 +499,205 @@ class Client extends BaseController
         }
         
         return $this->response->setJSON(['status' => 1, 'message' => 'Client deactivated and NCs closed successfully.']);
+    }
+
+    public function get_nc_action_history()
+    {
+        $req = service('request');
+        $ncDetailId = (int) ($req->getGet('nc_detail_id') ?: $req->getPost('nc_detail_id'));
+        $moduleType = strtoupper(trim((string) ($req->getGet('module_type') ?: $req->getPost('module_type') ?: 'GEMBA')));
+        $siteName = trim((string) ($req->getGet('site_name') ?: $req->getPost('site_name') ?: ''));
+
+        if (!$ncDetailId) {
+            return $this->response->setJSON(['status' => 0, 'message' => 'NC ID is required', 'history' => []]);
+        }
+
+        $db = \Config\Database::connect();
+        $history = [];
+
+        $statusLabels = [
+            0 => 'Open',
+            1 => 'Working',
+            2 => 'Auditor Review',
+            3 => 'Closed',
+            4 => 'Hold',
+            5 => 'Cluster Review',
+            6 => 'Rejected'
+        ];
+
+        // Helper to resolve user name and designation
+        $resolveUser = function($actionBy) use ($db) {
+            if ($actionBy === '0' || $actionBy === 0 || empty($actionBy)) {
+                return ['name' => 'Super Admin', 'designation' => 'Super Admin'];
+            }
+            if (is_numeric($actionBy)) {
+                $user = $db->table('alert_users')->where('user_id', (int)$actionBy)->get()->getRowArray();
+                if ($user) {
+                    return [
+                        'name' => $user['user_name'] ?? 'User #' . $actionBy,
+                        'designation' => $user['user_designation'] ?? 'Staff'
+                    ];
+                }
+            }
+            // If actionBy is already a string name
+            $user = $db->table('alert_users')->where('LOWER(TRIM(user_name))', strtolower(trim((string)$actionBy)))->get()->getRowArray();
+            return [
+                'name' => !empty($user['user_name']) ? $user['user_name'] : $actionBy,
+                'designation' => !empty($user['user_designation']) ? $user['user_designation'] : 'Staff'
+            ];
+        };
+
+        // 1. Fetch from alert_gemba_nc_audit_trail
+        $auditTrailRows = $db->table('alert_gemba_nc_audit_trail')
+            ->where('gemba_audit_id', $ncDetailId)
+            ->orderBy('id', 'ASC')
+            ->get()
+            ->getResultArray();
+
+        // 2. Fetch the NC row itself for metadata and milestone fallbacks
+        $gembaRow = null;
+        if ($moduleType === 'GEMBA' || $moduleType === 'HSE') {
+            $gembaRow = $db->table('alert_gemba_audits')
+                ->where('gemba_sr_no', $ncDetailId)
+                ->get()
+                ->getRowArray();
+
+            if (!$gembaRow && $moduleType === 'HSE') {
+                $gembaRow = $db->table('alert_gemba_audits')
+                    ->where('hse_detail_id', $ncDetailId)
+                    ->get()
+                    ->getRowArray();
+            }
+            if ($gembaRow && empty($siteName)) {
+                $siteName = $gembaRow['site_name'] ?? ($gembaRow['client_name'] ?? ($gembaRow['location'] ?? ''));
+            }
+        }
+
+        // Add CREATED milestone if gembaRow exists
+        if ($gembaRow) {
+            $createdDate = !empty($gembaRow['audit_report_date']) ? $gembaRow['audit_report_date'] . ' 09:00:00' : (!empty($gembaRow['created_at']) ? $gembaRow['created_at'] : null);
+            $auditorUser = !empty($gembaRow['lead_auditor']) ? $gembaRow['lead_auditor'] : (!empty($gembaRow['auditor_name']) ? $gembaRow['auditor_name'] : 'Lead Auditor');
+            $uInfo = $resolveUser($auditorUser);
+            
+            $history[] = [
+                'action_type' => 'CREATED',
+                'performed_by_user_name' => $uInfo['name'],
+                'performed_by_designation' => !empty($uInfo['designation']) && $uInfo['designation'] !== 'Staff' ? $uInfo['designation'] : 'Auditor',
+                'created_at' => $createdDate ?: 'Initial Audit',
+                'previous_status' => 'New Audit',
+                'new_status' => 'Open',
+                'action_remarks' => !empty($gembaRow['point_description']) ? substr(strip_tags($gembaRow['point_description']), 0, 150) . '...' : 'NC Logged during Audit',
+                'evidence_attachment' => $gembaRow['before_photo'] ?? null
+            ];
+        }
+
+        if (!empty($auditTrailRows)) {
+            foreach ($auditTrailRows as $trail) {
+                $statusFrom = (int) $trail['status_from'];
+                $statusTo   = (int) $trail['status_to'];
+                $uInfo = $resolveUser($trail['action_by']);
+
+                $actionType = 'ACTION';
+                if ($statusTo === 1) {
+                    $actionType = 'WORKING';
+                } elseif ($statusTo === 5) {
+                    $actionType = 'SUBMITTED TO CLUSTER';
+                } elseif ($statusTo === 2) {
+                    $actionType = ($statusFrom === 5) ? 'FORWARDED TO AUDITOR' : 'SUBMITTED TO AUDITOR';
+                } elseif ($statusTo === 3) {
+                    $actionType = 'CLOSED';
+                } elseif ($statusTo === 0) {
+                    $actionType = 'REJECTED';
+                }
+
+                $history[] = [
+                    'action_type' => $actionType,
+                    'performed_by_user_name' => $uInfo['name'],
+                    'performed_by_designation' => $uInfo['designation'],
+                    'created_at' => $trail['action_date'],
+                    'previous_status' => $statusLabels[$statusFrom] ?? ('Status ' . $statusFrom),
+                    'new_status' => $statusLabels[$statusTo] ?? ('Status ' . $statusTo),
+                    'action_remarks' => $trail['remarks'] ?? '',
+                    'evidence_attachment' => $trail['evidence'] ?? null
+                ];
+            }
+        } elseif ($gembaRow) {
+            // Fallback: build milestones from alert_gemba_audits columns if trail is empty
+            if (!empty($gembaRow['working_date']) || !empty($gembaRow['nc_worked_by'])) {
+                $uInfo = $resolveUser($gembaRow['nc_worked_by'] ?? '');
+                $history[] = [
+                    'action_type' => 'WORKING',
+                    'performed_by_user_name' => $uInfo['name'],
+                    'performed_by_designation' => $uInfo['designation'],
+                    'created_at' => $gembaRow['working_date'] ?? 'N/A',
+                    'previous_status' => 'Open',
+                    'new_status' => 'Working',
+                    'action_remarks' => $gembaRow['working_remarks'] ?? ($gembaRow['nc_remark'] ?? 'NC marked as Working'),
+                    'evidence_attachment' => $gembaRow['working_uploaded_file'] ?? ($gembaRow['nc_after_photo'] ?? null)
+                ];
+            }
+
+            if (!empty($gembaRow['nc_cluster_reviewed_date']) || !empty($gembaRow['nc_cluster_reviewed_by'])) {
+                $uInfo = $resolveUser($gembaRow['nc_cluster_reviewed_by'] ?? '');
+                $history[] = [
+                    'action_type' => 'SUBMITTED TO CLUSTER',
+                    'performed_by_user_name' => $uInfo['name'],
+                    'performed_by_designation' => $uInfo['designation'],
+                    'created_at' => $gembaRow['nc_cluster_reviewed_date'] ?? 'N/A',
+                    'previous_status' => 'Working',
+                    'new_status' => 'Cluster Review',
+                    'action_remarks' => 'Submitted for Cluster Review',
+                    'evidence_attachment' => null
+                ];
+            }
+
+            if (!empty($gembaRow['nc_auditor_reviewed_date']) || !empty($gembaRow['nc_auditor_reviewed_by'])) {
+                $uInfo = $resolveUser($gembaRow['nc_auditor_reviewed_by'] ?? '');
+                $history[] = [
+                    'action_type' => 'FORWARDED TO AUDITOR',
+                    'performed_by_user_name' => $uInfo['name'],
+                    'performed_by_designation' => $uInfo['designation'],
+                    'created_at' => $gembaRow['nc_auditor_reviewed_date'] ?? 'N/A',
+                    'previous_status' => 'Cluster Review',
+                    'new_status' => 'Auditor Review',
+                    'action_remarks' => 'Forwarded to Auditor for Final Review',
+                    'evidence_attachment' => null
+                ];
+            }
+
+            if (!empty($gembaRow['nc_rejected_date']) || !empty($gembaRow['nc_rejected_by'])) {
+                $uInfo = $resolveUser($gembaRow['nc_rejected_by'] ?? '');
+                $history[] = [
+                    'action_type' => 'REJECTED',
+                    'performed_by_user_name' => $uInfo['name'],
+                    'performed_by_designation' => $uInfo['designation'],
+                    'created_at' => $gembaRow['nc_rejected_date'] ?? 'N/A',
+                    'previous_status' => 'In Review',
+                    'new_status' => 'Open',
+                    'action_remarks' => $gembaRow['rejection_reason'] ?? 'Rejected',
+                    'evidence_attachment' => null
+                ];
+            }
+
+            if ((int)$gembaRow['nc_status'] === 3 || !empty($gembaRow['nc_closed_date']) || !empty($gembaRow['closed_date'])) {
+                $uInfo = $resolveUser($gembaRow['nc_closed_by'] ?? '');
+                $history[] = [
+                    'action_type' => 'CLOSED',
+                    'performed_by_user_name' => $uInfo['name'],
+                    'performed_by_designation' => $uInfo['designation'],
+                    'created_at' => $gembaRow['nc_closed_date'] ?: ($gembaRow['closed_date'] ?? 'N/A'),
+                    'previous_status' => 'Auditor Review',
+                    'new_status' => 'Closed (' . ($gembaRow['closure_status'] ?? 'Closed') . ')',
+                    'action_remarks' => $gembaRow['closed_remarks'] ?? ($gembaRow['qhse_remarks'] ?? 'NC Closed'),
+                    'evidence_attachment' => $gembaRow['closed_uploaded_file'] ?? null
+                ];
+            }
+        }
+
+        return $this->response->setJSON([
+            'status' => 1,
+            'site_name' => $siteName,
+            'history' => $history
+        ]);
     }
 }

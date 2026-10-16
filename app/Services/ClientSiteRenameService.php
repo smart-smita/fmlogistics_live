@@ -19,8 +19,8 @@ class ClientSiteRenameService
      */
     private function ensureSchema()
     {
-        if (!$this->db->tableExists('OE_history')) {
-            $sql = "CREATE TABLE IF NOT EXISTS `OE_history` (
+        if (!$this->db->tableExists('alert_oe_history')) {
+            $sql = "CREATE TABLE IF NOT EXISTS `alert_oe_history` (
                 `history_id` INT AUTO_INCREMENT PRIMARY KEY,
                 `client_id` INT NOT NULL,
                 `site_id` INT NULL,
@@ -54,8 +54,8 @@ class ClientSiteRenameService
             $this->db->query($sql);
         }
 
-        if (!$this->db->tableExists('HSE_history')) {
-            $sql = "CREATE TABLE IF NOT EXISTS `HSE_history` (
+        if (!$this->db->tableExists('alert_hse_history')) {
+            $sql = "CREATE TABLE IF NOT EXISTS `alert_hse_history` (
                 `history_id` INT AUTO_INCREMENT PRIMARY KEY,
                 `client_id` INT NOT NULL,
                 `site_id` INT NULL,
@@ -93,8 +93,8 @@ class ClientSiteRenameService
             $this->db->query($sql);
         }
 
-        if (!$this->db->tableExists('Gemba_history')) {
-            $sql = "CREATE TABLE IF NOT EXISTS `Gemba_history` (
+        if (!$this->db->tableExists('alert_gemba_history')) {
+            $sql = "CREATE TABLE IF NOT EXISTS `alert_gemba_history` (
                 `history_id` INT AUTO_INCREMENT PRIMARY KEY,
                 `client_id` INT NULL COMMENT 'HSE Client ID if linked',
                 `site_id` INT NOT NULL COMMENT 'alert_gemba_sites.id',
@@ -128,8 +128,8 @@ class ClientSiteRenameService
             $this->db->query($sql);
         }
 
-        if (!$this->db->tableExists('OE_audit_backup')) {
-            $sql = "CREATE TABLE IF NOT EXISTS `OE_audit_backup` (
+        if (!$this->db->tableExists('alert_oe_audit_backup')) {
+            $sql = "CREATE TABLE IF NOT EXISTS `alert_oe_audit_backup` (
                 `backup_id` INT AUTO_INCREMENT PRIMARY KEY,
                 `history_id` INT NULL,
                 `backed_up_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -165,8 +165,8 @@ class ClientSiteRenameService
             $this->db->query($sql);
         }
 
-        if (!$this->db->tableExists('HSE_audit_backup')) {
-            $sql = "CREATE TABLE IF NOT EXISTS `HSE_audit_backup` (
+        if (!$this->db->tableExists('alert_hse_audit_backup')) {
+            $sql = "CREATE TABLE IF NOT EXISTS `alert_hse_audit_backup` (
                 `backup_id` INT AUTO_INCREMENT PRIMARY KEY,
                 `history_id` INT NULL,
                 `backed_up_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -198,8 +198,8 @@ class ClientSiteRenameService
             $this->db->query($sql);
         }
 
-        if (!$this->db->tableExists('Gemba_audit_backup')) {
-            $sql = "CREATE TABLE IF NOT EXISTS `Gemba_audit_backup` (
+        if (!$this->db->tableExists('alert_gemba_audit_backup')) {
+            $sql = "CREATE TABLE IF NOT EXISTS `alert_gemba_audit_backup` (
                 `backup_id` INT AUTO_INCREMENT PRIMARY KEY,
                 `history_id` INT NULL,
                 `backed_up_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -434,18 +434,18 @@ class ClientSiteRenameService
             'changed_by_user_name' => $userName,
             'created_at'           => date('Y-m-d H:i:s')
         ];
-        $this->db->table('OE_history')->insert($historyData);
+        $this->db->table('alert_oe_history')->insert($historyData);
         $renameHistoryId = $this->db->insertID();
 
         // 3b. Dump full OE audit records as-is into OE_audit_backup for direct export/restore
-        if (!empty($oeAudits) && $this->db->tableExists('OE_audit_backup')) {
+        if (!empty($oeAudits) && $this->db->tableExists('alert_oe_audit_backup')) {
             $now = date('Y-m-d H:i:s');
             foreach ($oeAudits as $oeRow) {
                 $backupRow = $oeRow;
                 $backupRow['history_id'] = $renameHistoryId;
                 $backupRow['backed_up_at'] = $now;
                 unset($backupRow['backup_id']);
-                $this->db->table('OE_audit_backup')->insert($backupRow);
+                $this->db->table('alert_oe_audit_backup')->insert($backupRow);
             }
         }
 
@@ -705,18 +705,18 @@ class ClientSiteRenameService
             'changed_by_user_name' => $userName,
             'created_at'           => date('Y-m-d H:i:s')
         ];
-        $this->db->table('HSE_history')->insert($historyData);
+        $this->db->table('alert_hse_history')->insert($historyData);
         $renameHistoryId = $this->db->insertID();
 
         // 3b. Dump full HSE audit records as-is into HSE_audit_backup for direct export/restore
-        if (!empty($hseAudits) && $this->db->tableExists('HSE_audit_backup')) {
+        if (!empty($hseAudits) && $this->db->tableExists('alert_hse_audit_backup')) {
             $now = date('Y-m-d H:i:s');
             foreach ($hseAudits as $hseRow) {
                 $backupRow = $hseRow;
                 $backupRow['history_id'] = $renameHistoryId;
                 $backupRow['backed_up_at'] = $now;
                 unset($backupRow['backup_id']);
-                $this->db->table('HSE_audit_backup')->insert($backupRow);
+                $this->db->table('alert_hse_audit_backup')->insert($backupRow);
             }
         }
 
@@ -764,7 +764,7 @@ class ClientSiteRenameService
             $totalAffected += $cnt;
 
             if ($gembaSiteRec) {
-                $this->db->table('Gemba_history')->insert([
+                $this->db->table('alert_gemba_history')->insert([
                     'client_id'            => $clientId ?? 0,
                     'site_id'              => (int)$gembaSiteRec['id'],
                     'change_type'          => 'RENAME',
@@ -802,14 +802,14 @@ class ClientSiteRenameService
                 ->get()
                 ->getResultArray();
 
-            if (!empty($gembaAuditRows) && $this->db->tableExists('Gemba_audit_backup')) {
+            if (!empty($gembaAuditRows) && $this->db->tableExists('alert_gemba_audit_backup')) {
                 $now = date('Y-m-d H:i:s');
                 foreach ($gembaAuditRows as $gRow) {
                     $backupRow = $gRow;
                     $backupRow['history_id'] = $renameHistoryId;
                     $backupRow['backed_up_at'] = $now;
                     unset($backupRow['backup_id']);
-                    $this->db->table('Gemba_audit_backup')->insert($backupRow);
+                    $this->db->table('alert_gemba_audit_backup')->insert($backupRow);
                 }
             }
 
@@ -935,8 +935,8 @@ class ClientSiteRenameService
 
         // 4. Record into centralized Gemba_history
         $gembaHistoryId = null;
-        if ($this->db->tableExists('Gemba_history') && $gembaSiteRec) {
-            $this->db->table('Gemba_history')->insert([
+        if ($this->db->tableExists('alert_gemba_history') && $gembaSiteRec) {
+            $this->db->table('alert_gemba_history')->insert([
                 'client_id'            => $clientId ?: ($gembaSiteRec['client_id'] ?? null),
                 'site_id'              => $gembaSiteRec['id'] ?? 0,
                 'change_type'          => 'RENAME',
@@ -968,14 +968,14 @@ class ClientSiteRenameService
         }
 
         // 5. Dump full Gemba audit records as-is into Gemba_audit_backup for direct export/restore
-        if (!empty($gembaAudits) && $this->db->tableExists('Gemba_audit_backup')) {
+        if (!empty($gembaAudits) && $this->db->tableExists('alert_gemba_audit_backup')) {
             $now = date('Y-m-d H:i:s');
             foreach ($gembaAudits as $gRow) {
                 $backupRow = $gRow;
                 $backupRow['history_id'] = $gembaHistoryId;
                 $backupRow['backed_up_at'] = $now;
                 unset($backupRow['backup_id']);
-                $this->db->table('Gemba_audit_backup')->insert($backupRow);
+                $this->db->table('alert_gemba_audit_backup')->insert($backupRow);
             }
         }
 
