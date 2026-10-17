@@ -8,6 +8,7 @@
 
 <?php $this->section("main_body"); ?>
 
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
 <style>
 /* ============================================================
    AUDITOR PROFILE DASHBOARD – MODERN CLEAN STYLING
@@ -37,13 +38,27 @@
     --aud-icon-unified: #60a5fa;
 }
 
-.aud-dashboard,
-.aud-dashboard * {
-    font-family: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif !important;
+.aud-dashboard {
+    font-family: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    color: var(--aud-text-main);
 }
 
-.aud-dashboard {
-    color: var(--aud-text-main);
+.aud-dashboard *:not(i):not([class*="fa-"]):not(.fa):not(.fas):not(.far):not(.fab) {
+    font-family: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+}
+
+.aud-dashboard i.fa,
+.aud-dashboard i.fas,
+.aud-dashboard i.far,
+.aud-dashboard i.fab,
+.aud-dashboard .fa,
+.aud-dashboard .fas,
+.aud-dashboard .far,
+.aud-dashboard .fab,
+.aud-dashboard [class*="fa-"] {
+    font-family: "Font Awesome 5 Free", "FontAwesome" !important;
+    font-style: normal;
+    font-weight: 900;
 }
 
 /* ── Unified Icon System ── */
@@ -200,6 +215,21 @@
     background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
     border-left: 5px solid #16a34a;
     color: #166534;
+}
+.banner-nc {
+    background: linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%);
+    border-left: 5px solid #7c3aed;
+    color: #5b21b6;
+}
+.text-purple,
+#totalNcActionsBadge {
+    color: #6d28d9 !important;
+}
+[data-bs-theme="dark"] #totalNcActionsBadge,
+body.dark-mode #totalNcActionsBadge {
+    background-color: #1e1e2d !important;
+    color: #c4b5fd !important;
+    border-color: #4c1d95 !important;
 }
 
 /* ── KPI Summary Cards ── */
@@ -519,6 +549,24 @@
                     </select>
                 </div>
 
+                <!-- 2. Audit Month (Default: Current Month) -->
+                <div class="col-xl-2 col-lg-3 col-md-4 col-sm-6">
+                    <label class="form-label fs-7 fw-bold text-muted mb-1"><i class="fa fa-calendar-alt aud-filter-icon"></i> Audit Month</label>
+                    <select class="form-select form-select-sm form-select-solid fw-bold" id="audFilterMonth">
+                        <?php
+                        $curM = (int)date('n');
+                        $mMap = [
+                            1 => 'January', 2 => 'February', 3 => 'March', 4 => 'April',
+                            5 => 'May', 6 => 'June', 7 => 'July', 8 => 'August',
+                            9 => 'September', 10 => 'October', 11 => 'November', 12 => 'December'
+                        ];
+                        foreach ($mMap as $mNum => $mTxt):
+                        ?>
+                            <option value="<?= $mNum ?>" <?= ($mNum === $curM) ? 'selected' : '' ?>><?= $mTxt ?><?= ($mNum === $curM) ? ' (Current)' : '' ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+
                 <!-- 2. Date Range Mode -->
                 <div class="col-xl-2 col-lg-3 col-md-4 col-sm-6">
                     <label class="form-label fs-7 fw-bold text-muted mb-1"><i class="fa fa-calendar-alt aud-filter-icon"></i> Date Filter</label>
@@ -617,240 +665,6 @@
             </button>
         </div>
 
-        <?php if ($audit_scope === 'Both' || $audit_scope === 'OE'): ?>
-        <!-- ========================================================
-             CATEGORY 1: OE AUDIT DASHBOARD (Summary Cards)
-        ======================================================== -->
-        <div class="module-section-box" id="sectionOE">
-            <div class="aud-section-banner banner-oe">
-                <div>
-                    <h5 class="fw-bolder m-0 d-flex align-items-center gap-2">
-                        <i class="fa fa-layer-group fs-4"></i> Category 1: OE Audit Dashboard
-                    </h5>
-                    <small class="text-muted">Operational Excellence Audits &bull; Frequency: <strong>Monthly (1 Month)</strong></small>
-                </div>
-                <div class="d-flex align-items-center gap-2 flex-wrap">
-                    <span class="badge bg-white text-primary border shadow-sm px-3 py-2 fw-bold" id="oeLastDateBadge">
-                        <i class="fa fa-calendar-check me-1"></i> Last Audit: <?= esc($initial_kpis['oe']['last_audit_date'] ?? '-') ?>
-                    </span>
-                    <span class="badge bg-primary text-white shadow-sm px-3 py-2 fw-bold" id="oeNextDateBadge">
-                        <i class="fa fa-clock me-1"></i> Next Due: <?= esc($initial_kpis['oe']['next_audit_date'] ?? '-') ?>
-                    </span>
-                </div>
-            </div>
-
-            <!-- OE 9 Summary Cards -->
-            <div class="aud-kpi-grid aud-kpi-grid-9 mb-4">
-                <!-- 1. Total Audits -->
-                <div class="aud-kpi-card card-blue">
-                    <div class="d-flex align-items-center justify-content-between">
-                        <div class="aud-kpi-icon-wrap"><i class="fa fa-layer-group"></i></div>
-                        <span class="badge bg-light-primary text-primary fs-8">Total</span>
-                    </div>
-                    <div class="aud-kpi-value" id="kpiOeTotal"><?= number_format($initial_kpis['oe']['total_audits'] ?? 0) ?></div>
-                    <div class="aud-kpi-label">Total OE Audits</div>
-                </div>
-
-                <!-- 2. Performed Audits -->
-                <div class="aud-kpi-card card-emerald">
-                    <div class="d-flex align-items-center justify-content-between">
-                        <div class="aud-kpi-icon-wrap"><i class="fa fa-check-circle"></i></div>
-                        <span class="badge bg-light-success text-success fs-8">Completed</span>
-                    </div>
-                    <div class="aud-kpi-value" id="kpiOePerformed"><?= number_format($initial_kpis['oe']['performed_audits'] ?? 0) ?></div>
-                    <div class="aud-kpi-label">Performed Audits</div>
-                </div>
-
-                <!-- 3. Re-audits -->
-                <div class="aud-kpi-card card-cyan">
-                    <div class="d-flex align-items-center justify-content-between">
-                        <div class="aud-kpi-icon-wrap"><i class="fa fa-history"></i></div>
-                        <span class="badge bg-light-info text-info fs-8">Follow-up</span>
-                    </div>
-                    <div class="aud-kpi-value" id="kpiOeReaudits"><?= number_format($initial_kpis['oe']['reaudits'] ?? 0) ?></div>
-                    <div class="aud-kpi-label">Re-Audits</div>
-                </div>
-
-                <!-- 4. Pending Audits -->
-                <div class="aud-kpi-card card-rose">
-                    <div class="d-flex align-items-center justify-content-between">
-                        <div class="aud-kpi-icon-wrap"><i class="fa fa-clock"></i></div>
-                        <span class="badge bg-light-danger text-danger fs-8" id="kpiOeDueBadge"><?= number_format($initial_kpis['oe']['due_audits'] ?? 0) ?> Due</span>
-                    </div>
-                    <div class="aud-kpi-value" id="kpiOePending"><?= number_format($initial_kpis['oe']['pending_audits'] ?? 0) ?></div>
-                    <div class="aud-kpi-label">Pending Audits</div>
-                </div>
-
-                <!-- 5. Total NCs -->
-                <div class="aud-kpi-card card-purple">
-                    <div class="d-flex align-items-center justify-content-between">
-                        <div class="aud-kpi-icon-wrap"><i class="fa fa-exclamation-triangle"></i></div>
-                        <span class="badge bg-light-purple text-purple fs-8">All NCs</span>
-                    </div>
-                    <div class="aud-kpi-value" id="kpiOeTotalNc"><?= number_format($initial_kpis['oe']['total_ncs'] ?? 0) ?></div>
-                    <div class="aud-kpi-label">Total NCs</div>
-                </div>
-
-                <!-- 6. Open NCs -->
-                <div class="aud-kpi-card card-rose">
-                    <div class="d-flex align-items-center justify-content-between">
-                        <div class="aud-kpi-icon-wrap"><i class="fa fa-door-open"></i></div>
-                        <span class="badge bg-light-danger text-danger fs-8">Open</span>
-                    </div>
-                    <div class="aud-kpi-value" id="kpiOeOpenNc"><?= number_format($initial_kpis['oe']['open_ncs'] ?? 0) ?></div>
-                    <div class="aud-kpi-label">Open NCs</div>
-                </div>
-
-                <!-- 7. NCs under action / in progress -->
-                <div class="aud-kpi-card card-amber">
-                    <div class="d-flex align-items-center justify-content-between">
-                        <div class="aud-kpi-icon-wrap"><i class="fa fa-tools"></i></div>
-                        <span class="badge bg-light-warning text-warning fs-8">Working</span>
-                    </div>
-                    <div class="aud-kpi-value" id="kpiOeWorkingNc"><?= number_format($initial_kpis['oe']['working_ncs'] ?? 0) ?></div>
-                    <div class="aud-kpi-label">NCs Under Action</div>
-                </div>
-
-                <!-- 8. NCs pending review -->
-                <div class="aud-kpi-card card-indigo">
-                    <div class="d-flex align-items-center justify-content-between">
-                        <div class="aud-kpi-icon-wrap"><i class="fa fa-user-check"></i></div>
-                        <span class="badge bg-light-primary text-primary fs-8">In Review</span>
-                    </div>
-                    <div class="aud-kpi-value" id="kpiOeReviewNc"><?= number_format($initial_kpis['oe']['review_ncs'] ?? 0) ?></div>
-                    <div class="aud-kpi-label">Pending Review</div>
-                </div>
-
-                <!-- 9. Closed/resolved NCs -->
-                <div class="aud-kpi-card card-emerald">
-                    <div class="d-flex align-items-center justify-content-between">
-                        <div class="aud-kpi-icon-wrap"><i class="fa fa-check-double"></i></div>
-                        <span class="badge bg-light-success text-success fs-8">Resolved</span>
-                    </div>
-                    <div class="aud-kpi-value" id="kpiOeClosedNc"><?= number_format($initial_kpis['oe']['closed_ncs'] ?? 0) ?></div>
-                    <div class="aud-kpi-label">Closed / Resolved</div>
-                </div>
-            </div>
-        </div>
-        <?php endif; ?>
-
-        <?php if ($audit_scope === 'Both' || $audit_scope === 'HSE'): ?>
-        <!-- ========================================================
-             CATEGORY 2: GEMBA/HSE AUDIT DASHBOARD (Combined)
-        ======================================================== -->
-        <div class="module-section-box" id="sectionGembaHSE">
-            <div class="aud-section-banner banner-gemba-hse">
-                <div>
-                    <h5 class="fw-bolder m-0 d-flex align-items-center gap-2">
-                        <i class="fa fa-shield-alt fs-4"></i> Category 2: Gemba/HSE Audit Dashboard
-                    </h5>
-                    <small class="text-muted">Combined Gemba Walks & HSE Audits &bull; Zero Double-Counting &bull; Latest HSE NCs Included</small>
-                </div>
-                <div class="d-flex align-items-center gap-2 flex-wrap">
-                    <span class="badge bg-white text-success border shadow-sm px-3 py-2 fw-bold" id="gembaHseLastDateBadge">
-                        <i class="fa fa-calendar-check me-1"></i> Last Activity: <?= esc($initial_kpis['gemba_hse']['last_audit_date'] ?? '-') ?>
-                    </span>
-                    <span class="badge bg-success text-white shadow-sm px-3 py-2 fw-bold">
-                        <i class="fa fa-route me-1"></i> Quarterly & Walk Cycle
-                    </span>
-                </div>
-            </div>
-
-            <!-- Gemba/HSE 9 Summary Cards -->
-            <div class="aud-kpi-grid aud-kpi-grid-9 mb-4">
-                <!-- 1. Total Audits -->
-                <div class="aud-kpi-card card-teal">
-                    <div class="d-flex align-items-center justify-content-between">
-                        <div class="aud-kpi-icon-wrap"><i class="fa fa-walking"></i></div>
-                        <span class="badge bg-light-success text-teal fs-8">Combined</span>
-                    </div>
-                    <div class="aud-kpi-value" id="kpiGembaHseTotal"><?= number_format($initial_kpis['gemba_hse']['total_audits'] ?? 0) ?></div>
-                    <div class="aud-kpi-label">Total Audits</div>
-                </div>
-
-                <!-- 2. Performed Audits -->
-                <div class="aud-kpi-card card-emerald">
-                    <div class="d-flex align-items-center justify-content-between">
-                        <div class="aud-kpi-icon-wrap"><i class="fa fa-check-circle"></i></div>
-                        <span class="badge bg-light-success text-success fs-8">Completed</span>
-                    </div>
-                    <div class="aud-kpi-value" id="kpiGembaHsePerformed"><?= number_format($initial_kpis['gemba_hse']['performed_audits'] ?? 0) ?></div>
-                    <div class="aud-kpi-label">Performed Audits</div>
-                </div>
-
-                <!-- 3. Re-audits -->
-                <div class="aud-kpi-card card-cyan">
-                    <div class="d-flex align-items-center justify-content-between">
-                        <div class="aud-kpi-icon-wrap"><i class="fa fa-sync-alt"></i></div>
-                        <span class="badge bg-light-info text-info fs-8">Follow-up</span>
-                    </div>
-                    <div class="aud-kpi-value" id="kpiGembaHseReaudits"><?= number_format($initial_kpis['gemba_hse']['reaudits'] ?? 0) ?></div>
-                    <div class="aud-kpi-label">Re-Audits</div>
-                </div>
-
-                <!-- 4. Pending Audits -->
-                <div class="aud-kpi-card card-rose">
-                    <div class="d-flex align-items-center justify-content-between">
-                        <div class="aud-kpi-icon-wrap"><i class="fa fa-clock"></i></div>
-                        <span class="badge bg-light-danger text-danger fs-8" id="kpiGembaHseDueBadge"><?= number_format($initial_kpis['gemba_hse']['due_audits'] ?? 0) ?> Due</span>
-                    </div>
-                    <div class="aud-kpi-value" id="kpiGembaHsePending"><?= number_format($initial_kpis['gemba_hse']['pending_audits'] ?? 0) ?></div>
-                    <div class="aud-kpi-label">Pending Audits</div>
-                </div>
-
-                <!-- 5. Total NCs -->
-                <div class="aud-kpi-card card-purple">
-                    <div class="d-flex align-items-center justify-content-between">
-                        <div class="aud-kpi-icon-wrap"><i class="fa fa-notes-medical"></i></div>
-                        <span class="badge bg-light-purple text-purple fs-8">All NCs</span>
-                    </div>
-                    <div class="aud-kpi-value" id="kpiGembaHseTotalNc"><?= number_format($initial_kpis['gemba_hse']['total_ncs'] ?? 0) ?></div>
-                    <div class="aud-kpi-label">Total NCs</div>
-                </div>
-
-                <!-- 6. Open NCs -->
-                <div class="aud-kpi-card card-rose">
-                    <div class="d-flex align-items-center justify-content-between">
-                        <div class="aud-kpi-icon-wrap"><i class="fa fa-exclamation-circle"></i></div>
-                        <span class="badge bg-light-danger text-danger fs-8">Open</span>
-                    </div>
-                    <div class="aud-kpi-value" id="kpiGembaHseOpenNc"><?= number_format($initial_kpis['gemba_hse']['open_ncs'] ?? 0) ?></div>
-                    <div class="aud-kpi-label">Open NCs</div>
-                </div>
-
-                <!-- 7. NCs under action / in progress -->
-                <div class="aud-kpi-card card-amber">
-                    <div class="d-flex align-items-center justify-content-between">
-                        <div class="aud-kpi-icon-wrap"><i class="fa fa-hourglass-half"></i></div>
-                        <span class="badge bg-light-warning text-warning fs-8">Working</span>
-                    </div>
-                    <div class="aud-kpi-value" id="kpiGembaHseWorkingNc"><?= number_format($initial_kpis['gemba_hse']['working_ncs'] ?? 0) ?></div>
-                    <div class="aud-kpi-label">NCs Under Action</div>
-                </div>
-
-                <!-- 8. NCs pending review -->
-                <div class="aud-kpi-card card-indigo">
-                    <div class="d-flex align-items-center justify-content-between">
-                        <div class="aud-kpi-icon-wrap"><i class="fa fa-user-clock"></i></div>
-                        <span class="badge bg-light-primary text-primary fs-8">In Review</span>
-                    </div>
-                    <div class="aud-kpi-value" id="kpiGembaHseReviewNc"><?= number_format($initial_kpis['gemba_hse']['review_ncs'] ?? 0) ?></div>
-                    <div class="aud-kpi-label">Pending Review</div>
-                </div>
-
-                <!-- 9. Closed/resolved NCs -->
-                <div class="aud-kpi-card card-emerald">
-                    <div class="d-flex align-items-center justify-content-between">
-                        <div class="aud-kpi-icon-wrap"><i class="fa fa-check-double"></i></div>
-                        <span class="badge bg-light-success text-success fs-8">Resolved</span>
-                    </div>
-                    <div class="aud-kpi-value" id="kpiGembaHseClosedNc"><?= number_format($initial_kpis['gemba_hse']['closed_ncs'] ?? 0) ?></div>
-                    <div class="aud-kpi-label">Closed / Resolved</div>
-                </div>
-            </div>
-        </div>
-        <?php endif; ?>
-
         <!-- ========================================================
              AUDIT PERFORMANCE CHARTS (OE vs Gemba/HSE)
         ======================================================== -->
@@ -861,13 +675,16 @@
                 <div class="col-xl-7 col-lg-7">
                     <div class="aud-chart-card position-relative" id="cardChartPerformedPending">
                         <div class="card-header">
-                            <h4 class="aud-chart-title">
-                                <i class="fa fa-chart-bar aud-chart-title-icon"></i> Graph 1: Audit Activity (Performed vs Pending)
-                            </h4>
+                            <div>
+                                <h4 class="aud-chart-title">
+                                    <i class="fa fa-chart-bar aud-chart-title-icon"></i> Graph 1: Audit Activity (Month-wise)
+                                </h4>
+                                <small class="text-muted fs-8">Performed, Re-Audits, Pending & Overdue (Click any bar to view audit list)</small>
+                            </div>
                             <span class="badge bg-light text-primary fs-8 fw-bold">OE vs Gemba/HSE</span>
                         </div>
                         <div class="aud-chart-body">
-                            <div id="chartPerformedVsPending" style="min-height: 320px;"></div>
+                            <div id="chartPerformedVsPending" style="min-height: 340px;"></div>
                         </div>
                     </div>
                 </div>
@@ -880,12 +697,13 @@
                                 <h4 class="aud-chart-title">
                                     <i class="fa fa-chart-pie aud-chart-title-icon"></i> Graph 2: Gemba/HSE Schedule Health
                                 </h4>
-                                <small class="text-muted fs-8">Gemba & HSE Schedule Distribution (Upcoming, Due & Overdue)</small>
+                                <small class="text-muted fs-8">Schedule health for selected month (Click slice to drill down)</small>
                             </div>
                             <span class="badge bg-light-success text-success fs-8 fw-bold">Gemba/HSE Only</span>
                         </div>
-                        <div class="aud-chart-body d-flex align-items-center justify-content-center">
+                        <div class="aud-chart-body d-flex flex-column align-items-center justify-content-center">
                             <div id="chartDueOverdueStatus" style="width: 100%; min-height: 320px;"></div>
+                            <div class="aud-chart-note text-muted fs-9 text-center mt-2 px-2 fst-italic"></div>
                         </div>
                     </div>
                 </div>
@@ -940,7 +758,7 @@
                     <small class="text-muted">Non-Conformance status distribution (Open, Under Action, In Review, Closed) across OE & Gemba/HSE</small>
                 </div>
                 <div class="d-flex align-items-center gap-2">
-                    <span class="badge bg-white text-purple border shadow-sm px-3 py-2 fw-bold" id="totalNcActionsBadge">
+                    <span class="badge bg-white text-purple border shadow-sm px-3 py-2 fw-bold" id="totalNcActionsBadge" style="color: #6d28d9 !important; font-size: 0.85rem;">
                         Total Closed: <?= number_format($initial_kpis['summary']['closed_ncs'] ?? 0) ?>
                     </span>
                 </div>
@@ -1235,6 +1053,54 @@
     </div>
 </div>
 
+<!-- ========================================================
+     AUDITOR DRILLDOWN MODAL (EXACT COUNT RECONCILIATION)
+======================================================== -->
+<div class="modal fade" id="auditorDrilldownModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content shadow-lg border-0 rounded-4">
+            <div class="modal-header bg-light py-3 px-4 border-bottom">
+                <div>
+                    <h5 class="modal-title fw-bold text-dark d-flex align-items-center gap-2" id="auditorDrilldownTitle">
+                        <i class="fa fa-list-check text-primary"></i> Audit Drilldown Records
+                    </h5>
+                    <span class="text-muted fs-8" id="auditorDrilldownSubtitle">Detailed audit schedules matching selected graph data point</span>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-4">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <span class="badge bg-light-primary text-primary fw-bold fs-7 px-3 py-2" id="auditorDrilldownBadge">Showing 0 Records</span>
+                    <span class="text-muted fs-8"><i class="fa fa-check-circle text-success me-1"></i> Row count strictly reconciles with graph number</span>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle table-row-dashed fs-7 gy-3">
+                        <thead class="bg-light fw-bold text-muted text-uppercase fs-8">
+                            <tr>
+                                <th class="ps-3">#</th>
+                                <th>Audit / Schedule No</th>
+                                <th>Category</th>
+                                <th>Site / Client</th>
+                                <th>Audit Date / Last Date</th>
+                                <th>Due Date</th>
+                                <th>Type</th>
+                                <th>Status</th>
+                                <th class="text-end pe-3">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="auditorDrilldownTableBody">
+                            <!-- Populated dynamically via JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer py-2 px-4 bg-light">
+                <button type="button" class="btn btn-sm btn-secondary fw-bold" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <?php $this->endSection(); ?>
 
 <?php $this->section("javascript_section"); ?>
@@ -1328,9 +1194,10 @@ $(document).ready(function () {
     let chartNcDistInst = null;
     let chartNcActionInst = null;
 
-    // Table Records
+    // Table & Drilldown Records
     let scheduleTableRecords = [];
     let latestNcRecords = [];
+    let globalDrilldownRecords = [];
 
     let schedCurrentPage = 1;
     const schedPageSize = 10;
@@ -1339,6 +1206,11 @@ $(document).ready(function () {
     let ncCurrentPage = 1;
     const ncPageSize = 10;
     let activeNcCat = 'all';
+
+    // Month Selector Change Event
+    $('#audFilterMonth').on('change', function () {
+        loadAuditorAnalytics();
+    });
 
     // Toggle custom date pickers
     $('#audFilterDateRange').on('change', function () {
@@ -1356,18 +1228,26 @@ $(document).ready(function () {
         const target = $(this).data('target');
 
         if (target === 'all') {
-            $('#sectionOE, #sectionGembaHSE, #sectionCharts, #sectionNC, #sectionReports').fadeIn(200);
+            $('#sectionCharts, #sectionNC, #sectionReports').fadeIn(200);
             $('#audFilterModule').val('all');
+            loadAuditorAnalytics();
+            if ($("#sectionCharts").length) {
+                $('html, body').animate({ scrollTop: $("#sectionCharts").offset().top - 80 }, 400);
+            }
         } else if (target === 'oe') {
-            $('#sectionOE').fadeIn(200);
-            $('#sectionGembaHSE').hide();
+            $('#sectionCharts, #sectionNC, #sectionReports').fadeIn(200);
             $('#audFilterModule').val('OE');
-            $('html, body').animate({ scrollTop: $("#sectionOE").offset().top - 80 }, 400);
+            loadAuditorAnalytics();
+            if ($("#sectionCharts").length) {
+                $('html, body').animate({ scrollTop: $("#sectionCharts").offset().top - 80 }, 400);
+            }
         } else if (target === 'gemba_hse') {
-            $('#sectionGembaHSE').fadeIn(200);
-            $('#sectionOE').hide();
+            $('#sectionCharts, #sectionNC, #sectionReports').fadeIn(200);
             $('#audFilterModule').val('Gemba_HSE');
-            $('html, body').animate({ scrollTop: $("#sectionGembaHSE").offset().top - 80 }, 400);
+            loadAuditorAnalytics();
+            if ($("#sectionCharts").length) {
+                $('html, body').animate({ scrollTop: $("#sectionCharts").offset().top - 80 }, 400);
+            }
         } else if (target === 'charts') {
             $('html, body').animate({ scrollTop: $("#sectionCharts").offset().top - 80 }, 400);
         } else if (target === 'nc') {
@@ -1384,6 +1264,7 @@ $(document).ready(function () {
 
     $('#btnResetAudFilters').on('click', function () {
         $('#audFilterYear').val('<?= date('Y') ?>');
+        $('#audFilterMonth').val('<?= date('n') ?>');
         $('#audFilterDateRange').val('yearly').trigger('change');
         const defaultModule = '<?= ($audit_scope === "OE") ? "OE" : (($audit_scope === "HSE") ? "Gemba_HSE" : "all") ?>';
         $('#audFilterModule').val(defaultModule);
@@ -1391,15 +1272,7 @@ $(document).ready(function () {
         $('.aud-module-tab-btn').removeClass('active');
         const defaultTab = '<?= ($audit_scope === "OE") ? "oe" : (($audit_scope === "HSE") ? "gemba_hse" : "all") ?>';
         $('.aud-module-tab-btn[data-target="' + defaultTab + '"]').addClass('active');
-        <?php if ($audit_scope === 'OE'): ?>
-        $('#sectionOE, #sectionCharts, #sectionNC, #sectionReports').show();
-        $('#sectionGembaHSE').hide();
-        <?php elseif ($audit_scope === 'HSE'): ?>
-        $('#sectionGembaHSE, #sectionCharts, #sectionNC, #sectionReports').show();
-        $('#sectionOE').hide();
-        <?php else: ?>
-        $('#sectionOE, #sectionGembaHSE, #sectionCharts, #sectionNC, #sectionReports').show();
-        <?php endif; ?>
+        $('#sectionCharts, #sectionNC, #sectionReports').show();
         loadAuditorAnalytics();
     });
 
@@ -1410,6 +1283,7 @@ $(document).ready(function () {
         const payload = {
             auditor_id: targetAuditorId,
             year: $('#audFilterYear').val(),
+            month: $('#audFilterMonth').val(),
             date_range: $('#audFilterDateRange').val(),
             start_date: $('#audFilterStartDate').val(),
             end_date: $('#audFilterEndDate').val(),
@@ -1428,6 +1302,9 @@ $(document).ready(function () {
                 showLoadingState(false);
                 if (res && res.status === 1) {
                     updateKpis(res.kpis);
+
+                    // Single Source of Truth Drilldown records
+                    globalDrilldownRecords = (res.charts && res.charts.drilldown_records) ? res.charts.drilldown_records : [];
 
                     // 4 Core Graphs
                     renderGraph1PerformedPending(res.charts.performed_vs_pending);
@@ -1518,44 +1395,78 @@ $(document).ready(function () {
         return (val || 0).toLocaleString();
     }
 
-    /* ── Graph 1: Performed vs Pending Audits ── */
+    /* ── Graph 1: Audit Activity (Month-wise) ── */
     function renderGraph1PerformedPending(data) {
         if (!data) return;
-        if (data.categories && data.categories.length === 1) {
-            $('#cardChartPerformedPending .card-header .badge').text(data.categories[0] + ' Only');
-        } else {
-            $('#cardChartPerformedPending .card-header .badge').text('OE vs Gemba/HSE');
-        }
+        const isAll = (data.series && data.series.length > 4);
+        const badgeText = isAll ? 'OE vs Gemba/HSE (12 Months)' : (($('#audFilterModule').val() === 'OE' ? 'OE Only' : 'Gemba/HSE Only') + ' (12 Months)');
+        $('#cardChartPerformedPending .card-header .badge').text(badgeText);
+
+        const seriesColors = isAll
+            ? ['#10b981', '#06b6d4', '#f59e0b', '#ef4444', '#3b82f6', '#8b5cf6', '#f97316', '#dc2626']
+            : ['#10b981', '#06b6d4', '#f59e0b', '#ef4444'];
 
         const options = {
             chart: {
                 type: 'bar',
-                height: 320,
+                height: 340,
                 toolbar: { show: false },
-                fontFamily: 'Poppins, -apple-system, BlinkMacSystemFont, sans-serif'
+                fontFamily: 'Poppins, -apple-system, BlinkMacSystemFont, sans-serif',
+                events: {
+                    dataPointSelection: function(event, chartContext, config) {
+                        const monthIndex = config.dataPointIndex;
+                        const monthNum = monthIndex + 1;
+                        const seriesObj = config.w.config.series[config.seriesIndex];
+                        const seriesName = seriesObj ? seriesObj.name : '';
+                        const count = seriesObj ? seriesObj.data[monthIndex] : 0;
+                        openDrilldownModalFromGraph1(monthNum, seriesName, count);
+                    }
+                }
             },
             plotOptions: {
                 bar: {
                     horizontal: false,
-                    columnWidth: (data.categories && data.categories.length === 1) ? '35%' : '50%',
-                    borderRadius: 6
+                    columnWidth: isAll ? '72%' : '52%',
+                    borderRadius: 3,
+                    dataLabels: {
+                        position: 'top'
+                    }
                 }
             },
-            dataLabels: { enabled: false },
-            stroke: { show: true, width: 2, colors: ['transparent'] },
+            dataLabels: {
+                enabled: true,
+                formatter: function (val) {
+                    return (val && val > 0) ? val : "";
+                },
+                offsetY: -16,
+                style: {
+                    fontSize: '10px',
+                    fontWeight: 700,
+                    colors: ['#334155']
+                }
+            },
+            stroke: { show: true, width: 1, colors: ['transparent'] },
             series: data.series || [],
             xaxis: {
-                categories: data.categories || ['OE Audits', 'Gemba/HSE Audits'],
-                labels: { style: { colors: '#64748b', fontSize: '12px', fontWeight: 600 } }
+                categories: data.categories || ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
+                labels: { style: { colors: '#64748b', fontSize: '11px', fontWeight: 600 } }
             },
             yaxis: {
                 labels: { style: { colors: '#64748b', fontSize: '11px' } },
                 forceNiceScale: true
             },
-            colors: ['#10b981', '#06b6d4', '#f59e0b', '#ef4444'],
+            colors: seriesColors,
             grid: { borderColor: '#e2e8f0', strokeDashArray: 4 },
-            legend: { position: 'top', horizontalAlign: 'right', fontSize: '12px' },
-            tooltip: { y: { formatter: function (val) { return val + " Audits"; } } }
+            legend: { position: 'top', horizontalAlign: 'right', fontSize: '11px', itemMargin: { horizontal: 5, vertical: 2 } },
+            tooltip: {
+                shared: true,
+                intersect: false,
+                y: {
+                    formatter: function (val) {
+                        return (val !== undefined && val !== null) ? (val + " Audits") : "0 Audits";
+                    }
+                }
+            }
         };
 
         if (chartPerformedPendingInst) {
@@ -1575,26 +1486,36 @@ $(document).ready(function () {
         if (data.scope_badge) {
             $('#cardChartDueStatus .badge').text(data.scope_badge);
         }
+        if (data.note) {
+            $('#cardChartDueStatus .aud-chart-note').text(data.note);
+        }
 
         const labels = data.labels || ['Completed', 'Upcoming', 'Due Soon (15d)', 'Overdue'];
         const series = data.series || [0, 0, 0, 0];
-        const total = series.reduce((a, b) => a + b, 0);
-        const centerLabel = (data.module === 'OE') ? 'OE' : 'Gemba/HSE';
-        const tooltipSuffix = (data.module === 'OE') ? ' OE Audits' : ' Gemba/HSE Audits';
+        const total = (data.total !== undefined) ? data.total : series.reduce((a, b) => a + b, 0);
+        const centerLabel = (data.module === 'OE') ? 'OE Schedules' : 'Gemba/HSE';
 
         const options = {
             chart: {
                 type: 'donut',
                 height: 320,
-                fontFamily: 'Poppins, -apple-system, BlinkMacSystemFont, sans-serif'
+                fontFamily: 'Poppins, -apple-system, BlinkMacSystemFont, sans-serif',
+                events: {
+                    dataPointSelection: function(event, chartContext, config) {
+                        const sliceIndex = config.dataPointIndex;
+                        const sliceLabel = config.w.config.labels[sliceIndex];
+                        const count = config.w.config.series[sliceIndex];
+                        openDrilldownModalFromGraph2(sliceLabel, count, data.module);
+                    }
+                }
             },
             labels: labels,
-            series: total > 0 ? series : [1],
-            colors: total > 0 ? ['#10b981', '#3b82f6', '#f59e0b', '#ef4444'] : ['#e2e8f0'],
+            series: series,
+            colors: ['#10b981', '#3b82f6', '#f59e0b', '#ef4444'],
             plotOptions: {
                 pie: {
                     donut: {
-                        size: '72%',
+                        size: '70%',
                         labels: {
                             show: true,
                             total: {
@@ -1609,12 +1530,26 @@ $(document).ready(function () {
                     }
                 }
             },
-            dataLabels: { enabled: false },
-            legend: { position: 'bottom', fontSize: '12px', itemMargin: { horizontal: 6, vertical: 3 } },
+            dataLabels: {
+                enabled: true,
+                formatter: function (val, opts) {
+                    const count = opts.w.config.series[opts.seriesIndex];
+                    return (count > 0) ? count : "";
+                },
+                style: {
+                    fontSize: '11px',
+                    fontWeight: 700
+                },
+                dropShadow: { enabled: false }
+            },
+            legend: { position: 'bottom', fontSize: '11px', itemMargin: { horizontal: 6, vertical: 3 } },
             stroke: { width: 2, colors: ['#ffffff'] },
             tooltip: {
-                enabled: total > 0,
-                y: { formatter: function (val) { return val + tooltipSuffix; } }
+                y: {
+                    formatter: function (val) {
+                        return val + " Schedules";
+                    }
+                }
             }
         };
 
@@ -1623,6 +1558,105 @@ $(document).ready(function () {
         } else {
             chartDueStatusInst = new ApexCharts(document.querySelector("#chartDueOverdueStatus"), options);
             chartDueStatusInst.render();
+        }
+    }
+
+    /* ── Drilldown Modal Handlers (Criterion 5) ── */
+    function openDrilldownModalFromGraph1(monthNum, seriesName, expectedCount) {
+        const monthNames = ['', 'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+        const monthLabel = monthNames[monthNum] || ('Month ' + monthNum);
+
+        let cat = null;
+        if (seriesName.indexOf('OE') !== -1) cat = 'OE';
+        else if (seriesName.indexOf('Gemba') !== -1 || seriesName.indexOf('HSE') !== -1) cat = 'Gemba/HSE';
+        else cat = ($('#audFilterModule').val() === 'OE') ? 'OE' : 'Gemba/HSE';
+
+        let statusKey = '';
+        if (seriesName.indexOf('Re-Audit') !== -1) statusKey = 'Re-Audit';
+        else if (seriesName.indexOf('Performed') !== -1 || seriesName.indexOf('Completed') !== -1) statusKey = 'Completed';
+        else if (seriesName.indexOf('Overdue') !== -1) statusKey = 'Overdue';
+        else if (seriesName.indexOf('Pending') !== -1) statusKey = 'Pending';
+
+        const matches = globalDrilldownRecords.filter(function(r) {
+            if (parseInt(r.month_num, 10) !== monthNum) return false;
+            if (cat && r.category !== cat) return false;
+            if (statusKey === 'Re-Audit') return r.status === 'Re-Audit';
+            if (statusKey === 'Completed') return r.status === 'Completed';
+            if (statusKey === 'Overdue') return r.status === 'Overdue';
+            if (statusKey === 'Pending') return (r.status === 'Upcoming' || r.status === 'Due Soon' || r.status === 'Pending');
+            return true;
+        });
+
+        renderDrilldownRows(matches, seriesName + ' — ' + monthLabel, expectedCount);
+    }
+
+    function openDrilldownModalFromGraph2(sliceLabel, expectedCount, moduleLabel) {
+        const selMonth = parseInt($('#audFilterMonth').val(), 10) || (new Date().getMonth() + 1);
+        const monthNames = ['', 'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+        const monthLabel = monthNames[selMonth] || ('Month ' + selMonth);
+        const cat = (moduleLabel === 'OE') ? 'OE' : 'Gemba/HSE';
+
+        const matches = globalDrilldownRecords.filter(function(r) {
+            if (parseInt(r.month_num, 10) !== selMonth) return false;
+            if (r.category !== cat) return false;
+            if (sliceLabel === 'Completed') return r.status === 'Completed';
+            if (sliceLabel === 'Overdue') return r.status === 'Overdue';
+            if (sliceLabel.indexOf('Due Soon') !== -1) return r.status === 'Due Soon';
+            if (sliceLabel === 'Upcoming') return r.status === 'Upcoming';
+            return false;
+        });
+
+        renderDrilldownRows(matches, 'Graph 2: ' + sliceLabel + ' (' + cat + ' — ' + monthLabel + ')', expectedCount);
+    }
+
+    function renderDrilldownRows(records, title, expectedCount) {
+        $('#auditorDrilldownTitle').html('<i class="fa fa-list-check text-primary"></i> ' + escapeHtml(title));
+        $('#auditorDrilldownBadge').text('Showing ' + records.length + ' of ' + expectedCount + ' Records (Exact Reconciled Count)');
+        
+        const tbody = $('#auditorDrilldownTableBody');
+        tbody.empty();
+
+        if (!records || records.length === 0) {
+            tbody.append('<tr><td colspan="9" class="text-center py-4 text-muted fs-7"><i class="fa fa-info-circle me-1"></i> No matching audit records found for this data point (Count: 0).</td></tr>');
+        } else {
+            records.forEach(function(r, idx) {
+                let badgeClass = 'bg-light-primary text-primary';
+                if (r.status === 'Completed') badgeClass = 'bg-light-success text-success';
+                else if (r.status === 'Re-Audit') badgeClass = 'bg-light-info text-info';
+                else if (r.status === 'Overdue') badgeClass = 'bg-light-danger text-danger';
+                else if (r.status === 'Due Soon') badgeClass = 'bg-light-warning text-warning';
+
+                const auditDateFormatted = (r.audit_date && r.audit_date !== '0000-00-00') ? r.audit_date : '-';
+                const dueDateFormatted = (r.due_date && r.due_date !== '0000-00-00') ? r.due_date : '-';
+
+                const tr = `
+                    <tr>
+                        <td class="ps-3 fw-bold text-muted">${idx + 1}</td>
+                        <td class="fw-bolder text-dark">${escapeHtml(r.audit_no || 'N/A')}</td>
+                        <td><span class="badge ${r.category === 'OE' ? 'bg-light-primary text-primary' : 'bg-light-success text-success'} fs-9 fw-bold">${escapeHtml(r.category)}</span></td>
+                        <td>
+                            <div class="fw-bold text-dark">${escapeHtml(r.site_name || 'N/A')}</div>
+                            <small class="text-muted fs-9">${escapeHtml(r.client_name || 'FM Logistic')}</small>
+                        </td>
+                        <td><span class="text-dark fs-8">${auditDateFormatted}</span></td>
+                        <td><span class="text-dark fs-8">${dueDateFormatted}</span></td>
+                        <td><span class="text-muted fs-8">${escapeHtml(r.type || 'Audit')}</span></td>
+                        <td><span class="badge ${badgeClass} fs-8 fw-bold">${escapeHtml(r.status)}</span></td>
+                        <td class="text-end pe-3">
+                            <a href="${escapeHtml(r.action_url || '#')}" target="_blank" class="btn btn-xs btn-light-primary fw-bold">
+                                <i class="fa fa-external-link-alt fs-9 me-1"></i> View
+                            </a>
+                        </td>
+                    </tr>
+                `;
+                tbody.append(tr);
+            });
+        }
+
+        const modalEl = document.getElementById('auditorDrilldownModal');
+        if (modalEl) {
+            const modalInstance = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
+            modalInstance.show();
         }
     }
 

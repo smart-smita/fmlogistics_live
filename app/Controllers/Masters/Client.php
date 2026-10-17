@@ -33,12 +33,12 @@ class Client extends BaseController
         $tdata['title']="";
         $tdata['button_name']="Add Client";
         $tdata['button_id']="Client";
+        $tdata['example2'] = "client_master_table";
         
         $tdata['display_contents'] = [
             "client_id"=>"ID",
             "client_name"=>"Client Name",
             "email"=>"E-mail",
-            "location_name"=>"Location",
             "region"=>"Region",
             "cluster"=>"cluster",
             "account_manager"=>"Account Manager",
@@ -47,11 +47,11 @@ class Client extends BaseController
         $tdata['export_csv'] = true;
         $tdata['top_dynamic_content'] = '
         <div class="d-flex align-items-center justify-content-between flex-wrap gap-3 mb-4">
-            <div class="btn-group" role="group" aria-label="Status Filter">
+            <div class="btn-group client-status-filter-group shadow-sm" role="group" aria-label="Status Filter">
                 <button type="button" class="btn btn-sm btn-primary active text-white" id="filter_active_btn" onclick="setStatusFilter(\'active\')">
                     <i class="fa fa-check-circle me-1"></i> Active (<span id="active_count_badge">0</span>)
                 </button>
-                <button type="button" class="btn btn-sm btn-outline-secondary" id="filter_all_btn" onclick="setStatusFilter(\'all\')">
+                <button type="button" class="btn btn-sm" id="filter_all_btn" onclick="setStatusFilter(\'all\')">
                     <i class="fa fa-list me-1"></i> All (<span id="all_count_badge">0</span>)
                 </button>
             </div>
@@ -135,48 +135,40 @@ class Client extends BaseController
         ];
        
         foreach($tdata['table_data'] as $key=>$row){
-            if (!empty($row['location'])) {
-                $tdata['table_data'][$key]['location_name'] = $row['location'];
-            } else {
-                $tdata['table_data'][$key]['location_name'] = "-";
-            }
             $tdata['table_data'][$key]['sr_no'] = $key+1;
-            $active = '<button class="btn btn-icon btn-success" title="Activate" onclick="url_call_ajax(\''.base_url("Masters/Client/save_details/".$row['client_id']).'/active\',$(this));">
-											<span class="indicator-label svg-icon svg-icon-2">
+            $active = '<button class="btn btn-icon btn-sm btn-success me-1" title="Activate" onclick="url_call_ajax(\''.base_url("Masters/Client/save_details/".$row['client_id']).'/active\',$(this));">
+											<span class="indicator-label svg-icon svg-icon-3">
 												<i class="fa fa-unlock"></i>
 											</span>
                                             <span class="indicator-progress">
                                                 <span class="spinner-border spinner-border-sm align-middle ms-2"></span>
                                             </span>
 											</button> ';
-			$deactive = '<button type="button" class="btn btn-icon btn-danger" title="Deactivate" onclick="openDeactivateConfirmModal('.$row['client_id'].');">
-                			<span class="indicator-label svg-icon svg-icon-2">
+			$deactive = '<button type="button" class="btn btn-icon btn-sm btn-danger me-1" title="Deactivate" onclick="openDeactivateConfirmModal('.$row['client_id'].');">
+                			<span class="indicator-label svg-icon svg-icon-3">
                 			<i class="fa fa-lock"></i>
                 			</span>
                             <span class="indicator-progress">
                                 <span class="spinner-border spinner-border-sm align-middle ms-2"></span>
                             </span>
                 			</button> ';
-				$delete = '<button data-ajax-url="'.base_url("Masters/Client/save_details/".$row['client_id']).'/delete" class="btn btn-icon btn-danger" title="Delete" onclick="delete_row(this);">
-                			<span class="indicator-label svg-icon svg-icon-2">
-                				
+				$delete = '<button data-ajax-url="'.base_url("Masters/Client/save_details/".$row['client_id']).'/delete" class="btn btn-icon btn-sm btn-danger me-1" title="Delete" onclick="delete_row(this);">
+                			<span class="indicator-label svg-icon svg-icon-3">
 								<i class="fa fa-trash"></i>
-                				
                 			</span>
                             <span class="indicator-progress">
                                 <span class="spinner-border spinner-border-sm align-middle ms-2"></span>
                             </span>
                 			</button> ';
 
-             $edit = '<button data-ajax-url="'.base_url("Masters/Client/get_form_data/".$row['client_id']).'" class="btn btn-icon btn-primary" title="Edit" onclick="edit_id(this,'.$row['client_id'].');">
+             $edit = '<button data-ajax-url="'.base_url("Masters/Client/get_form_data/".$row['client_id']).'" class="btn btn-icon btn-sm btn-primary me-1" title="Edit" onclick="edit_id(this,'.$row['client_id'].');">
 											<span class="indicator-label svg-icon svg-icon-3">
 												<i class="fa fa-edit"></i>
 											</span>
                                             <span class="indicator-progress">
                                                 <span class="spinner-border spinner-border-sm align-middle ms-2"></span>
                                             </span>
-											</button>
-											';
+											</button> ';
 										$loginas = '';
 
 											if($row['status']=="0"){
@@ -190,7 +182,12 @@ class Client extends BaseController
 											}
 				$stVal = $row['status'] ?? 0;
 				$msg = $statusMessages[$stVal] ?? '<span class="badge badge-secondary">'.$stVal.'</span>';
-				$tdata['table_data'][$key]['action']="<center>".$msg."<br><br>".$active.$deactive.$delete.$edit.$loginas."</center>";
+				$tdata['table_data'][$key]['action']='<div class="d-flex flex-column align-items-center justify-content-center py-1">'
+                    . '<div class="mb-2">' . $msg . '</div>'
+                    . '<div class="d-inline-flex align-items-center justify-content-center">'
+                    . $edit . $active . $deactive . $delete . $loginas
+                    . '</div>'
+                    . '</div>';
         }
         $tdata['data'] = $tdata['table_data'];
         unset($tdata['table_data']);
@@ -272,6 +269,15 @@ class Client extends BaseController
                             }
                         }
 
+                    // Preserve existing location on update if not provided
+                    if (!isset($postData['location']) || trim((string)$postData['location']) === '') {
+                        if (!empty($oldData['location'])) {
+                            $postData['location'] = $oldData['location'];
+                        } else {
+                            $postData['location'] = trim($postData['client_name'] ?? '');
+                        }
+                    }
+
                     $db = \Config\Database::connect();
                     $db->transStart();
 
@@ -307,8 +313,11 @@ class Client extends BaseController
                     }
                 }else{
                     $postData['status']="1";
-                        $responce['status'] = "0";
-                        $responce['message'] = "Data insertion faild";
+                    if (!isset($postData['location']) || trim((string)$postData['location']) === '') {
+                        $postData['location'] = trim($postData['client_name'] ?? '');
+                    }
+                    $responce['status'] = "0";
+                    $responce['message'] = "Data insertion faild";
                     if($this->BaseModel->insert($postData)){
                         $responce['status'] = "1";
                         $responce['message'] = "Data saved successfully";

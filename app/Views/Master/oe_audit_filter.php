@@ -77,7 +77,7 @@ if (($_SESSION['admin_flag'] ?? 0) == 1) {
         </div>
 
         <div class="col-md-3">
-            <label class="form-label fw-bold">Location</label>
+            <label class="form-label fw-bold">Client Name</label>
             <div class="position-relative">
                 <select id="flt_location" name="location[]" multiple="multiple"
                         class="form-select form-select-sm fw-semibold js-example-basic-single"

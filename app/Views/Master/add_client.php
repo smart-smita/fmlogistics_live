@@ -17,6 +17,143 @@ $form_id= $button_id;
 <?php $this->endSection();?>	
 
 <?php $this->section("main_body"); ?>
+<style>
+/* ─────────────────────────────────────────────────────────────
+   CLIENT MASTER - HIGH CONTRAST BUTTONS & ACTION STYLING
+───────────────────────────────────────────────────────────── */
+
+/* 1. Status Filter Buttons (Active / All) */
+.client-status-filter-group {
+    background: #ffffff;
+    border-radius: 8px;
+    padding: 3px;
+    border: 1px solid #cbd5e1;
+    display: inline-flex;
+}
+
+#filter_active_btn,
+#filter_all_btn {
+    border-radius: 6px !important;
+    font-size: 13px !important;
+    font-weight: 600 !important;
+    padding: 7px 16px !important;
+    transition: all 0.2s ease-in-out !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    border: 1px solid transparent !important;
+    text-decoration: none !important;
+}
+
+/* Active State */
+#filter_active_btn.active,
+#filter_all_btn.active {
+    background-color: #009ef7 !important;
+    border-color: #009ef7 !important;
+    color: #ffffff !important;
+    box-shadow: 0 2px 6px rgba(0, 158, 247, 0.35) !important;
+}
+
+#filter_active_btn.active i,
+#filter_all_btn.active i,
+#filter_active_btn.active span,
+#filter_all_btn.active span {
+    color: #ffffff !important;
+}
+
+/* Inactive State - High Contrast & Clearly Visible */
+#filter_active_btn:not(.active),
+#filter_all_btn:not(.active) {
+    background-color: #f8fafc !important;
+    border: 1px solid #cbd5e1 !important;
+    color: #334155 !important;
+}
+
+#filter_active_btn:not(.active) i,
+#filter_all_btn:not(.active) i {
+    color: #475569 !important;
+}
+
+#filter_active_btn:not(.active):hover,
+#filter_all_btn:not(.active):hover {
+    background-color: #e2e8f0 !important;
+    color: #0f172a !important;
+    border-color: #94a3b8 !important;
+}
+
+/* 2. Top Header Add Client Button */
+.card-header .btn[data-bs-target="#Client"] {
+    background-color: #009ef7 !important;
+    color: #ffffff !important;
+    border: 1px solid #009ef7 !important;
+    font-weight: 600 !important;
+    font-size: 13px !important;
+    padding: 7px 16px !important;
+    border-radius: 6px !important;
+    box-shadow: 0 2px 6px rgba(0, 158, 247, 0.25) !important;
+    transition: all 0.2s ease !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 6px !important;
+}
+
+.card-header .btn[data-bs-target="#Client"]:hover {
+    background-color: #0086d4 !important;
+    border-color: #0086d4 !important;
+    box-shadow: 0 4px 10px rgba(0, 158, 247, 0.35) !important;
+}
+
+.card-header .btn[data-bs-target="#Client"] svg rect {
+    fill: #ffffff !important;
+    opacity: 1 !important;
+}
+
+/* 3. Excel / CSV Export Button */
+#custom_export_csv_btn,
+.buttons-csv,
+button[onclick*="buttons-csv"] {
+    font-weight: 600 !important;
+    font-size: 13px !important;
+    padding: 7px 16px !important;
+    border-radius: 6px !important;
+    box-shadow: 0 2px 6px rgba(16, 185, 129, 0.25) !important;
+}
+
+/* 4. Action Column Buttons in Table */
+table.dataTable th:last-child,
+table.dataTable td:last-child,
+.col-field-action {
+    min-width: 175px !important;
+    width: 175px !important;
+    text-align: center !important;
+    vertical-align: middle !important;
+}
+
+table.dataTable td .btn-icon.btn-sm {
+    width: 32px !important;
+    height: 32px !important;
+    min-width: 32px !important;
+    min-height: 32px !important;
+    padding: 0 !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    border-radius: 6px !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1) !important;
+}
+
+table.dataTable td .btn-icon.btn-sm i {
+    font-size: 13px !important;
+}
+
+table.dataTable td .badge {
+    font-size: 11px !important;
+    padding: 4px 8px !important;
+    font-weight: 600 !important;
+    border-radius: 4px !important;
+    display: inline-block !important;
+}
+</style>
 <?=$table?>
 <?php $this->endSection(); ?>
 
@@ -54,7 +191,7 @@ $form_id= $button_id;
 								<!--begin::Input group-->
 								<div class="row mb-12">
 									<!--begin::Col-->
-									<div class="col-md-12 fv-row fv-plugins-icon-container">
+									<div class="col-md-12 fv-row fv-plugins-icon-container mb-5">
 										<label class="required fs-5 fw-bold-2">Client Name</label>
 										<input type="text" class="form-control form-control-solid" placeholder="Client Name"  id="client_name" name="client_name">
 										<div id="client_name_edit_note" class="text-warning fs-7 mt-1 font-weight-bold" style="display: none;">
@@ -63,27 +200,14 @@ $form_id= $button_id;
 										<div class="fv-plugins-message-container invalid-feedback"></div>
 									</div>
 
-									<div class="col-md-12 fv-row fv-plugins-icon-container" id="rename_remarks_group" style="display: none;">
+									<div class="col-md-12 fv-row fv-plugins-icon-container mb-5" id="rename_remarks_group" style="display: none;">
 										<label class="fs-5 fw-bold-2 text-primary"><i class="fa fa-info-circle text-primary me-1"></i>Reason / Remarks for Renaming Site (Optional)</label>
 										<input type="text" class="form-control form-control-solid border border-primary" placeholder="Enter reason or remarks for site renaming (e.g. Client facility name changed)" id="rename_remarks" name="rename_remarks">
 										<div class="form-text text-muted fs-7">This remark will be permanently recorded in the OE rename audit history log.</div>
 										<div class="fv-plugins-message-container invalid-feedback"></div>
 									</div>
 									
-								    <div class="col-md-12 fv-row fv-plugins-icon-container">
-										<label class="fs-5 fw-bold-2">Location </label>
-										<select class="form-select form-select-solid" id="location" name="location">
-										    <option value="">Select Location</option>
-										    <?php if(isset($location_list)): ?>
-										        <?php foreach($location_list as $row): ?>
-										            <option value="<?=htmlspecialchars($row['location_name'])?>"><?=htmlspecialchars($row['location_name'])?></option>
-										        <?php endforeach; ?>
-										    <?php endif; ?>
-										</select>
-										<div class="fv-plugins-message-container invalid-feedback"></div>
-									</div>
-									
-									 <div class="col-md-12 fv-row fv-plugins-icon-container">
+									<div class="col-md-12 fv-row fv-plugins-icon-container mb-5">
 										<label class="required fs-5 fw-bold-2">Region </label>
 										<select class="form-select form-select-solid"  id="region" name="region">
 										    <option value="" data-location-id="0">Select Region</option>
@@ -94,7 +218,7 @@ $form_id= $button_id;
 										<div class="fv-plugins-message-container invalid-feedback"></div>
 									</div>
 									
-									 <div class="col-md-12 fv-row fv-plugins-icon-container">
+									<div class="col-md-12 fv-row fv-plugins-icon-container mb-5">
 										<label class="required fs-5 fw-bold-2">Cluster </label>
 										<select class="form-select form-select-solid"  id="cluster" name="cluster">
 										    <option value="" data-location-id="0">Select Cluster</option>
@@ -105,7 +229,7 @@ $form_id= $button_id;
 										<div class="fv-plugins-message-container invalid-feedback"></div>
 									</div>
 
-                                    <div class="col-md-12 fv-row fv-plugins-icon-container">
+                                    <div class="col-md-12 fv-row fv-plugins-icon-container mb-5">
 										<label class=" fs-5 fw-bold-2">Account Manager</label>
 										<select class="form-select form-select-solid"  id="account_manager" name="account_manager">
 										    <option value="" data-email="">Select Account Manager</option>
@@ -118,7 +242,7 @@ $form_id= $button_id;
 										<div class="fv-plugins-message-container invalid-feedback"></div>
 									</div>
                                     
-									<div class="col-md-12 fv-row fv-plugins-icon-container">
+									<div class="col-md-12 fv-row fv-plugins-icon-container mb-5">
 										<label class="fs-5 fw-bold mb-2"> Manager E-mail </label>
 										<input type="text" class="form-control form-control-solid"placeholder="Enter E-mail " id="email" name="email">
 										<div class="fv-plugins-message-container invalid-feedback"></div>
@@ -160,7 +284,7 @@ $form_id= $button_id;
     <div class="modal-dialog modal-dialog-centered mw-700px">
         <div class="modal-content">
             <div class="modal-header bg-danger">
-                <h2 class="text-white">Deactivate Client / Location</h2>
+                <h2 class="text-white">Deactivate Client</h2>
                 <div class="btn btn-sm btn-icon btn-active-color-primary" data-bs-dismiss="modal">
                     <span class="svg-icon svg-icon-1"><i class="fa fa-times text-white"></i></span>
                 </div>
@@ -170,7 +294,6 @@ $form_id= $button_id;
                     <h5>Client Name: <span id="deact_client_name" class="text-primary"></span></h5>
                     <h5>Client Code: <span id="deact_client_code" class="text-primary"></span></h5>
                     <h5>Client Status: <span id="deact_client_status" class="text-primary"></span></h5>
-                    <h5>Location: <span id="deact_location_name" class="text-primary"></span></h5>
                 </div>
                 
                 <hr>
@@ -295,15 +418,9 @@ var validator = FormValidation.formValidation(form,validation_object);
                 var isChanged = false;
                 if (originalOeData) {
                     var curNameVal = $("#<?=$form_id?>").find("#client_name").val();
-                    var curLocVal = $("#<?=$form_id?>").find("#location").val();
                     var curName = (curNameVal !== null && curNameVal !== undefined) ? String(curNameVal).trim() : "";
-                    var curLoc = (curLocVal !== null && curLocVal !== undefined) ? String(curLocVal).trim() : "";
-                    var curCluster = $("#<?=$form_id?>").find("#cluster").val();
-                    var curAm = $("#<?=$form_id?>").find("#account_manager").val();
-
                     var isNameChanged = (originalOeData.client_name || '').trim() !== curName;
-                    var isLocChanged = (originalOeData.location || '').trim() !== curLoc;
-                    if (isNameChanged || isLocChanged) {
+                    if (isNameChanged) {
                         isChanged = true;
                     }
                 }
@@ -355,7 +472,6 @@ function edit_id(obj,id){
                                     
                                     originalOeData = {
                                         client_name: responce.data.client_name || '',
-                                        location: responce.data.location || '',
                                         cluster: responce.data.cluster || '',
                                         account_manager: responce.data.account_manager || ''
                                     };
@@ -364,10 +480,6 @@ function edit_id(obj,id){
                                     $("#rename_remarks_group").hide();
                                     $("#rename_remarks").val('');
 
-                                    if(responce.data.location) {
-                                        $("#<?=$form_id?>").find("#location_select").val(responce.data.location);
-                                        $("#<?=$form_id?>").find("#location").val(responce.data.location);
-                                    }
                                     $("#<?=$form_id?>").find("#email").val(responce.data.email);
                                     $("#<?=$form_id?>").find("#region").val(responce.data.region);
                                     $("#<?=$form_id?>").find("#cluster").val(responce.data.cluster);
@@ -440,22 +552,24 @@ function setStatusFilter(status) {
     currentStatusFilter = status;
     
     if (status === 'active') {
-        $('#filter_active_btn').removeClass('btn-outline-primary btn-outline-secondary').addClass('btn-primary active text-white');
-        $('#filter_all_btn').removeClass('btn-secondary active text-white').addClass('btn-outline-secondary');
+        $('#filter_active_btn').addClass('active');
+        $('#filter_all_btn').removeClass('active');
     } else {
-        $('#filter_all_btn').removeClass('btn-outline-primary btn-outline-secondary').addClass('btn-secondary active text-white');
-        $('#filter_active_btn').removeClass('btn-primary active text-white').addClass('btn-outline-primary');
+        $('#filter_all_btn').addClass('active');
+        $('#filter_active_btn').removeClass('active');
     }
 
-    var datatable = $('.table-bordered').DataTable();
     var newUrl = '<?=base_url("Masters/Client/table_ajax")?>?status_filter=' + status;
-    datatable.ajax.url(newUrl).load();
+    if ($.fn.DataTable.isDataTable('#client_master_table')) {
+        $('#client_master_table').DataTable().ajax.url(newUrl).load();
+    } else if (typeof table !== 'undefined' && table && table.ajax) {
+        table.ajax.url(newUrl).load();
+    }
 }
 
 // Update counts when DataTables receives XHR response
 $(document).ready(function() {
-    var tableEl = $('.table-bordered');
-    tableEl.on('xhr.dt', function(e, settings, json, xhr) {
+    $('#client_master_table').on('xhr.dt', function(e, settings, json, xhr) {
         if (json && json.counts) {
             $('#active_count_badge').text(json.counts.active !== undefined ? json.counts.active : 0);
             $('#all_count_badge').text(json.counts.all !== undefined ? json.counts.all : 0);
@@ -504,13 +618,11 @@ function openDeactivateConfirmModal(clientId) {
             console.log("AJAX success response:", res);
             if(res.status == 1) {
                 currentDeactClientName = res.client_name;
-                currentDeactLocation = res.location;
                 currentDeactRegion = res.region;
                 
                 $("#deact_client_name").text(res.client_name);
                 $("#deact_client_code").text(res.client_code);
                 $("#deact_client_status").text(res.client_status);
-                $("#deact_location_name").text(res.location);
                 
                 $("#oe_open").text(res.oe.open);
                 $("#oe_work").text(res.oe.working);

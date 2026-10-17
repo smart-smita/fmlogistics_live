@@ -149,131 +149,297 @@
 </div>
 
 <style>
-    /* Fix table text wrapping for long content without breaking layout */
-    .dataTables_wrapper .table.dataTable td {
-        white-space: normal !important;
-        word-wrap: break-word !important;
-        word-break: break-word !important;
-        min-width: 120px;
-        vertical-align: middle;
+    /* ─────────────────────────────────────────────────────────────
+       GEMBA HSE NC TRACKER - RESPONSIVE DATA TABLE STYLING
+       Ensures full responsiveness across screen sizes, flawless
+       column alignment between headers and body, and readable text.
+    ───────────────────────────────────────────────────────────── */
+
+    .gemba-nc-table-wrapper {
+        width: 100%;
+        position: relative;
     }
 
-    /* Long text columns: Observation, Recommendation Action, Working Remarks, Closing Remarks, etc. */
-    .dataTables_wrapper .table.dataTable th.long-text-column,
-    .dataTables_wrapper .table.dataTable td.long-text-column {
-        min-width: 300px !important;
-        width: 380px !important;
-        max-width: 550px !important;
-        white-space: normal !important;
-        word-wrap: break-word !important;
-        word-break: break-word !important;
+    /* Outer card aesthetic */
+    .gemba-nc-table-wrapper .card {
+        border-radius: 16px !important;
+        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.05) !important;
+        border: 1px solid #e2e8f0 !important;
+        overflow: hidden;
     }
-    
-    /* ------------------------------------------------------------- */
-    /* PROPER STICKY COLUMNS FOR GEMBA NC TRACKER                     */
-    /* Handles both with and without Bulk Select (admin/auditor role) */
-    /* ------------------------------------------------------------- */
 
-    /* 1. Bulk Select Column (when present) */
-    #gemba_nc_tracker_table th.col-field-bulk_select,
-    #gemba_nc_tracker_table td.col-field-bulk_select {
-        position: sticky !important;
-        left: 0 !important;
+    /* Allow the table to expand naturally to accommodate all 35 columns */
+    #gemba_nc_tracker_table,
+    .dataTables_wrapper .dataTables_scrollHead table,
+    .dataTables_wrapper .dataTables_scrollBody table {
+        width: max-content !important;
+        min-width: 100% !important;
+        border-collapse: collapse !important;
+        table-layout: auto !important;
+    }
+
+    /* Scroll container configuration */
+    .dataTables_wrapper .dataTables_scroll {
+        width: 100% !important;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        background: #ffffff;
+        overflow: hidden;
+    }
+
+    .dataTables_wrapper .dataTables_scrollHead {
+        background-color: #f8fafc !important;
+        border-bottom: 2px solid #e2e8f0 !important;
+        overflow: hidden !important;
+    }
+
+    .dataTables_wrapper .dataTables_scrollBody {
+        width: 100% !important;
+        overflow-x: auto !important;
+        overflow-y: auto !important;
+        max-height: 560px !important;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    /* Custom high-visibility scrollbar */
+    .dataTables_wrapper .dataTables_scrollBody::-webkit-scrollbar {
+        width: 10px;
+        height: 12px;
+    }
+    .dataTables_wrapper .dataTables_scrollBody::-webkit-scrollbar-track {
+        background: #f1f5f9;
+        border-radius: 6px;
+    }
+    .dataTables_wrapper .dataTables_scrollBody::-webkit-scrollbar-thumb {
+        background: #94a3b8;
+        border-radius: 6px;
+        border: 2px solid #f1f5f9;
+    }
+    .dataTables_wrapper .dataTables_scrollBody::-webkit-scrollbar-thumb:hover {
+        background: #64748b;
+    }
+
+    /* Enforce clean LEFT text alignment across ALL headers and data cells */
+    .dataTables_wrapper .dataTables_scrollHead table th,
+    .dataTables_wrapper .dataTables_scrollBody table td,
+    .dataTables_wrapper table.dataTable th,
+    .dataTables_wrapper table.dataTable td {
+        text-align: left !important;
+    }
+
+    /* Table Header Cells */
+    .dataTables_wrapper .dataTables_scrollHead table th {
+        background-color: #f8fafc !important;
+        color: #334155 !important;
+        font-weight: 700 !important;
+        font-size: 13px !important;
+        white-space: nowrap !important;
+        vertical-align: middle !important;
+        padding: 12px 14px !important;
+        border-bottom: 2px solid #cbd5e1 !important;
+        box-sizing: border-box !important;
+        text-align: left !important;
+    }
+
+    /* Table Body Cells */
+    .dataTables_wrapper .dataTables_scrollBody table td {
+        padding: 10px 14px !important;
+        vertical-align: middle !important;
+        font-size: 13px !important;
+        color: #1e293b;
+        white-space: nowrap;
+        border-bottom: 1px solid #f1f5f9 !important;
+        box-sizing: border-box !important;
+        text-align: left !important;
+    }
+
+    .dataTables_wrapper .dataTables_scrollBody table tr:hover td {
+        background-color: #f8fafc !important;
+    }
+
+    /* Prevent duplicate/conflicting scrollbars on the outer container */
+    .gemba-nc-table-wrapper .table-responsive {
+        overflow: visible !important;
+        width: 100% !important;
+    }
+
+    /* Enforce strict LEFT text alignment across ALL table elements */
+    .dataTables_wrapper .dataTables_scrollHead table th,
+    .dataTables_wrapper .dataTables_scrollBody table td,
+    .dataTables_wrapper table.dataTable th,
+    .dataTables_wrapper table.dataTable td,
+    #gemba_nc_tracker_table th,
+    #gemba_nc_tracker_table td {
+        text-align: left !important;
+        vertical-align: middle !important;
+    }
+
+    /* All 35 Column Widths & Left-Aligned Text */
+    .dataTables_wrapper table th.col-field-bulk_select,
+    .dataTables_wrapper table td.col-field-bulk_select {
         width: 45px !important;
         min-width: 45px !important;
         max-width: 45px !important;
-        z-index: 10 !important;
-        background-color: #ffffff !important;
-        text-align: center !important;
-        box-shadow: inset -1px 0 0 #e4e6ef !important;
+        text-align: left !important;
+        padding: 8px 6px !important;
     }
 
-    /* 2. Action Column - positioned after bulk_select if present, otherwise at left: 0 */
-    #gemba_nc_tracker_table th.col-field-action,
-    #gemba_nc_tracker_table td.col-field-action {
-        position: sticky !important;
+    .dataTables_wrapper table th.col-field-action,
+    .dataTables_wrapper table td.col-field-action {
         width: 130px !important;
         min-width: 130px !important;
-        max-width: 150px !important;
-        z-index: 10 !important;
-        background-color: #ffffff !important;
-        text-align: center !important;
-        box-shadow: inset -1px 0 0 #e4e6ef !important;
-    }
-
-    /* When bulk_select is present, offset Action by bulk_select width */
-    #gemba_nc_tracker_table th.col-field-bulk_select ~ th.col-field-action,
-    #gemba_nc_tracker_table td.col-field-bulk_select ~ td.col-field-action,
-    #gemba_nc_tracker_table:has(th.col-field-bulk_select) th.col-field-action,
-    #gemba_nc_tracker_table:has(th.col-field-bulk_select) td.col-field-action {
-        left: 45px !important;
-    }
-
-    /* When bulk_select is NOT present, Action is at left: 0 */
-    #gemba_nc_tracker_table:not(:has(th.col-field-bulk_select)) th.col-field-action,
-    #gemba_nc_tracker_table:not(:has(th.col-field-bulk_select)) td.col-field-action {
-        left: 0 !important;
-    }
-
-    /* 3. Unique No Column - sticky after Action */
-    #gemba_nc_tracker_table th.col-field-unique_no,
-    #gemba_nc_tracker_table td.col-field-unique_no {
-        position: sticky !important;
-        width: 145px !important;
-        min-width: 145px !important;
-        max-width: 155px !important;
-        z-index: 10 !important;
-        background-color: #ffffff !important;
-        box-shadow: 4px 0 8px -2px rgba(0, 0, 0, 0.1), inset -1px 0 0 #cbd5e1 !important;
-        font-weight: 600 !important;
-    }
-
-    /* Unique No left position when bulk_select IS present (45px + 130px = 175px) */
-    #gemba_nc_tracker_table:has(th.col-field-bulk_select) th.col-field-unique_no,
-    #gemba_nc_tracker_table:has(th.col-field-bulk_select) td.col-field-unique_no {
-        left: 175px !important;
-    }
-
-    /* Unique No left position when bulk_select is NOT present (0 + 130px = 130px) */
-    #gemba_nc_tracker_table:not(:has(th.col-field-bulk_select)) th.col-field-unique_no,
-    #gemba_nc_tracker_table:not(:has(th.col-field-bulk_select)) td.col-field-unique_no {
-        left: 130px !important;
-    }
-
-    /* 4. Keep sticky headers above sticky body cells */
-    #gemba_nc_tracker_table thead th.col-field-bulk_select,
-    #gemba_nc_tracker_table thead th.col-field-action,
-    #gemba_nc_tracker_table thead th.col-field-unique_no {
-        z-index: 20 !important;
-        background-color: #f8fafc !important;
-        border-bottom: 2px solid #cbd5e1 !important;
-    }
-
-    /* 5. Row hover and alternate background handling for sticky columns */
-    #gemba_nc_tracker_table tbody tr:hover td.col-field-bulk_select,
-    #gemba_nc_tracker_table tbody tr:hover td.col-field-action,
-    #gemba_nc_tracker_table tbody tr:hover td.col-field-unique_no {
-        background-color: #f1f5f9 !important;
-    }
-
-    #gemba_nc_tracker_table.table-striped tbody tr:nth-of-type(odd) td.col-field-bulk_select,
-    #gemba_nc_tracker_table.table-striped tbody tr:nth-of-type(odd) td.col-field-action,
-    #gemba_nc_tracker_table.table-striped tbody tr:nth-of-type(odd) td.col-field-unique_no {
-        background-color: #f8fafc !important;
-    }
-
-    /* Fallback positional rules using nth-child for older browsers */
-    #gemba_nc_tracker_table th:first-child,
-    #gemba_nc_tracker_table td:first-child {
-        position: sticky !important;
-        left: 0 !important;
-        background-color: #ffffff;
-    }
-
-    /* Ensure headers don't wrap awkwardly */
-    #gemba_nc_tracker_table th {
+        text-align: left !important;
         white-space: nowrap !important;
-        vertical-align: middle;
+    }
+
+    .dataTables_wrapper table td.col-field-action .badge,
+    .dataTables_wrapper table td.col-field-action .btn-group {
+        text-align: left !important;
+        justify-content: flex-start !important;
+    }
+
+    .dataTables_wrapper table th.col-field-unique_no,
+    .dataTables_wrapper table td.col-field-unique_no {
+        min-width: 145px !important;
+        font-weight: 600 !important;
+        white-space: nowrap !important;
+        text-align: left !important;
+    }
+
+    .dataTables_wrapper table th.col-field-region,
+    .dataTables_wrapper table td.col-field-region {
+        min-width: 95px !important;
+        text-align: left !important;
+        white-space: nowrap !important;
+    }
+
+    .dataTables_wrapper table th.col-field-auditor_name,
+    .dataTables_wrapper table td.col-field-auditor_name,
+    .dataTables_wrapper table th.col-field-cluster_manager_spoc,
+    .dataTables_wrapper table td.col-field-cluster_manager_spoc,
+    .dataTables_wrapper table th.col-field-account_manager,
+    .dataTables_wrapper table td.col-field-account_manager {
+        min-width: 155px !important;
+        white-space: nowrap !important;
+        text-align: left !important;
+    }
+
+    .dataTables_wrapper table th.col-field-audit_category,
+    .dataTables_wrapper table td.col-field-audit_category,
+    .dataTables_wrapper table th.col-field-audit_type,
+    .dataTables_wrapper table td.col-field-audit_type {
+        min-width: 135px !important;
+        white-space: nowrap !important;
+        text-align: left !important;
+    }
+
+    .dataTables_wrapper table th.col-field-site_name,
+    .dataTables_wrapper table td.col-field-site_name {
+        min-width: 240px !important;
+        max-width: 340px !important;
+        white-space: normal !important;
+        word-break: normal !important;
+        line-height: 1.4 !important;
+        text-align: left !important;
+    }
+
+    .dataTables_wrapper table th.col-field-site_category,
+    .dataTables_wrapper table td.col-field-site_category {
+        min-width: 120px !important;
+        white-space: nowrap !important;
+        text-align: left !important;
+    }
+
+    .dataTables_wrapper table th.col-field-nc_recommendation,
+    .dataTables_wrapper table td.col-field-nc_recommendation {
+        min-width: 105px !important;
+        text-align: left !important;
+        white-space: nowrap !important;
+    }
+
+    /* Long text columns: Observation, Recommendation Action, Working Remarks, Closing Remarks, Reject Reason */
+    .dataTables_wrapper table th.long-text-column,
+    .dataTables_wrapper table td.long-text-column,
+    .dataTables_wrapper table th.col-field-observation_point,
+    .dataTables_wrapper table td.col-field-observation_point,
+    .dataTables_wrapper table th.col-field-action_recommendation,
+    .dataTables_wrapper table td.col-field-action_recommendation,
+    .dataTables_wrapper table th.col-field-working_remarks,
+    .dataTables_wrapper table td.col-field-working_remarks,
+    .dataTables_wrapper table th.col-field-closed_remarks,
+    .dataTables_wrapper table td.col-field-closed_remarks,
+    .dataTables_wrapper table th.col-field-rejection_reason,
+    .dataTables_wrapper table td.col-field-rejection_reason {
+        min-width: 280px !important;
+        max-width: 460px !important;
+        white-space: normal !important;
+        word-wrap: break-word !important;
+        word-break: break-word !important;
+        line-height: 1.45 !important;
+        text-align: left !important;
+    }
+
+    .dataTables_wrapper table th.col-field-color_code,
+    .dataTables_wrapper table td.col-field-color_code,
+    .dataTables_wrapper table th.col-field-point_status,
+    .dataTables_wrapper table td.col-field-point_status,
+    .dataTables_wrapper table th.col-field-nc_status,
+    .dataTables_wrapper table td.col-field-nc_status {
+        min-width: 115px !important;
+        text-align: left !important;
+        white-space: nowrap !important;
+    }
+
+    .dataTables_wrapper table th.col-field-target_date,
+    .dataTables_wrapper table td.col-field-target_date,
+    .dataTables_wrapper table th.col-field-closed_date,
+    .dataTables_wrapper table td.col-field-closed_date,
+    .dataTables_wrapper table th.col-field-working_date,
+    .dataTables_wrapper table td.col-field-working_date,
+    .dataTables_wrapper table th.col-field-nc_closed_date,
+    .dataTables_wrapper table td.col-field-nc_closed_date,
+    .dataTables_wrapper table th.col-field-nc_cluster_reviewed_date,
+    .dataTables_wrapper table td.col-field-nc_cluster_reviewed_date,
+    .dataTables_wrapper table th.col-field-nc_auditor_reviewed_date,
+    .dataTables_wrapper table td.col-field-nc_auditor_reviewed_date,
+    .dataTables_wrapper table th.col-field-nc_rejected_date,
+    .dataTables_wrapper table td.col-field-nc_rejected_date {
+        min-width: 130px !important;
+        white-space: nowrap !important;
+        text-align: left !important;
+    }
+
+    .dataTables_wrapper table th.col-field-working_uploaded_file,
+    .dataTables_wrapper table td.col-field-working_uploaded_file,
+    .dataTables_wrapper table th.col-field-closed_uploaded_file,
+    .dataTables_wrapper table td.col-field-closed_uploaded_file {
+        min-width: 120px !important;
+        text-align: left !important;
+        white-space: nowrap !important;
+    }
+
+    .dataTables_wrapper table th.col-field-nc_worked_by,
+    .dataTables_wrapper table td.col-field-nc_worked_by,
+    .dataTables_wrapper table th.col-field-nc_closed_by,
+    .dataTables_wrapper table td.col-field-nc_closed_by,
+    .dataTables_wrapper table th.col-field-nc_cluster_reviewed_by,
+    .dataTables_wrapper table td.col-field-nc_cluster_reviewed_by,
+    .dataTables_wrapper table th.col-field-nc_auditor_reviewed_by,
+    .dataTables_wrapper table td.col-field-nc_auditor_reviewed_by,
+    .dataTables_wrapper table th.col-field-nc_rejected_by,
+    .dataTables_wrapper table td.col-field-nc_rejected_by {
+        min-width: 155px !important;
+        white-space: nowrap !important;
+        text-align: left !important;
+    }
+
+    .dataTables_wrapper table th.col-field-ageing_days,
+    .dataTables_wrapper table td.col-field-ageing_days,
+    .dataTables_wrapper table th.col-field-age_bracket,
+    .dataTables_wrapper table td.col-field-age_bracket {
+        min-width: 115px !important;
+        text-align: left !important;
+        white-space: nowrap !important;
     }
 
     /* Redesigned Tracker Cards styling */
@@ -519,10 +685,24 @@ $closedActive = ($activeStatus === '3' || $activeStatus === 3) ? 'active-filter'
     </div>
 </div>
 
-<div class="card shadow-sm border-0 rounded-4">
-    <div class="card-body">
-        <?= $table ?>
+<div class="gemba-nc-table-wrapper">
+    <div class="d-flex flex-wrap justify-content-between align-items-center mb-2 px-1">
+        <div class="d-flex align-items-center gap-2 mb-2 mb-md-0">
+            <span class="badge bg-light-primary text-primary fw-bold px-3 py-2 fs-8 border border-primary border-opacity-25">
+                <i class="fas fa-columns text-primary me-1"></i> 35 Columns Grid
+            </span>
+            <small class="text-muted fs-8">Left-aligned text starting from the first column</small>
+        </div>
+        <div class="d-flex align-items-center gap-2">
+            <button type="button" class="btn btn-sm btn-light-primary py-1 px-3 fs-8 fw-semibold" onclick="ensureLeftScroll(true)" title="Jump to First Column (Action, Unique No)">
+                <i class="fas fa-angle-double-left me-1"></i> Start (Action / Unique No)
+            </button>
+            <button type="button" class="btn btn-sm btn-light-primary py-1 px-3 fs-8 fw-semibold" onclick="scrollToTableEnd()" title="Jump to Last Columns (Review & Closure)">
+                End (Closure / Reviews) <i class="fas fa-angle-double-right ms-1"></i>
+            </button>
+        </div>
     </div>
+    <?= $table ?>
 </div>
 
 <!-- Upload Details Modal -->
@@ -787,19 +967,90 @@ $closedActive = ($activeStatus === '3' || $activeStatus === 3) ? 'active-filter'
             });
         });
 
+        function ensureLeftScroll(animate) {
+            var $body = $('.dataTables_scrollBody');
+            if ($body.length) {
+                if (animate) {
+                    $body.stop().animate({ scrollLeft: 0 }, 250, function() {
+                        $body.trigger('scroll');
+                    });
+                } else {
+                    $body.scrollLeft(0);
+                    $body.trigger('scroll');
+                }
+            }
+            var $head = $('.dataTables_scrollHead');
+            if ($head.length) {
+                $head.scrollLeft(0);
+            }
+            $('.dataTables_scrollHeadInner').css('margin-left', '0px');
+            $('.gemba-nc-table-wrapper .table-responsive').scrollLeft(0);
+        }
+
+        window.ensureLeftScroll = ensureLeftScroll;
+
+        window.scrollToTableEnd = function() {
+            var $body = $('.dataTables_scrollBody');
+            if ($body.length) {
+                var maxScroll = ($body[0].scrollWidth || 3500) - $body.width();
+                $body.stop().animate({ scrollLeft: Math.max(0, maxScroll) }, 300, function() {
+                    $body.trigger('scroll');
+                });
+            }
+        };
+
         // DataTable re-initialization with filters
         window.reload_data_table = function (callback) {
             if ($.fn.DataTable.isDataTable('#gemba_nc_tracker_table')) {
                 var table = $('#gemba_nc_tracker_table').DataTable();
                 if (callback) {
-                    table.ajax.reload(callback, false);
+                    table.ajax.reload(function() {
+                        table.columns.adjust();
+                        ensureLeftScroll();
+                        callback();
+                    }, false);
                 } else {
-                    table.ajax.reload(null, false);
+                    table.ajax.reload(function() {
+                        table.columns.adjust();
+                        ensureLeftScroll();
+                    }, false);
                 }
             } else {
                 if (callback) callback();
             }
         };
+
+        // Ensure columns align immediately on load, adjust on draw/resize, and start at left
+        $(document).ready(function() {
+            setTimeout(function() {
+                if ($.fn.DataTable.isDataTable('#gemba_nc_tracker_table')) {
+                    var dt = $('#gemba_nc_tracker_table').DataTable();
+                    dt.columns.adjust();
+                    ensureLeftScroll();
+                }
+            }, 150);
+            setTimeout(function() {
+                ensureLeftScroll();
+            }, 450);
+        });
+
+        $(window).on('load', function() {
+            ensureLeftScroll();
+        });
+
+        $('#gemba_nc_tracker_table').on('draw.dt', function() {
+            ensureLeftScroll();
+        });
+
+        $('#gemba_nc_tracker_table').on('xhr.dt', function() {
+            setTimeout(ensureLeftScroll, 50);
+        });
+
+        $(window).on('resize orientationchange', function() {
+            if ($.fn.DataTable.isDataTable('#gemba_nc_tracker_table')) {
+                $('#gemba_nc_tracker_table').DataTable().columns.adjust();
+            }
+        });
 
         window.refresh_summary_stats = function (callback) {
             var params = $('#filter_form').serialize();
