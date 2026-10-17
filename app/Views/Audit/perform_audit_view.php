@@ -194,12 +194,12 @@ echo showACLMessage('info');
             <table class="table table-hover">
                             <tbody>
                                  <tr>
-                                    <th class="table-secondary">Client / Site Location</th>
+                                    <th class="table-secondary">Client Name</th>
                                     <td>
                                      
                                         
                                         <select class="form-select js-example-basic-single" name="location" id="location">
-                                            <option value="">Select Location</option>
+                                            <option value="">Select Client Name</option>
                                             <?php if (isset($location)) {
                                                 foreach ($location as $loc) { 
                                                     $dispName = $loc['client_name'] ?? ($loc['location_name'] ?? '');

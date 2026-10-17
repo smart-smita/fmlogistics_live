@@ -145,7 +145,7 @@
         <?php endif; ?>
         <?php if (isset($location) && $location): ?>
         <div class="summary-item">
-            <strong>Location:</strong> <?= htmlspecialchars($location) ?>
+            <strong>Client Name:</strong> <?= htmlspecialchars($location) ?>
         </div>
         <?php endif; ?>
     </div>

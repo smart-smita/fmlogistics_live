@@ -115,7 +115,7 @@ $form_id= $button_id;
         </div>
 
         <div class="col-12 col-md-4 col-lg-3">
-            <label class="form-label fw-bold">Location</label>
+            <label class="form-label fw-bold">Client Name</label>
             <div class="position-relative">
                 <select id="flt_location" name="location[]" multiple="multiple"
                         class="form-select form-select-sm fw-semibold js-example-basic-single">
