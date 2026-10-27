@@ -105,7 +105,7 @@ if(canCreateAudit()): ?>
 					<!--end::Modal header-->
 					<!--begin::Modal body-->
 					<div class="modal-body py-lg-10 px-lg-10">
-                    	<div class="scroll-y me-n7 pe-7" id="user" data-kt-scroll="false" data-kt-scroll-activate="{default: false, lg: true}" data-kt-scroll-max-height="auto" data-kt-scroll-dependencies="#kt_modal_new_address_header" data-kt-scroll-wrappers="#fees_head" data-kt-scroll-offset="300px" style="max-height: 273px;">
+                    	<div class="scroll-y me-n7 pe-7" id="user" data-kt-scroll="false" data-kt-scroll-activate="{default: false, lg: true}" data-kt-scroll-max-height="auto" data-kt-scroll-dependencies="#kt_modal_new_address_header" data-kt-scroll-wrappers="#fees_head" data-kt-scroll-offset="300px" style="max-height: 520px;">
 								<!--begin::Input group-->
 								<div class="row mb-12">
 									<!--begin::Col-->
@@ -172,9 +172,15 @@ if(canCreateAudit()): ?>
 									<!--	<div id="result" class="col-md-6"></div>-->
 									<!--</div>-->
 									<div class="col-md-12 fv-row fv-plugins-icon-container">
-										<label class="required fs-5 fw-bold mb-2">Import Excel</label>
-										<input type="file" class="form-control form-control-solid"  id="emport_excel" name="emport_excel" accept=".csv,.xls,.xlsx,.pdf,.jpg,.jpeg,.png,.gif" onchange="validateFileType(this)">
+										<label class="required fs-5 fw-bold mb-2">Import Excel / CSV</label>
+										<input type="file" class="form-control form-control-solid"  id="emport_excel" name="emport_excel" accept=".csv,.xls,.xlsx" onchange="validateFileType(this)">
 										<div class="fv-plugins-message-container invalid-feedback"></div>
+										<div class="d-flex justify-content-between align-items-center mt-1">
+											<span class="text-muted fs-7">Allowed: .csv, .xlsx, .xls (Max 10MB)</span>
+											<a href="<?= base_url('assets/file/HSE_Audit_question_sample_excel_latest.csv') ?>" target="_blank" class="text-primary fs-7 fw-semibold">
+												<i class="fa fa-download me-1 text-primary"></i>Sample HSE CSV
+											</a>
+										</div>
 									</div>
 										<div class="col-md-12 fv-row fv-plugins-icon-container">
 										<label class="required fs-5 fw-bold mb-2">Score</label>
@@ -275,6 +281,26 @@ document.getElementById("ajax_click").addEventListener("click", function () {
 
             let formData = new FormData(form);
             let url = button.getAttribute("data-ajax-url") || button.getAttribute("data-ajax-add-url");
+            let isCreating = !button.getAttribute("data-ajax-url") || button.getAttribute("data-ajax-url") === button.getAttribute("data-ajax-add-url");
+            let fileInput = document.getElementById("emport_excel");
+
+            if (isCreating && (!fileInput || !fileInput.files || fileInput.files.length === 0)) {
+                Swal.fire({
+                    icon: "warning",
+                    title: "Excel/CSV File Required",
+                    html: `Please select an Excel (.xlsx, .xls) or CSV (.csv) file to import audit questions for this template.<br><br>
+                           <a href="<?= base_url('assets/file/HSE_Audit_question_sample_excel_latest.csv') ?>" class="btn btn-sm btn-light-primary" target="_blank">
+                               <i class="fa fa-download me-1"></i> Download Sample CSV
+                           </a>`,
+                    confirmButtonText: "OK"
+                }).then(() => {
+                    if (fileInput) {
+                        fileInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        fileInput.focus();
+                    }
+                });
+                return;
+            }
 
             button.setAttribute("data-kt-indicator", "on");
             button.disabled = true;
@@ -443,7 +469,7 @@ document.getElementById("ajax_click").addEventListener("click", function () {
 
         // File type validation function
         function validateFileType(input) {
-            const allowedTypes = ['jpg', 'jpeg', 'png', 'gif', 'pdf', 'xls', 'xlsx', 'csv'];
+            const allowedTypes = ['csv', 'xls', 'xlsx'];
             const maxSize = 10 * 1024 * 1024; // 10MB
             
             if (input.files && input.files[0]) {
@@ -452,14 +478,24 @@ document.getElementById("ajax_click").addEventListener("click", function () {
                 
                 // Check file type
                 if (!allowedTypes.includes(extension)) {
-                    alert('Invalid file type. Only images (JPG, PNG, GIF), PDFs, and Excel files (XLS, XLSX,) are allowed.');
+                    Swal.fire({
+                        icon: "error",
+                        title: "Invalid File Type",
+                        text: "Invalid file type (." + extension + "). Only Excel files (.xlsx, .xls) and CSV files (.csv) are allowed.",
+                        confirmButtonText: "OK"
+                    });
                     input.value = '';
                     return false;
                 }
                 
                 // Check file size
                 if (file.size > maxSize) {
-                    alert('File size too large. Maximum allowed size is 10MB.');
+                    Swal.fire({
+                        icon: "error",
+                        title: "File Too Large",
+                        text: "File size exceeds 10MB limit.",
+                        confirmButtonText: "OK"
+                    });
                     input.value = '';
                     return false;
                 }

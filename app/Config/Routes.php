@@ -64,6 +64,10 @@ $routes->post('Masters/Inplant_nc_tracker/update_nc_status', 'Masters\Inplant_nc
 // NEW CHANGES: FM tracker status update endpoint
 $routes->post('Masters/Fm_nc_tracker/update_nc_status', 'Masters\Fm_nc_tracker::update_nc_status');
 
+// HSE Audit Question Master export routes
+$routes->add('Masters/Audit_question_master/export_csv', 'Masters\Audit_question_master::export_csv');
+$routes->add('Masters/Audit_question_master/download_pdf', 'Masters\Audit_question_master::download_pdf');
+
 // Location Hierarchy AJAX endpoints
 $routes->post('Masters/LocationHierarchy/getRegionsByCountry', 'Masters\LocationHierarchy::getRegionsByCountry');
 $routes->post('Masters/LocationHierarchy/getClustersByRegion', 'Masters\LocationHierarchy::getClustersByRegion');
@@ -100,6 +104,7 @@ $routes->group('Masters', ['filter' => 'structure_audit_acl'], function ($routes
     $routes->post('Hse_audit/get_subcategories_by_region_and_category', 'Masters\Hse_audit::get_subcategories_by_region_and_category');
     $routes->post('Hse_audit/get_clients_by_region_category_subcategory', 'Masters\Hse_audit::get_clients_by_region_category_subcategory');
     $routes->post('Hse_audit/get_audit_questions_ajax', 'Masters\Hse_audit::get_audit_questions_ajax');
+    $routes->match(['get', 'post'], 'Hse_audit/validate_gemba_site', 'Masters\Hse_audit::validate_gemba_site');
 });
 
 // Admin only
@@ -146,6 +151,7 @@ $routes->group('gemba-audit', ['namespace' => 'App\Controllers\Masters', 'filter
     $routes->get('delete/(:num)', 'GembaAudit::delete/$1');
     $routes->get('cascading-dropdown', 'GembaAudit::cascadingDropdown');
     $routes->get('getSiteDetails', 'GembaAudit::getSiteDetails');
+    $routes->match(['get', 'post'], 'get_sites_by_region', 'GembaAudit::get_sites_by_region');
     $routes->get('gemba_export', 'GembaAudit::gemba_export');
     $routes->match(['get', 'post'], 'import', 'GembaAudit::import');
     $routes->get('download_error_report', 'GembaAudit::downloadErrorReport');

@@ -1,0 +1,189 @@
+2026-10-24 14:35:05 - get_clients_by_region_category_subcategory called
+  Region: North
+  Category: Client Leased
+  Sub Category: External Warehouse
+  Normalized values - Region: 'north', Category: 'client leased', Sub Category: 'external warehouse'
+  Query executed successfully. Found 0 clients
+  No clients found. Total clients with region and category: 8
+2026-10-24 14:35:11 - get_clients_by_region_category_subcategory called
+  Region: North
+  Category: Client Leased
+  Sub Category: Head Count (Operations)
+  Normalized values - Region: 'north', Category: 'client leased', Sub Category: 'head count (operations)'
+  Query executed successfully. Found 0 clients
+  No clients found. Total clients with region and category: 8
+2026-10-24 14:35:16 - get_clients_by_region_category_subcategory called
+  Region: North
+  Category: Client Leased
+  Sub Category: Inplant
+  Normalized values - Region: 'north', Category: 'client leased', Sub Category: 'inplant'
+  Query executed successfully. Found 1 clients
+  Returning clients list
+2026-10-24 15:06:44 - get_clients_by_region_category_subcategory called
+  Region: HO
+  Category: Client Leased
+  Sub Category: External Warehouse
+  Normalized values - Region: 'ho', Category: 'client leased', Sub Category: 'external warehouse'
+  Query executed successfully. Found 1 clients
+  Returning clients list
+2026-10-24 15:09:05 - get_clients_by_region_category_subcategory called
+  Region: HO
+  Category: Client Leased
+  Sub Category: External Warehouse
+  Normalized values - Region: 'ho', Category: 'client leased', Sub Category: 'external warehouse'
+  Query executed successfully. Found 1 clients
+  Returning clients list
+2026-10-24 15:11:59 - get_clients_by_region_category_subcategory called
+  Region: HO
+  Category: Client Leased
+  Sub Category: External Warehouse
+  Normalized values - Region: 'ho', Category: 'client leased', Sub Category: 'external warehouse'
+  Query executed successfully. Found 1 clients
+  Returning clients list
+2026-10-24 15:15:38 - get_clients_by_region_category_subcategory called
+  Region: HO
+  Category: Client Leased
+  Sub Category: External Warehouse
+  Normalized values - Region: 'ho', Category: 'client leased', Sub Category: 'external warehouse'
+  Query executed successfully. Found 1 clients
+  Returning clients list
+2026-10-24 15:34:42 - get_clients_by_region_category_subcategory called
+  Region: HO
+  Category: Client Leased
+  Sub Category: Head Count (Operations)
+  Normalized values - Region: 'ho', Category: 'client leased', Sub Category: 'head count (operations)'
+  Query executed successfully. Found 0 clients
+  No clients found. Total clients with region and category: 1
+2026-10-26 12:53:03 - get_clients_by_region_category_subcategory called
+  Region: West-2
+  Category: Client Leased
+  Sub Category: External Warehouse
+  Normalized values - Region: 'west-2', Category: 'client leased', Sub Category: 'external warehouse'
+  Query executed successfully. Found 3 clients
+  Returning clients list
+2026-10-26 12:57:12 - get_clients_by_region_category_subcategory called
+  Region: West-2
+  Category: Client Leased
+  Sub Category: External Warehouse
+  Normalized values - Region: 'west-2', Category: 'client leased', Sub Category: 'external warehouse'
+  Query executed successfully. Found 3 clients
+  Returning clients list
+2026-10-26 12:58:35 - get_clients_by_region_category_subcategory called
+  Region: North
+  Category: Client Leased
+  Sub Category: External Warehouse
+  Normalized values - Region: 'north', Category: 'client leased', Sub Category: 'external warehouse'
+  Query executed successfully. Found 0 clients
+  No clients found. Total clients with region and category: 8
+2026-10-26 12:58:44 - get_clients_by_region_category_subcategory called
+  Region: North
+  Category: Client Leased
+  Sub Category: Inplant
+  Normalized values - Region: 'north', Category: 'client leased', Sub Category: 'inplant'
+  Query executed successfully. Found 0 clients
+  No clients found. Total clients with region and category: 8
+2026-10-26 12:59:04 - get_clients_by_region_category_subcategory called
+  Region: Tpt
+  Category: 4PL
+  Sub Category: 4PL
+  Normalized values - Region: 'tpt', Category: '4pl', Sub Category: '4pl'
+  Query executed successfully. Found 8 clients
+  Returning clients list
+2026-10-26 12:59:49 - get_clients_by_region_category_subcategory called
+  Region: West-2
+  Category: Client Leased
+  Sub Category: External Warehouse
+  Normalized values - Region: 'west-2', Category: 'client leased', Sub Category: 'external warehouse'
+  Query executed successfully. Found 3 clients
+  Returning clients list
+2026-10-26 13:00:21 - get_clients_by_region_category_subcategory called
+  Region: West-1
+  Category: FM Leased
+  Sub Category: Dedicated Warehouse
+  Normalized values - Region: 'west-1', Category: 'fm leased', Sub Category: 'dedicated warehouse'
+  Query executed successfully. Found 0 clients
+  No clients found. Total clients with region and category: 26
+2026-10-26 13:00:31 - get_clients_by_region_category_subcategory called
+  Region: West-1
+  Category: Client Leased
+  Sub Category: External Warehouse
+  Normalized values - Region: 'west-1', Category: 'client leased', Sub Category: 'external warehouse'
+  Query executed successfully. Found 4 clients
+  Returning clients list
+2026-10-26 13:01:32 - get_clients_by_region_category_subcategory called
+  Region: West-2
+  Category: Client Leased
+  Sub Category: External Warehouse
+  Normalized values - Region: 'west-2', Category: 'client leased', Sub Category: 'external warehouse'
+  Query executed successfully. Found 3 clients
+  Returning clients list
+2026-10-26 13:06:01 - get_clients_by_region_category_subcategory called
+  Region: West-2
+  Category: Client Leased
+  Sub Category: External Warehouse
+  Normalized values - Region: 'west-2', Category: 'client leased', Sub Category: 'external warehouse'
+  Query executed successfully. Found 3 clients
+  Returning clients list
+2026-10-26 14:43:25 - get_clients_by_region_category_subcategory called
+  Region: North
+  Category: Client Leased
+  Sub Category: External Warehouse
+  Normalized values - Region: 'north', Category: 'client leased', Sub Category: 'external warehouse'
+  Query executed successfully. Found 0 clients
+  No clients found. Total clients with region and category: 8
+2026-10-26 15:01:51 - get_clients_by_region_category_subcategory called
+  Region: North
+  Category: Client Leased
+  Sub Category: External Warehouse
+  Normalized values - Region: 'north', Category: 'client leased', Sub Category: 'external warehouse'
+  Query executed successfully. Found 0 clients
+  No clients found. Total clients with region and category: 8
+2026-10-26 15:02:03 - get_clients_by_region_category_subcategory called
+  Region: West-2
+  Category: Client Leased
+  Sub Category: External Warehouse
+  Normalized values - Region: 'west-2', Category: 'client leased', Sub Category: 'external warehouse'
+  Query executed successfully. Found 2 clients
+  Returning clients list
+2026-10-26 15:04:51 - get_clients_by_region_category_subcategory called
+  Region: West-2
+  Category: Client Leased
+  Sub Category: External Warehouse
+  Normalized values - Region: 'west-2', Category: 'client leased', Sub Category: 'external warehouse'
+  Query executed successfully. Found 2 clients
+  Returning clients list
+2026-10-26 15:23:59 - get_clients_by_region_category_subcategory called
+  Region: West-2
+  Category: Client Leased
+  Sub Category: External Warehouse
+  Normalized values - Region: 'west-2', Category: 'client leased', Sub Category: 'external warehouse'
+  Query executed successfully. Found 2 clients
+  Returning clients list
+2026-10-26 16:30:44 - get_clients_by_region_category_subcategory called
+  Region: West-2
+  Category: Client Leased
+  Sub Category: External Warehouse
+  Normalized values - Region: 'west-2', Category: 'client leased', Sub Category: 'external warehouse'
+  Query executed successfully. Found 1 clients
+  Returning clients list
+2026-10-26 17:40:44 - get_clients_by_region_category_subcategory called
+  Region: West-2
+  Category: Client Leased
+  Sub Category: External Warehouse
+  Normalized values - Region: 'west-2', Category: 'client leased', Sub Category: 'external warehouse'
+  Query executed successfully. Found 0 clients
+  No clients found. Total clients with region and category: 20
+2026-10-26 17:41:17 - get_clients_by_region_category_subcategory called
+  Region: North
+  Category: Client Leased
+  Sub Category: External Warehouse
+  Normalized values - Region: 'north', Category: 'client leased', Sub Category: 'external warehouse'
+  Query executed successfully. Found 0 clients
+  No clients found. Total clients with region and category: 8
+2026-10-26 17:42:15 - get_clients_by_region_category_subcategory called
+  Region: North
+  Category: FM Leased
+  Sub Category: MCF
+  Normalized values - Region: 'north', Category: 'fm leased', Sub Category: 'mcf'
+  Query executed successfully. Found 7 clients
+  Returning clients list

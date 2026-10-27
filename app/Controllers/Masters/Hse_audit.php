@@ -750,6 +750,15 @@ class Hse_audit extends BaseController
             return redirect()->back()->with('error', 'Client Name is required.');
         }
 
+        // Gemba Site Validation: Validate that selected site exists and is properly configured in alert_gemba_sites
+        $gembaValidation = $this->checkGembaSiteConfiguration($postData['client_name'], $postData['location'] ?? '');
+        if (!$gembaValidation['valid']) {
+            if ($request->isAJAX()) {
+                return $this->response->setJSON(['status' => 0, 'message' => $gembaValidation['message']]);
+            }
+            return redirect()->back()->withInput()->with('error', $gembaValidation['message']);
+        }
+
         if (empty($postData['main_category']) || empty($postData['sub_category'])) {
             return redirect()->back()->with('error', 'Site Category / Sub Category is required.');
         }
@@ -859,6 +868,27 @@ class Hse_audit extends BaseController
 
             foreach ($qRows as $q) {
                 $questionById[$q['question_id']] = $q;
+            }
+
+            // Also check alert_hse_template_questions for template questions not overridden
+            $missingIds = array_diff(array_unique($questionIds), array_keys($questionById));
+            if (!empty($missingIds)) {
+                $tRows = $db->table("alert_hse_template_questions")
+                    ->whereIn("template_question_id", $missingIds)
+                    ->get()
+                    ->getResultArray();
+                foreach ($tRows as $t) {
+                    $questionById[$t['template_question_id']] = [
+                        'question_id' => $t['template_question_id'],
+                        'audit_template_id' => $t['audit_template_id'],
+                        'audit_category_id' => $t['category_id'],
+                        'audit_category' => $t['category_name'],
+                        'audit_question' => $t['question_text'],
+                        'audit_question_default_value' => $t['default_value'],
+                        'note' => $t['note'],
+                        'capa_json' => $t['capa_json']
+                    ];
+                }
             }
         }
 
@@ -1324,16 +1354,13 @@ class Hse_audit extends BaseController
 
         // ---------------- FETCH DETAILS ----------------
         $rows = $db->table('alert_hse_audit_details d')
-            ->select("d.*, q.audit_category_id, q.note")
+            ->select("d.*, COALESCE(NULLIF(TRIM(d.audit_category_id), ''), q.audit_category_id) as audit_category_id, q.note")
             ->join("alert_audit_questions q", "q.question_id = d.question_id", "left")
             ->where("d.hse_audit_id", $id)
-            ->orderBy("d.id", "ASC")
             ->get()
             ->getResultArray();
 
         $results = [];
-        // print_r($rows);
-        // exit;
         foreach ($rows as $row) {
             $capa_json = json_decode($row['capa_json'] ?? '[]', true) ?: [];
 
@@ -1359,7 +1386,7 @@ class Hse_audit extends BaseController
                 "site_category" => $row['site_category'] ?? '',
                 "sub_category" => $row['sub_category'] ?? '',
 
-                "audit_category_id" => $row['audit_category_id'] ?? '',
+                "audit_category_id" => trim($row['audit_category_id'] ?? ''),
                 "audit_category" => $row['audit_category'] ?? '',
                 "audit_question" => $row['audit_question'] ?? '',
 
@@ -1388,6 +1415,34 @@ class Hse_audit extends BaseController
 
             $results[] = $resultRow;
         }
+
+        // Natural sort by category ID (A, A.1, A.2... B, B.1...)
+        usort($results, function ($a, $b) {
+            $parse = function ($id) {
+                if (preg_match('/^([A-Za-z]+)(?:\.(\d+))?(?:\.(\d+))?$/', trim($id), $m)) {
+                    return [
+                        'prefix' => strtoupper($m[1]),
+                        'num1'   => isset($m[2]) ? (int)$m[2] : 0,
+                        'num2'   => isset($m[3]) ? (int)$m[3] : 0,
+                        'is_header' => !isset($m[2])
+                    ];
+                }
+                return ['prefix' => (string)$id, 'num1' => 9999, 'num2' => 9999, 'is_header' => false];
+            };
+
+            $pa = $parse($a['audit_category_id'] ?? '');
+            $pb = $parse($b['audit_category_id'] ?? '');
+
+            if ($pa['prefix'] !== $pb['prefix']) {
+                return strcmp($pa['prefix'], $pb['prefix']);
+            }
+            if ($pa['is_header'] && !$pb['is_header']) return -1;
+            if (!$pa['is_header'] && $pb['is_header']) return 1;
+            if ($pa['num1'] !== $pb['num1']) {
+                return $pa['num1'] <=> $pb['num1'];
+            }
+            return $pa['num2'] <=> $pb['num2'];
+        });
 
         $data['results'] = $results;
 
@@ -1510,14 +1565,62 @@ class Hse_audit extends BaseController
             $data['template_version_changed'] = true;
         }
 
-        // Reaudit must load the LATEST questions for this category
-        $latestQuestions = $db->table('alert_audit_questions')
+        // Reaudit question loading using unified template questions + site/category overrides
+        $baseQuestions = $db->table('alert_hse_template_questions')
             ->where('audit_template_id', $latestTemplateId)
-            ->where('status !=', 2)
-            ->where('audit_site_category_name', $currentHSEAudit['main_category'] ?? '')
-            ->where('audit_sub_category_name', $currentHSEAudit['sub_category'] ?? '')
+            ->where('status', 1)
+            ->orderBy('question_order', 'ASC')
             ->get()
             ->getResultArray();
+
+        $ovBuilder = $db->table('alert_audit_questions')
+            ->where('audit_template_id', $latestTemplateId)
+            ->where('status !=', 2);
+        if (!empty($currentHSEAudit['main_category'])) {
+            $ovBuilder->where('audit_site_category_name', $currentHSEAudit['main_category']);
+        }
+        if (!empty($currentHSEAudit['sub_category'])) {
+            $ovBuilder->where('audit_sub_category_name', $currentHSEAudit['sub_category']);
+        }
+        $rawOverrides = $ovBuilder->get()->getResultArray();
+        $overrideMap = [];
+        $siteName = $currentHSEAudit['client_name'] ?? '';
+        foreach ($rawOverrides as $ov) {
+            $key = !empty($ov['template_question_id']) ? $ov['template_question_id'] : trim($ov['audit_category_id']);
+            $catKey = trim($ov['audit_category_id']);
+            $hasSiteMatch = (!empty($siteName) && !empty($ov['site_name']) && strtolower(trim($ov['site_name'])) === strtolower(trim($siteName)));
+
+            if ($hasSiteMatch) {
+                $overrideMap[$key] = $ov;
+                $overrideMap[$catKey] = $ov;
+            } elseif (!isset($overrideMap[$key])) {
+                $overrideMap[$key] = $ov;
+                $overrideMap[$catKey] = $ov;
+            }
+        }
+
+        $latestQuestions = [];
+        if (!empty($baseQuestions)) {
+            foreach ($baseQuestions as $bq) {
+                $tId = $bq['template_question_id'];
+                $cId = trim($bq['category_id']);
+                $ov = $overrideMap[$tId] ?? $overrideMap[$cId] ?? null;
+
+                $latestQuestions[] = [
+                    'question_id' => $ov ? $ov['question_id'] : $bq['template_question_id'],
+                    'template_question_id' => $bq['template_question_id'],
+                    'audit_category_id' => $ov['audit_category_id'] ?? $bq['category_id'],
+                    'audit_category' => $ov['audit_category'] ?? $bq['category_name'],
+                    'audit_question' => $ov['audit_question'] ?? $bq['question_text'],
+                    'audit_question_default_value' => $ov['audit_question_default_value'] ?? $bq['default_value'],
+                    'note' => $ov['note'] ?? $bq['note'],
+                    'capa_json' => $ov['capa_json'] ?? $bq['capa_json'],
+                    'group_id' => $bq['template_question_id']
+                ];
+            }
+        } else {
+            $latestQuestions = $rawOverrides;
+        }
 
         usort($latestQuestions, function($a, $b) {
             return strnatcmp($a['audit_category_id'] ?? '', $b['audit_category_id'] ?? '');
@@ -1665,6 +1768,17 @@ class Hse_audit extends BaseController
             return redirect()->back()->with('error', 'Audit not found');
         }
 
+        // Gemba Site Validation for Re-Audit: Validate that site exists and is properly configured in alert_gemba_sites
+        $siteNameToCheck = !empty($postData['client_name']) ? $postData['client_name'] : ($orig['client_name'] ?? '');
+        $locationToCheck = !empty($postData['location']) ? $postData['location'] : ($orig['location'] ?? '');
+        $gembaValidation = $this->checkGembaSiteConfiguration($siteNameToCheck, $locationToCheck);
+        if (!$gembaValidation['valid']) {
+            if ($request->isAJAX()) {
+                return $this->response->setJSON(['status' => 0, 'message' => $gembaValidation['message']]);
+            }
+            return redirect()->back()->withInput()->with('error', $gembaValidation['message']);
+        }
+
         $db->transStart();
 
         // Auto-set next audit date to +3 months if not explicitly provided
@@ -1739,6 +1853,27 @@ class Hse_audit extends BaseController
 
             foreach ($qRows as $q) {
                 $questionById[$q['question_id']] = $q;
+            }
+
+            // Also check alert_hse_template_questions for template questions not overridden
+            $missingIds = array_diff(array_unique($questionIds), array_keys($questionById));
+            if (!empty($missingIds)) {
+                $tRows = $db->table("alert_hse_template_questions")
+                    ->whereIn("template_question_id", $missingIds)
+                    ->get()
+                    ->getResultArray();
+                foreach ($tRows as $t) {
+                    $questionById[$t['template_question_id']] = [
+                        'question_id' => $t['template_question_id'],
+                        'audit_template_id' => $t['audit_template_id'],
+                        'audit_category_id' => $t['category_id'],
+                        'audit_category' => $t['category_name'],
+                        'audit_question' => $t['question_text'],
+                        'audit_question_default_value' => $t['default_value'],
+                        'note' => $t['note'],
+                        'capa_json' => $t['capa_json']
+                    ];
+                }
             }
         }
 
@@ -2086,12 +2221,9 @@ class Hse_audit extends BaseController
 
         // ---------------- DETAILS ----------------
         $rows = $db->table('alert_hse_audit_details d')
-            ->select("d.*, q.audit_category_id")
+            ->select("d.*, COALESCE(NULLIF(TRIM(d.audit_category_id), ''), q.audit_category_id) as audit_category_id")
             ->join("alert_audit_questions q", "q.question_id = d.question_id", "left")
             ->where("d.hse_audit_id", $auditId)
-            ->orderBy("CAST(SUBSTRING_INDEX(d.audit_category_id, '.', 1) AS CHAR)", "ASC", false)
-            ->orderBy("LENGTH(d.audit_category_id)", "ASC", false)
-            ->orderBy("d.audit_category_id", "ASC", false)
             ->get()
             ->getResultArray();
 
@@ -2123,7 +2255,7 @@ class Hse_audit extends BaseController
             ];
 
             $results[] = [
-                "sr_no" => $row['audit_category_id'] ?? '',
+                "sr_no" => trim($row['audit_category_id'] ?? ''),
                 "category" => $row['audit_category'] ?? '',
                 "question" => $row['audit_question'] ?? '',
                 "remark" => $row['remark'] ?? '',
@@ -2132,6 +2264,34 @@ class Hse_audit extends BaseController
                 "capa" => $mapped
             ];
         }
+
+        // Natural sort by sr_no (A, A.1, A.2... B, B.1...)
+        usort($results, function ($a, $b) {
+            $parse = function ($id) {
+                if (preg_match('/^([A-Za-z]+)(?:\.(\d+))?(?:\.(\d+))?$/', trim($id), $m)) {
+                    return [
+                        'prefix' => strtoupper($m[1]),
+                        'num1'   => isset($m[2]) ? (int)$m[2] : 0,
+                        'num2'   => isset($m[3]) ? (int)$m[3] : 0,
+                        'is_header' => !isset($m[2])
+                    ];
+                }
+                return ['prefix' => (string)$id, 'num1' => 9999, 'num2' => 9999, 'is_header' => false];
+            };
+
+            $pa = $parse($a['sr_no'] ?? '');
+            $pb = $parse($b['sr_no'] ?? '');
+
+            if ($pa['prefix'] !== $pb['prefix']) {
+                return strcmp($pa['prefix'], $pb['prefix']);
+            }
+            if ($pa['is_header'] && !$pb['is_header']) return -1;
+            if (!$pa['is_header'] && $pb['is_header']) return 1;
+            if ($pa['num1'] !== $pb['num1']) {
+                return $pa['num1'] <=> $pb['num1'];
+            }
+            return $pa['num2'] <=> $pb['num2'];
+        });
 
         // ---------------- SAFE FUNCTION ----------------
         $safe = fn($v) => htmlspecialchars((string) $v, ENT_QUOTES);
@@ -2602,12 +2762,9 @@ class Hse_audit extends BaseController
 
             // ================= FETCH DATA =================
             $rows = $db->table("alert_hse_audit_details d")
-                ->select("d.*, q.audit_category_id, q.audit_category as question_name")
+                ->select("d.*, COALESCE(NULLIF(TRIM(d.audit_category_id), ''), q.audit_category_id) as audit_category_id, d.audit_category as question_name")
                 ->join("alert_audit_questions q", "q.question_id = d.question_id", "left")
                 ->where("d.hse_audit_id", $auditId)
-                ->orderBy("CAST(SUBSTRING_INDEX(d.audit_category_id, '.', 1) AS CHAR)", "ASC", false)
-                ->orderBy("LENGTH(d.audit_category_id)", "ASC", false)
-                ->orderBy("d.audit_category_id", "ASC", false)
                 ->get()
                 ->getResultArray();
 
@@ -2661,22 +2818,29 @@ class Hse_audit extends BaseController
             // ================= SORT CATEGORY IDS =================
             uksort($grouped, function ($a, $b) {
                 $parse = function ($id) {
-                    if (preg_match('/^([A-Z])(?:\.(\d+))?$/', $id, $m)) {
+                    if (preg_match('/^([A-Za-z]+)(?:\.(\d+))?(?:\.(\d+))?$/', trim($id), $m)) {
                         return [
-                            'letter' => ord($m[1]),
-                            'number' => isset($m[2]) ? (int) $m[2] : 0
+                            'prefix' => strtoupper($m[1]),
+                            'num1'   => isset($m[2]) ? (int)$m[2] : 0,
+                            'num2'   => isset($m[3]) ? (int)$m[3] : 0,
+                            'is_header' => !isset($m[2])
                         ];
                     }
-                    return ['letter' => 999, 'number' => 999];
+                    return ['prefix' => (string)$id, 'num1' => 9999, 'num2' => 9999, 'is_header' => false];
                 };
 
                 $pa = $parse($a);
                 $pb = $parse($b);
 
-                if ($pa['letter'] === $pb['letter']) {
-                    return $pa['number'] <=> $pb['number'];
+                if ($pa['prefix'] !== $pb['prefix']) {
+                    return strcmp($pa['prefix'], $pb['prefix']);
                 }
-                return $pa['letter'] <=> $pb['letter'];
+                if ($pa['is_header'] && !$pb['is_header']) return -1;
+                if (!$pa['is_header'] && $pb['is_header']) return 1;
+                if ($pa['num1'] !== $pb['num1']) {
+                    return $pa['num1'] <=> $pb['num1'];
+                }
+                return $pa['num2'] <=> $pb['num2'];
             });
 
             $audit_details = array_values($grouped);
@@ -2792,12 +2956,9 @@ class Hse_audit extends BaseController
 
             // ================= FETCH DATA =================
             $rows = $db->table("alert_hse_audit_details d")
-                ->select("d.*, q.audit_category_id, q.audit_category as question_name")
+                ->select("d.*, COALESCE(NULLIF(TRIM(d.audit_category_id), ''), q.audit_category_id) as audit_category_id, d.audit_category as question_name")
                 ->join("alert_audit_questions q", "q.question_id = d.question_id", "left")
                 ->where("d.hse_audit_id", $auditId)
-                ->orderBy("CAST(SUBSTRING_INDEX(d.audit_category_id, '.', 1) AS CHAR)", "ASC", false)
-                ->orderBy("LENGTH(d.audit_category_id)", "ASC", false)
-                ->orderBy("d.audit_category_id", "ASC", false)
                 ->get()
                 ->getResultArray();
 
@@ -2822,7 +2983,7 @@ class Hse_audit extends BaseController
                 $statusValue = strtoupper(trim($row[$statusCol] ?? ''));
 
                 $results[] = [
-                    'audit_category_id' => $row['audit_category_id'],
+                    'audit_category_id' => trim($row['audit_category_id'] ?? ''),
                     'client_leased_value' => $row['client_leased'] ?? '',
                     'fm_leased_value' => $row['fm_leased'] ?? '',
                     'office_value' => $row['inplant'] ?? '',
@@ -2830,6 +2991,34 @@ class Hse_audit extends BaseController
                     'full_data' => $row
                 ];
             }
+
+            // Natural sort by audit_category_id (A, A.1, A.2... B, B.1...)
+            usort($results, function ($a, $b) {
+                $parse = function ($id) {
+                    if (preg_match('/^([A-Za-z]+)(?:\.(\d+))?(?:\.(\d+))?$/', trim($id), $m)) {
+                        return [
+                            'prefix' => strtoupper($m[1]),
+                            'num1'   => isset($m[2]) ? (int)$m[2] : 0,
+                            'num2'   => isset($m[3]) ? (int)$m[3] : 0,
+                            'is_header' => !isset($m[2])
+                        ];
+                    }
+                    return ['prefix' => (string)$id, 'num1' => 9999, 'num2' => 9999, 'is_header' => false];
+                };
+
+                $pa = $parse($a['audit_category_id'] ?? '');
+                $pb = $parse($b['audit_category_id'] ?? '');
+
+                if ($pa['prefix'] !== $pb['prefix']) {
+                    return strcmp($pa['prefix'], $pb['prefix']);
+                }
+                if ($pa['is_header'] && !$pb['is_header']) return -1;
+                if (!$pa['is_header'] && $pb['is_header']) return 1;
+                if ($pa['num1'] !== $pb['num1']) {
+                    return $pa['num1'] <=> $pb['num1'];
+                }
+                return $pa['num2'] <=> $pb['num2'];
+            });
 
             $data = [
                 'details' => $master,
@@ -2952,29 +3141,28 @@ class Hse_audit extends BaseController
 
         // ================= FETCH DATA =================
         $rows = $db->table("alert_hse_audit_details d")
-            ->select("d.*")
+            ->select("d.*, COALESCE(NULLIF(TRIM(d.audit_category_id), ''), q.audit_category_id) as audit_category_id, d.audit_category as question_name")
+            ->join("alert_audit_questions q", "q.question_id = d.question_id", "left")
             ->where("d.hse_audit_id", $auditId)
-            ->orderBy("CAST(SUBSTRING_INDEX(d.audit_category_id, '.', 1) AS CHAR)", "ASC", false)
-            ->orderBy("LENGTH(d.audit_category_id)", "ASC", false)
-            ->orderBy("d.audit_category_id", "ASC", false)
             ->get()
             ->getResultArray();
 
         // ================= GROUP DATA (PIVOT) =================
         $grouped = [];
         foreach ($rows as $row) {
-            $questionId = $row['question_id'];
+            $categoryId = trim($row['audit_category_id'] ?? '');
             $siteKey = strtolower(str_replace(' ', '_', trim($row['site_category'] ?? '')));
+            $siteKey = trim($siteKey, '_');
             $finding = strtoupper(trim($row['finding'] ?? ''));
 
             if (!in_array($finding, ['YES', 'NO', 'NA']))
                 $finding = '';
 
-            if (!isset($grouped[$questionId])) {
-                $grouped[$questionId] = [
-                    'audit_category_id' => $row['audit_category_id'],
-                    'question_name' => $row['audit_category'],
-                    'audit_question' => $row['audit_question'],
+            if (!isset($grouped[$categoryId])) {
+                $grouped[$categoryId] = [
+                    'audit_category_id' => $categoryId,
+                    'question_name' => $row['audit_category'] ?? '',
+                    'audit_question' => $row['audit_question'] ?? '',
                     'remark' => $row['remark'] ?? '',
                     'nc_remark' => $row['nc_remark'] ?? '',
                     'attachment' => $row['attachment'] ?? '',
@@ -2983,12 +3171,82 @@ class Hse_audit extends BaseController
                 ];
             }
 
-            if (isset($grouped[$questionId]['categories'][$siteKey])) {
-                $grouped[$questionId]['categories'][$siteKey] = $finding;
+            if (isset($grouped[$categoryId]['categories'][$siteKey])) {
+                $grouped[$categoryId]['categories'][$siteKey] = $finding;
             }
         }
 
+        uksort($grouped, function ($a, $b) {
+            $parse = function ($id) {
+                if (preg_match('/^([A-Za-z]+)(?:\.(\d+))?(?:\.(\d+))?$/', trim($id), $m)) {
+                    return [
+                        'prefix' => strtoupper($m[1]),
+                        'num1'   => isset($m[2]) ? (int)$m[2] : 0,
+                        'num2'   => isset($m[3]) ? (int)$m[3] : 0,
+                        'is_header' => !isset($m[2])
+                    ];
+                }
+                return ['prefix' => (string)$id, 'num1' => 9999, 'num2' => 9999, 'is_header' => false];
+            };
+
+            $pa = $parse($a);
+            $pb = $parse($b);
+
+            if ($pa['prefix'] !== $pb['prefix']) {
+                return strcmp($pa['prefix'], $pb['prefix']);
+            }
+            if ($pa['is_header'] && !$pb['is_header']) return -1;
+            if (!$pa['is_header'] && $pb['is_header']) return 1;
+            if ($pa['num1'] !== $pb['num1']) {
+                return $pa['num1'] <=> $pb['num1'];
+            }
+            return $pa['num2'] <=> $pb['num2'];
+        });
+
         $audit_details = array_values($grouped);
+
+        // ================= STATS FOR AUTOGRID =================
+        $categoryStats = [];
+        $overallStats = [];
+
+        foreach ($categoryKeys as $key => $label) {
+            $overallStats[$key] = ['yes' => 0, 'no' => 0, 'na' => 0];
+        }
+
+        foreach ($audit_details as $row) {
+            $cat = $row['question_name'] ?? '';
+            if (empty($cat)) continue;
+
+            if (!isset($categoryStats[$cat])) {
+                foreach ($categoryKeys as $key => $label) {
+                    $categoryStats[$cat][$key] = ['yes' => 0, 'no' => 0, 'na' => 0];
+                }
+            }
+
+            foreach ($row['categories'] as $key => $val) {
+                if ($val == 'YES') {
+                    $categoryStats[$cat][$key]['yes']++;
+                    $overallStats[$key]['yes']++;
+                } elseif ($val == 'NO') {
+                    $categoryStats[$cat][$key]['no']++;
+                    $overallStats[$key]['no']++;
+                } else {
+                    $categoryStats[$cat][$key]['na']++;
+                    $overallStats[$key]['na']++;
+                }
+            }
+        }
+
+        $calc = function (&$stats) {
+            foreach ($stats as &$s) {
+                $total = $s['yes'] + $s['no'] + $s['na'];
+                $applicable = $total - $s['na'];
+                $s['percentage'] = $applicable ? round(($s['yes'] / $applicable) * 100, 2) : 0;
+            }
+        };
+
+        foreach ($categoryStats as &$cs) $calc($cs);
+        $calc($overallStats);
 
         // ================= EXCEL GENERATION =================
         $filename = "HSE_Audit_" . $auditId . "_" . date('Ymd_His') . ".xls";
@@ -3101,6 +3359,102 @@ class Hse_audit extends BaseController
                     <td>' . implode("\n", $attachments) . '</td>
                 </tr>';
             }
+        }
+
+        // ================= AUTOGRID SUMMARY REPORT IN EXCEL =================
+        $colCount = 5 + count($categoryKeys);
+        $html .= '<tr><td colspan="' . $colCount . '">&nbsp;</td></tr>';
+        $html .= '<tr><td colspan="' . $colCount . '" style="font-size:16px; font-weight:bold; text-align:center; background-color:#1e1c77; color:#fff;">HSE Audit AutoGrid Report</td></tr>';
+        $html .= '<tr><td colspan="' . $colCount . '">&nbsp;</td></tr>';
+
+        // Overall Summary for Compliance
+        $html .= '<tr><td colspan="' . $colCount . '" class="section" style="font-size:14px; font-weight:bold; background-color:#f2f2f2;">Overall Summary for Compliance</td></tr>';
+        $html .= '<tr><td class="header">Category</td>';
+        foreach ($categoryKeys as $label) {
+            $html .= '<td class="header">' . $safe($label) . '</td>';
+        }
+        $extraCols = max(0, $colCount - 1 - count($categoryKeys));
+        if ($extraCols > 0) {
+            $html .= '<td class="header" colspan="' . $extraCols . '">&nbsp;</td>';
+        }
+        $html .= '</tr>';
+
+        // Total Selected
+        $html .= '<tr><td style="font-weight:bold;">Total Selected</td>';
+        foreach ($overallStats as $stat) {
+            $html .= '<td style="text-align:center; font-weight:bold;">' . ($stat['yes'] + $stat['no'] + $stat['na']) . '</td>';
+        }
+        if ($extraCols > 0) {
+            $html .= '<td colspan="' . $extraCols . '">&nbsp;</td>';
+        }
+        $html .= '</tr>';
+
+        // YES
+        $html .= '<tr><td style="font-weight:bold; color:green;">YES</td>';
+        foreach ($overallStats as $stat) {
+            $html .= '<td style="text-align:center; font-weight:bold; color:green;">' . $stat['yes'] . '</td>';
+        }
+        if ($extraCols > 0) {
+            $html .= '<td colspan="' . $extraCols . '">&nbsp;</td>';
+        }
+        $html .= '</tr>';
+
+        // NO
+        $html .= '<tr><td style="font-weight:bold; color:red;">NO</td>';
+        foreach ($overallStats as $stat) {
+            $html .= '<td style="text-align:center; font-weight:bold; color:red;">' . $stat['no'] . '</td>';
+        }
+        if ($extraCols > 0) {
+            $html .= '<td colspan="' . $extraCols . '">&nbsp;</td>';
+        }
+        $html .= '</tr>';
+
+        // NA
+        $html .= '<tr><td style="font-weight:bold; color:gray;">NA</td>';
+        foreach ($overallStats as $stat) {
+            $html .= '<td style="text-align:center; font-weight:bold; color:gray;">' . $stat['na'] . '</td>';
+        }
+        if ($extraCols > 0) {
+            $html .= '<td colspan="' . $extraCols . '">&nbsp;</td>';
+        }
+        $html .= '</tr>';
+
+        // Score
+        $html .= '<tr><td style="font-weight:bold; background-color:#1e1c77; color:#fff;">Score</td>';
+        foreach ($overallStats as $stat) {
+            $html .= '<td style="text-align:center; font-weight:bold; background-color:#f9f9f9;">' . $stat['percentage'] . '%</td>';
+        }
+        if ($extraCols > 0) {
+            $html .= '<td colspan="' . $extraCols . '">&nbsp;</td>';
+        }
+        $html .= '</tr>';
+
+        $html .= '<tr><td colspan="' . $colCount . '">&nbsp;</td></tr>';
+
+        // Categorywise/Headerwise Score of Audit Grid
+        $html .= '<tr><td colspan="' . $colCount . '" class="section" style="font-size:14px; font-weight:bold; background-color:#f2f2f2;">Categorywise/Headerwise Score of Audit Grid</td></tr>';
+        $html .= '<tr><td class="header">Sr No</td><td class="header" colspan="2">Category</td>';
+        foreach ($categoryKeys as $label) {
+            $html .= '<td class="header">' . $safe($label) . '</td>';
+        }
+        $extraSpan = max(0, $colCount - 3 - count($categoryKeys));
+        if ($extraSpan > 0) {
+            $html .= '<td class="header" colspan="' . $extraSpan . '">&nbsp;</td>';
+        }
+        $html .= '</tr>';
+
+        $srNo = 'A';
+        foreach ($categoryStats as $category => $stats) {
+            $html .= '<tr>
+                <td style="text-align:center; font-weight:bold;">' . $srNo++ . '</td>
+                <td colspan="2" style="font-weight:bold;">' . $safe($category) . '</td>';
+            foreach ($categoryKeys as $key => $label) {
+                $html .= '<td style="text-align:center; font-weight:bold;">' . ($stats[$key]['percentage'] ?? 0) . '%</td>';
+            }
+            if ($extraSpan > 0) {
+                $html .= '<td colspan="' . $extraSpan . '">&nbsp;</td>';
+            }
+            $html .= '</tr>';
         }
 
         $html .= '</table></body></html>';
@@ -3439,6 +3793,127 @@ class Hse_audit extends BaseController
         return $this->response->setJSON(['status' => 0, 'region' => '', 'debug' => $debug]);
     }
 
+    /**
+     * Check whether a site exists and is properly configured in alert_gemba_sites.
+     * Required details: site_name, site_type_1, site_type_2, site_category, region, and status = 1.
+     *
+     * @param string|null $siteName
+     * @param string|null $location
+     * @return array
+     */
+    public function checkGembaSiteConfiguration($siteName, $location = null): array
+    {
+        $siteName = trim((string) $siteName);
+        $location = trim((string) $location);
+
+        if (empty($siteName) && empty($location)) {
+            return [
+                'valid' => false,
+                'reason' => 'empty',
+                'message' => 'Please select a Site Name.'
+            ];
+        }
+
+        $db = db_connect();
+
+        $builder = $db->table('alert_gemba_sites');
+        $builder->groupStart();
+        if (!empty($siteName)) {
+            $builder->where('LOWER(TRIM(site_name))', strtolower($siteName));
+        }
+        if (!empty($location) && strtolower($location) !== strtolower($siteName)) {
+            $builder->orWhere('LOWER(TRIM(site_name))', strtolower($location));
+        }
+        $builder->groupEnd();
+        $builder->where('status !=', 2); // Exclude soft-deleted / status = 2
+
+        $sites = $builder->get()->getResultArray();
+
+        if (empty($sites)) {
+            return [
+                'valid' => false,
+                'reason' => 'missing',
+                'message' => 'Please add Gemba Sites details first.'
+            ];
+        }
+
+        $validSite = null;
+        $missingFieldsList = [];
+
+        foreach ($sites as $site) {
+            $missing = [];
+            if (empty(trim((string) ($site['site_name'] ?? '')))) {
+                $missing[] = 'Site Name';
+            }
+            if (empty(trim((string) ($site['site_type_1'] ?? '')))) {
+                $missing[] = 'Site Type 1';
+            }
+            if (empty(trim((string) ($site['site_type_2'] ?? '')))) {
+                $missing[] = 'Site Type 2';
+            }
+            if (empty(trim((string) ($site['site_category'] ?? '')))) {
+                $missing[] = 'Site Category';
+            }
+            if (empty(trim((string) ($site['region'] ?? '')))) {
+                $missing[] = 'Region';
+            }
+            if ((int) ($site['status'] ?? 0) !== 1) {
+                $missing[] = 'Active Status';
+            }
+
+            if (empty($missing)) {
+                $validSite = $site;
+                break;
+            } else {
+                $missingFieldsList = $missing;
+            }
+        }
+
+        if ($validSite !== null) {
+            return [
+                'valid' => true,
+                'reason' => 'complete',
+                'message' => 'Gemba site is properly configured.',
+                'site' => $validSite
+            ];
+        }
+
+        return [
+            'valid' => false,
+            'reason' => 'incomplete',
+            'message' => 'Gemba site configuration for this site is incomplete. Please complete all required site details in Gemba Sites first.'
+        ];
+    }
+
+    /**
+     * AJAX endpoint to validate Gemba Site configuration for HSE Perform Audit & Re-Audit.
+     */
+    public function validate_gemba_site()
+    {
+        $request = service('request');
+        $siteName = $request->getGet('site_name') 
+            ?? $request->getPost('site_name') 
+            ?? $request->getGet('client_name') 
+            ?? $request->getPost('client_name') 
+            ?? $request->getGet('client_id') 
+            ?? $request->getPost('client_id') 
+            ?? '';
+
+        $location = $request->getGet('location') 
+            ?? $request->getPost('location') 
+            ?? '';
+
+        $result = $this->checkGembaSiteConfiguration($siteName, $location);
+
+        return $this->response->setJSON([
+            'status' => $result['valid'] ? 1 : 0,
+            'valid' => $result['valid'],
+            'reason' => $result['reason'],
+            'message' => $result['message'],
+            'site' => $result['site'] ?? null
+        ]);
+    }
+
     // changes on 20/02/26: Get locations by region and sub-category from alert_hse_client_master
     public function get_clients_by_region_and_category()
     {
@@ -3694,64 +4169,157 @@ class Hse_audit extends BaseController
     {
         $site_category = $this->request->getVar('site_category');
         $sub_category = $this->request->getVar('sub_category');
+        $site_name = $this->request->getVar('site_name') ?: ($this->request->getVar('client_name') ?: '');
         $audit_template_id = $this->request->getVar('audit_template_id');
         $hse_audit_id = $this->request->getVar('hse_audit_id');
 
         $db = \Config\Database::connect();
 
-        $builder = $db->table('alert_audit_questions');
-        $builder->where('status', 1);
-
-        if (!empty($audit_template_id)) {
-            $builder->where('audit_template_id', $audit_template_id);
+        if (empty($audit_template_id)) {
+            if (!empty($hse_audit_id)) {
+                $auditMaster = $db->table('alert_hse_audit_master')->where('hse_audit_id', $hse_audit_id)->get()->getRowArray();
+                if ($auditMaster && !empty($auditMaster['audit_template_id'])) {
+                    $audit_template_id = $auditMaster['audit_template_id'];
+                }
+            }
+            if (empty($audit_template_id)) {
+                $activeTemplate = $db->table('alert_audit_template')
+                    ->where('audit_template_type', 'HSE')
+                    ->where('status', 1)
+                    ->orderBy('audit_template_id', 'DESC')
+                    ->get()
+                    ->getRowArray();
+                $audit_template_id = $activeTemplate ? $activeTemplate['audit_template_id'] : 3;
+            }
         }
+
+        // 1. Fetch base canonical questions from alert_hse_template_questions
+        $baseQuestions = $db->table('alert_hse_template_questions')
+            ->where('audit_template_id', $audit_template_id)
+            ->where('status', 1)
+            ->orderBy('question_order', 'ASC')
+            ->get()
+            ->getResultArray();
+
+        // Safe legacy fallback if alert_hse_template_questions is empty for this template
+        if (empty($baseQuestions)) {
+            $baseBuilder = $db->table('alert_audit_questions')
+                ->where('audit_template_id', $audit_template_id)
+                ->where('status', 1)
+                ->groupBy('audit_category_id');
+            $legacyQuestions = $baseBuilder->get()->getResultArray();
+            foreach ($legacyQuestions as $idx => $lq) {
+                $baseQuestions[] = [
+                    'template_question_id' => $lq['question_id'],
+                    'audit_template_id' => $audit_template_id,
+                    'question_order' => $idx + 1,
+                    'category_id' => $lq['audit_category_id'],
+                    'category_name' => $lq['audit_category'],
+                    'question_text' => $lq['audit_question'],
+                    'default_value' => $lq['audit_question_default_value'],
+                    'findings' => '',
+                    'risk' => '',
+                    'actions_recommendation' => '',
+                    'action_category' => '',
+                    'ua_uc' => '',
+                    'risk_severity' => '',
+                    'risk_probability' => '',
+                    'color_code' => '',
+                    'cost_type' => '',
+                    'combined_risk_rating' => '',
+                    'note' => $lq['note'],
+                    'capa_json' => $lq['capa_json'],
+                    'status' => 1
+                ];
+            }
+        }
+
+        // 2. Fetch overrides from alert_audit_questions for this template & site/category/subcategory
+        $overrideBuilder = $db->table('alert_audit_questions')
+            ->where('audit_template_id', $audit_template_id)
+            ->where('status !=', 2);
 
         if (!empty($site_category)) {
-            $builder->where('audit_site_category_name', $site_category);
+            $overrideBuilder->where('audit_site_category_name', $site_category);
         }
-
         if (!empty($sub_category)) {
-            $builder->where('audit_sub_category_name', $sub_category);
+            $overrideBuilder->where('audit_sub_category_name', $sub_category);
         }
 
-        //$builder->orderBy('audit_category_id','ASC');
+        $rawOverrides = $overrideBuilder->get()->getResultArray();
 
-        $questions = $builder->get()->getResultArray();
+        // Map overrides: priority for exact site_name match, then category/subcategory match
+        $overrideMap = [];
+        foreach ($rawOverrides as $ov) {
+            $key = !empty($ov['template_question_id']) ? $ov['template_question_id'] : trim($ov['audit_category_id']);
+            $catKey = trim($ov['audit_category_id']);
+            $hasSiteMatch = (!empty($site_name) && !empty($ov['site_name']) && strtolower(trim($ov['site_name'])) === strtolower(trim($site_name)));
+
+            if ($hasSiteMatch) {
+                $overrideMap[$key] = $ov;
+                $overrideMap[$catKey] = $ov;
+            } elseif (!isset($overrideMap[$key])) {
+                $overrideMap[$key] = $ov;
+                $overrideMap[$catKey] = $ov;
+            }
+        }
+
+        // 3. Assemble complete questions with all 15 fields
+        $questions = [];
+        foreach ($baseQuestions as $bq) {
+            $tId = $bq['template_question_id'];
+            $cId = trim($bq['category_id']);
+            $ov = $overrideMap[$tId] ?? $overrideMap[$cId] ?? null;
+
+            $q = [
+                'question_id' => $ov ? $ov['question_id'] : $bq['template_question_id'],
+                'template_question_id' => $bq['template_question_id'],
+                'audit_template_id' => $audit_template_id,
+                'audit_site_category_name' => $site_category ?: ($ov['audit_site_category_name'] ?? ''),
+                'audit_sub_category_name' => $sub_category ?: ($ov['audit_sub_category_name'] ?? ''),
+                'audit_category_id' => $ov['audit_category_id'] ?? $bq['category_id'],
+                'audit_category' => $ov['audit_category'] ?? $bq['category_name'],
+                'audit_question' => $ov['audit_question'] ?? $bq['question_text'],
+                'audit_question_default_value' => $ov['audit_question_default_value'] ?? $bq['default_value'],
+                'findings' => (!empty($ov['findings']) ? $ov['findings'] : ($bq['findings'] ?? '')),
+                'risk' => (!empty($ov['risk']) ? $ov['risk'] : ($bq['risk'] ?? '')),
+                'actions_recommendation' => (!empty($ov['actions_recommendation']) ? $ov['actions_recommendation'] : ($bq['actions_recommendation'] ?? '')),
+                'action_category' => (!empty($ov['action_category']) ? $ov['action_category'] : ($bq['action_category'] ?? '')),
+                'ua_uc' => (!empty($ov['ua_uc']) ? $ov['ua_uc'] : ($bq['ua_uc'] ?? '')),
+                'risk_severity' => (!empty($ov['risk_severity']) ? $ov['risk_severity'] : ($bq['risk_severity'] ?? '')),
+                'risk_probability' => (!empty($ov['risk_probability']) ? $ov['risk_probability'] : ($bq['risk_probability'] ?? '')),
+                'color_code' => (!empty($ov['color_code']) ? $ov['color_code'] : ($bq['color_code'] ?? '')),
+                'cost_type' => (!empty($ov['cost_type']) ? $ov['cost_type'] : ($bq['cost_type'] ?? '')),
+                'combined_risk_rating' => (!empty($ov['combined_risk_rating']) ? $ov['combined_risk_rating'] : ($bq['combined_risk_rating'] ?? '')),
+                'note' => (!empty($ov['note']) ? $ov['note'] : ($bq['note'] ?? '')),
+                'capa_json' => (!empty($ov['capa_json']) ? $ov['capa_json'] : ($bq['capa_json'] ?? '')),
+                'status' => 1
+            ];
+            $questions[] = $q;
+        }
 
         usort($questions, function($a, $b) {
             return strnatcmp($a['audit_category_id'] ?? '', $b['audit_category_id'] ?? '');
         });
 
+        // 4. Prefill for existing audits or re-audits
         $prefill = [];
-
         if (!empty($hse_audit_id)) {
-
             $builder = $db->table('alert_hse_audit_details');
             $builder->where('hse_audit_id', $hse_audit_id);
-
             $details = $builder->get()->getResultArray();
 
-            foreach ($details as $row) {
-                // Use question_id as key if available, otherwise fallback to plain text key
-                $qId = (isset($row['question_id']) && !empty($row['question_id'])) ? (int) $row['question_id'] : null;
-                $textKey = ($row['audit_category'] ?? '') . '|' . ($row['audit_question'] ?? '');
-                $key = $qId ?? $textKey;
+            $siteCategories = $db->table("alert_hse_site_category")->where("status", 1)->get()->getResultArray();
 
-                $siteCategories = $db->table("alert_hse_site_category")
-                    ->where("status", 1)
-                    ->get()
-                    ->getResultArray();
+            foreach ($details as $row) {
+                $qId = (isset($row['question_id']) && !empty($row['question_id'])) ? (int) $row['question_id'] : null;
+                $catIdKey = trim($row['audit_category_id'] ?? '');
+                $textKey = ($row['audit_category'] ?? '') . '|' . ($row['audit_question'] ?? '');
 
                 $rowPrefill = [];
-
                 foreach ($siteCategories as $site) {
-
-                    $slug = strtolower(
-                        preg_replace('/[^a-z0-9]+/', '_', $site['site_category_name'])
-                    );
-
+                    $slug = strtolower(preg_replace('/[^a-z0-9]+/', '_', $site['site_category_name']));
                     $value = '';
-
                     if ($slug === 'client_leased') {
                         $value = $row['client_leased'] ?? '';
                     } elseif ($slug === 'fm_leased') {
@@ -3759,7 +4327,6 @@ class Hse_audit extends BaseController
                     } elseif ($slug === 'office' || $slug === 'inplant') {
                         $value = $row['inplant'] ?? '';
                     }
-
                     $rowPrefill[$slug] = strtoupper($value);
                 }
 
@@ -3771,7 +4338,13 @@ class Hse_audit extends BaseController
                 $rowPrefill['audit_question'] = $row['audit_question'] ?? '';
                 $rowPrefill['capa_json'] = $row['capa_json'] ?? '';
 
-                $prefill[$key] = $rowPrefill;
+                if ($qId) {
+                    $prefill[$qId] = $rowPrefill;
+                }
+                if (!empty($catIdKey)) {
+                    $prefill[$catIdKey] = $rowPrefill;
+                }
+                $prefill[$textKey] = $rowPrefill;
             }
         }
 
@@ -3789,12 +4362,14 @@ class Hse_audit extends BaseController
         $request = service('request');
 
         $audit_id = $request->getVar('audit_id');
-        $category_id = $request->getVar('category_id');
-        $question_id = $request->getVar('question_id');
+        $category_id = trim((string) $request->getVar('category_id'));
+        $question_id = trim((string) $request->getVar('question_id'));
+        $template_id = $request->getVar('audit_template_id') ?: $request->getVar('template_id');
 
         $capa_json = '';
+        $foundRow = null;
 
-        // First check in alert_hse_audit_details if it's an existing audit/reaudit
+        // 1. First check in alert_hse_audit_details if it's an existing audit/reaudit
         if (!empty($audit_id)) {
             $builder = $db->table('alert_hse_audit_details')->where('hse_audit_id', $audit_id);
             if (!empty($question_id)) {
@@ -3803,34 +4378,128 @@ class Hse_audit extends BaseController
                 $builder->where('audit_category_id', $category_id);
             }
             $row = $builder->get()->getRowArray();
-            if ($row && !empty($row['capa_json'])) {
-                $capa_json = $row['capa_json'];
+            if ($row) {
+                $foundRow = $row;
+                if (!empty($row['capa_json'])) {
+                    $capa_json = $row['capa_json'];
+                }
             }
         }
 
-        // If not found in details, check HSE Question Master (alert_audit_questions)
-        if (empty($capa_json) && !empty($question_id)) {
-            $qRow = $db->table('alert_audit_questions')
-                ->where('question_id', $question_id)
-                ->get()
-                ->getRowArray();
-
-            if ($qRow && !empty($qRow['capa_json'])) {
-                $capa_json = $qRow['capa_json'];
+        // 2. If not found or empty, check alert_hse_template_questions
+        if (empty($capa_json)) {
+            if (!empty($question_id)) {
+                $tRow = $db->table('alert_hse_template_questions')
+                    ->where('template_question_id', $question_id)
+                    ->get()
+                    ->getRowArray();
+                if ($tRow) {
+                    $foundRow = $tRow;
+                    $capa_json = $tRow['capa_json'] ?? '';
+                }
+            }
+            if (empty($capa_json) && !empty($template_id) && !empty($category_id)) {
+                $tRow = $db->table('alert_hse_template_questions')
+                    ->where('audit_template_id', $template_id)
+                    ->where('category_id', $category_id)
+                    ->get()
+                    ->getRowArray();
+                if ($tRow) {
+                    $foundRow = $tRow;
+                    $capa_json = $tRow['capa_json'] ?? '';
+                }
+            }
+            if (empty($capa_json) && !empty($category_id)) {
+                $tRow = $db->table('alert_hse_template_questions')
+                    ->where('category_id', $category_id)
+                    ->orderBy('template_question_id', 'DESC')
+                    ->get()
+                    ->getRowArray();
+                if ($tRow) {
+                    $foundRow = $tRow;
+                    $capa_json = $tRow['capa_json'] ?? '';
+                }
             }
         }
 
+        // 3. If still empty, check alert_audit_questions
+        if (empty($capa_json)) {
+            if (!empty($template_id) && !empty($category_id)) {
+                $qRow = $db->table('alert_audit_questions')
+                    ->where('audit_template_id', $template_id)
+                    ->where('audit_category_id', $category_id)
+                    ->get()
+                    ->getRowArray();
+                if ($qRow) {
+                    $foundRow = $qRow;
+                    $capa_json = $qRow['capa_json'] ?? '';
+                }
+            }
+            if (empty($capa_json) && !empty($question_id)) {
+                $qBuilder = $db->table('alert_audit_questions');
+                if (!empty($template_id)) {
+                    $qBuilder->where('audit_template_id', $template_id);
+                }
+                $qBuilder->groupStart()
+                    ->where('question_id', $question_id)
+                    ->orWhere('template_question_id', $question_id)
+                    ->groupEnd();
+                $qRow = $qBuilder->get()->getRowArray();
+                if ($qRow) {
+                    $foundRow = $qRow;
+                    $capa_json = $qRow['capa_json'] ?? '';
+                }
+            }
+        }
+
+        // Decode JSON if available
+        $data = [];
         if (!empty($capa_json)) {
-            return $this->response->setJSON([
-                'status' => true,
-                'data' => json_decode($capa_json, true)
-            ]);
-        } else {
-            return $this->response->setJSON([
-                'status' => false,
-                'data' => []
-            ]);
+            $data = json_decode($capa_json, true) ?: [];
         }
+
+        // Helper to extract non-empty value with fallback
+        $extractField = function ($fieldObj, $fallback) {
+            if (!empty($fieldObj) && is_array($fieldObj)) {
+                if (isset($fieldObj['no']) && $fieldObj['no'] !== '') return $fieldObj['no'];
+                if (isset($fieldObj['value']) && $fieldObj['value'] !== '') return $fieldObj['value'];
+            } elseif (!empty($fieldObj) && is_string($fieldObj)) {
+                return $fieldObj;
+            }
+            return !empty($fallback) ? (string) $fallback : '';
+        };
+
+        $findings = $extractField($data['findings'] ?? null, $foundRow['findings'] ?? '');
+        $risk = $extractField($data['risk'] ?? null, $foundRow['risk'] ?? '');
+        $actions = $extractField($data['actions'] ?? ($data['actions_recommendation'] ?? null), $foundRow['actions_recommendation'] ?? ($foundRow['actions'] ?? ''));
+        $action_category = $extractField($data['action_category'] ?? null, $foundRow['action_category'] ?? '');
+        $ua_uc = $extractField($data['ua_uc'] ?? null, $foundRow['ua_uc'] ?? '');
+        $risk_severity = $extractField($data['risk_severity'] ?? null, $foundRow['risk_severity'] ?? '');
+        $risk_probability = $extractField($data['risk_probability'] ?? null, $foundRow['risk_probability'] ?? '');
+        $color_code = $extractField($data['color_code'] ?? null, $foundRow['color_code'] ?? '');
+        $cost_type = $extractField($data['cost_type'] ?? null, $foundRow['cost_type'] ?? '');
+        $combined_risk_rating = $extractField($data['combined_risk_rating'] ?? null, $foundRow['combined_risk_rating'] ?? '');
+        $nc_type = $extractField($data['nc_type'] ?? null, $foundRow['nc_type'] ?? 'RD');
+
+        $capaData = [
+            'findings' => ['text' => 'Findings', 'yes' => '', 'no' => $findings, 'na' => ''],
+            'risk' => ['text' => 'Risk', 'yes' => '', 'no' => $risk, 'na' => ''],
+            'actions' => ['text' => 'Actions/Recommendation', 'yes' => '', 'no' => $actions, 'na' => ''],
+            'actions_recommendation' => $actions,
+            'action_category' => ['text' => 'Action Category', 'yes' => '', 'no' => $action_category, 'na' => ''],
+            'ua_uc' => ['text' => 'UA-UC', 'yes' => '', 'no' => $ua_uc, 'na' => ''],
+            'risk_severity' => ['text' => 'Risk Severity', 'yes' => '', 'no' => $risk_severity, 'na' => ''],
+            'risk_probability' => ['text' => 'Risk Probability', 'yes' => '', 'no' => $risk_probability, 'na' => ''],
+            'color_code' => ['text' => 'Color Code', 'yes' => '', 'no' => $color_code, 'na' => ''],
+            'cost_type' => ['text' => 'Cost Type', 'yes' => '', 'no' => $cost_type, 'na' => ''],
+            'combined_risk_rating' => ['text' => 'Combined Risk Rating', 'yes' => '', 'no' => $combined_risk_rating, 'na' => ''],
+            'nc_type' => ['text' => 'NC Type', 'yes' => '', 'no' => $nc_type, 'na' => '']
+        ];
+
+        return $this->response->setJSON([
+            'status' => true,
+            'data' => $capaData
+        ]);
     }
 
     public function get_misc_capa()

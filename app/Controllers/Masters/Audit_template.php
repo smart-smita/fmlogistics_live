@@ -67,27 +67,6 @@ class Audit_template extends BaseController
                 $tdata['button_name'] = "Create Audit";
                 $tdata['button_id'] = "user_modal";
                 $tdata['download_excel'] = '<div class="card-toolbar" data-bs-toggle="tooltip" data-bs-placement="top" data-bs-trigger="hover" 
-                            title="Click to Download Normal Sample Excel">
-                            <a class="btn btn-sm btn-light btn-active-primary" 
-                               href="' . base_url("assets/file/Normal_audit.csv") . '" 
-                               download="normal_audit_sample_excel.csv" 
-                               onclick="$(this).attr(\'data-kt-indicator\', \'on\'); 
-                                        $(this).attr(\'disabled\', true); 
-                                        setTimeout(function (obj) { 
-                                            obj.attr(\'data-kt-indicator\', \'off\'); 
-                                            obj.attr(\'disabled\', false); 
-                                        }, 500, $(this));">
-                                <!--begin::Svg Icon | path: icons/duotune/arrows/arr075.svg-->
-                                <span class="indicator-label svg-icon svg-icon-3">
-                                   Normal
-                                </span>
-                                <span class="indicator-progress">
-                                    Please wait... <span class="spinner-border spinner-border-sm align-middle ms-2"></span>
-                                </span>
-                                <!--end::Svg Icon-->
-                            </a> 
-                            </div>
-                            <div class="card-toolbar" data-bs-toggle="tooltip" data-bs-placement="top" data-bs-trigger="hover" 
                             title="Click to Download OE Sample Excel">
                             <a class="btn btn-sm btn-light btn-active-primary" 
                                href="' . base_url("assets/file/OE_audit.csv") . '" 
@@ -112,8 +91,8 @@ class Audit_template extends BaseController
                             <div class="card-toolbar" data-bs-toggle="tooltip" data-bs-placement="top" data-bs-trigger="hover" 
                             title="Click to Download HSE Sample Excel">
                             <a class="btn btn-sm btn-light btn-active-primary" 
-                               href="' . base_url("assets/file/HSE_Audit_Question_Strict.csv") . '" 
-                               download="HSE_Audit_question_sample_excel.csv" 
+                               href="' . base_url("assets/file/HSE_Audit_question_sample_excel_latest.csv") . '" 
+                               download="HSE_Audit_question_sample_excel_latest.csv" 
                                onclick="$(this).attr(\'data-kt-indicator\', \'on\'); 
                                         $(this).attr(\'disabled\', true); 
                                         setTimeout(function (obj) { 
@@ -173,6 +152,48 @@ class Audit_template extends BaseController
             $tdata['button_name'] = "Create Audit";
             $tdata['button_id'] = "user_modal";
             $tdata['button_sample'] = "Download Sample Excel";
+            $tdata['download_excel'] = '<div class="card-toolbar" data-bs-toggle="tooltip" data-bs-placement="top" data-bs-trigger="hover" 
+                        title="Click to Download OE Sample Excel">
+                        <a class="btn btn-sm btn-light btn-active-primary" 
+                           href="' . base_url("assets/file/OE_audit.csv") . '" 
+                           download="OE_audit_sample_excel.csv" 
+                           onclick="$(this).attr(\'data-kt-indicator\', \'on\'); 
+                                    $(this).attr(\'disabled\', true); 
+                                    setTimeout(function (obj) { 
+                                        obj.attr(\'data-kt-indicator\', \'off\'); 
+                                        obj.attr(\'disabled\', false); 
+                                    }, 500, $(this));">
+                            <!--begin::Svg Icon | path: icons/duotune/arrows/arr075.svg-->
+                            <span class="indicator-label svg-icon svg-icon-3">
+                               OE
+                            </span>
+                            <span class="indicator-progress">
+                                Please wait... <span class="spinner-border spinner-border-sm align-middle ms-2"></span>
+                            </span>
+                            <!--end::Svg Icon-->
+                        </a> 
+                        </div> 
+                        <div class="card-toolbar" data-bs-toggle="tooltip" data-bs-placement="top" data-bs-trigger="hover" 
+                        title="Click to Download HSE Sample Excel">
+                        <a class="btn btn-sm btn-light btn-active-primary" 
+                           href="' . base_url("assets/file/HSE_Audit_question_sample_excel_latest.csv") . '" 
+                           download="HSE_Audit_question_sample_excel_latest.csv" 
+                           onclick="$(this).attr(\'data-kt-indicator\', \'on\'); 
+                                    $(this).attr(\'disabled\', true); 
+                                    setTimeout(function (obj) { 
+                                        obj.attr(\'data-kt-indicator\', \'off\'); 
+                                        obj.attr(\'disabled\', false); 
+                                    }, 500, $(this));">
+                            <!--begin::Svg Icon | path: icons/duotune/arrows/arr075.svg-->
+                            <span class="indicator-label svg-icon svg-icon-3">
+                               HSE
+                            </span>
+                            <span class="indicator-progress">
+                                Please wait... <span class="spinner-border spinner-border-sm align-middle ms-2"></span>
+                            </span>
+                            <!--end::Svg Icon-->
+                        </a>
+                    </div>';
         } else {
             // changes on 14/10/25 by darsh: Show read-only message for Cluster Managers
             $tdata['read_only_message'] = '<div class="alert alert-info">
@@ -280,7 +301,18 @@ class Audit_template extends BaseController
                 $tdata['table_data'][$key]['tr_class'] = "bg-light-danger";
 
             }
-            $tdata['table_data'][$key]['action'] = "<center>" . $statusMessages[$row['status']] . "<br><br>" . $perform . "</center>";
+            $hasAudits = 0;
+            if ($row['audit_template_type'] == "HSE") {
+                $hasAudits = $db->table('alert_hse_audit_master')
+                    ->where('audit_template_id', $row['audit_template_id'])
+                    ->where('status !=', 2)
+                    ->countAllResults();
+            }
+            $lockBadge = '';
+            if ($hasAudits > 0) {
+                $lockBadge = '<span class="badge badge-secondary ms-1" title="Template locked: ' . $hasAudits . ' audit(s) performed"><i class="fas fa-lock text-warning"></i> Locked (' . $hasAudits . ')</span>';
+            }
+            $tdata['table_data'][$key]['action'] = "<center>" . $statusMessages[$row['status']] . " " . $lockBadge . "<br><br>" . $perform . "</center>";
         }
         $tdata['data'] = $tdata['table_data'];
         unset($tdata['table_data']);
@@ -326,8 +358,23 @@ class Audit_template extends BaseController
         // ----------------------------
         // INSERT / UPDATE TEMPLATE
         // ----------------------------
+        $db = db_connect();
+
         if (isset($id)) {
             $responce['message'] = "Data updation failed";
+
+            // Check if audits have been performed using this template
+            $hasAudits = $db->table('alert_hse_audit_master')
+                ->where('audit_template_id', $id)
+                ->where('status !=', 2)
+                ->countAllResults();
+
+            if ($hasAudits > 0 && isset($action) && in_array($action, ['delete', 'deactive'])) {
+                return $this->response->setJSON([
+                    'status' => "0",
+                    'message' => "Cannot modify status or delete template: $hasAudits audit(s) have already been performed using this template."
+                ]);
+            }
 
             if (isset($action)) {
                 switch ($action) {
@@ -352,58 +399,71 @@ class Audit_template extends BaseController
             // Require an Excel/CSV file when creating a new template
             $validation = $this->validateFileType('emport_excel');
             if (!$validation['valid']) {
+                $errorMessage = !empty($validation['message'])
+                    ? $validation['message']
+                    : "An Excel/CSV file is required to create a new template.";
+                if ($errorMessage === 'No file selected. Please choose a file.' || $errorMessage === 'No file selected') {
+                    $errorMessage = "An Excel/CSV file is required to create a new template. Please choose an Excel (.xlsx, .xls) or CSV (.csv) file to upload.";
+                }
                 return $this->response->setJSON([
                     'status' => "0",
-                    'message' => "An Excel/CSV file is required to create a new template."
+                    'message' => $errorMessage
                 ]);
             }
 
             $postData['status'] = "1";
             $responce['message'] = "Data insertion failed";
 
+            $db->transBegin();
+
             if ($this->BaseModel->insert($postData)) {
                 $id = $this->BaseModel->getInsertID();
+
+                // ----------------------------
+                // IMPORT BASED ON TEMPLATE TYPE
+                // ----------------------------
+                if (isset($postData['audit_template_type']) && $postData['audit_template_type'] == "OE") {
+                    $importResult = $this->importExcel($id);
+
+                    if ($importResult === false || is_string($importResult)) {
+                        $db->transRollback();
+                        return $this->response->setJSON([
+                            'status' => "0",
+                            'message' => is_string($importResult) ? $importResult : "File upload failed. Please check file type and size."
+                        ]);
+                    }
+
+                } else if (isset($postData['audit_template_type']) && $postData['audit_template_type'] == "HSE") {
+                    $importResult = $this->importHSE_Excel($id);
+
+                    if (!is_array($importResult) || empty($importResult['status'])) {
+                        $db->transRollback();
+                        return $this->response->setJSON([
+                            'status' => "0",
+                            'message' => is_array($importResult) ? $importResult['message'] : "HSE question import failed."
+                        ]);
+                    }
+                    $responce['audit_type'] = "HSE";
+
+                } else if (isset($postData['audit_template_type']) && $postData['audit_template_type'] == "Normal") {
+                    $importResult = $this->importNormal_Excel($id);
+
+                    if ($importResult !== "ok") {
+                        $db->transRollback();
+                        return $this->response->setJSON([
+                            'status' => "0",
+                            'message' => is_string($importResult) ? $importResult : "Normal Audit Template import failed."
+                        ]);
+                    }
+                }
+
+                $db->transCommit();
                 $responce['status'] = "1";
-                $responce['message'] = "Data saved successfully";
-            }
-        }
-
-        // ----------------------------
-        // IMPORT BASED ON TEMPLATE TYPE
-        // ----------------------------
-        if (isset($postData['audit_template_type']) && $postData['audit_template_type'] == "OE") {
-            $importResult = $this->importExcel($id);
-
-            if ($importResult === false) {
-                $responce['status'] = "0";
-                $responce['message'] = "File upload failed. Please check file type and size.";
-            } else if (is_string($importResult)) {
-                $responce['message'] = $importResult;
-            }
-
-        } else if (isset($postData['audit_template_type']) && $postData['audit_template_type'] == "HSE") {
-            $importResult = $this->importHSE_Excel($id);
-
-            if (is_array($importResult)) {
-                $responce['status'] = $importResult['status'] ? "1" : "0";
-                $responce['message'] = $importResult['message'];
-                $responce['audit_type'] = "HSE";
+                $responce['message'] = "Audit Template and questions saved successfully.";
             } else {
+                $db->transRollback();
                 $responce['status'] = "0";
-                $responce['message'] = "HSE import failed.";
-            }
-
-        } else if (isset($postData['audit_template_type']) && $postData['audit_template_type'] == "Normal") {
-            $importResult = $this->importNormal_Excel($id);
-
-            if ($importResult === false) {
-                $responce['status'] = "0";
-                $responce['message'] = "File upload failed. Please check file type and size.";
-            } else if ($importResult !== "ok") {
-                $responce['status'] = "0";
-                $responce['message'] = $importResult; // Show the actual validation error
-            } else {
-                $responce['message'] = "Normal Audit Template imported successfully.";
+                $responce['message'] = "Template insertion failed.";
             }
         }
 
@@ -853,7 +913,6 @@ class Audit_template extends BaseController
     public function importHSE_Excel($audit_template_id)
     {
         try {
-
             $db = db_connect();
 
             if (!isset($_FILES['emport_excel']) || $_FILES['emport_excel']['error'] != UPLOAD_ERR_OK) {
@@ -861,181 +920,291 @@ class Audit_template extends BaseController
             }
 
             $file = $_FILES['emport_excel']['tmp_name'];
-
-            if (($handle = fopen($file, 'r')) === false) {
-                return ['status' => false, 'message' => 'Unable to open file'];
-            }
+            $fileExt = strtolower(pathinfo($_FILES['emport_excel']['name'], PATHINFO_EXTENSION));
 
             set_time_limit(0);
             ini_set('memory_limit', '1024M');
 
-            fgetcsv($handle, 0, ",", '"', "\\");
+            $allRows = [];
+            $header = null;
 
+            if ($fileExt === 'xlsx' || $fileExt === 'xls') {
+                $spreadsheet = IOFactory::load($file);
+                $sheet = $spreadsheet->getActiveSheet();
+                $allRows = $sheet->toArray();
+                if (!empty($allRows)) {
+                    $header = array_shift($allRows);
+                }
+            } else {
+                if (($handle = fopen($file, 'r')) === false) {
+                    return ['status' => false, 'message' => 'Unable to open file'];
+                }
+                $header = fgetcsv($handle, 0, ",", '"', "\\");
+                while (($r = fgetcsv($handle, 0, ",", '"', "\\")) !== false) {
+                    $allRows[] = $r;
+                }
+                fclose($handle);
+            }
+
+            if (!$header || count($header) < 3) {
+                return ['status' => false, 'message' => 'Invalid file format or missing columns in uploaded file.'];
+            }
+
+            // Remove UTF-8 BOM if present on the first header column
+            $header[0] = preg_replace('/[\x00-\x1F\x80-\xFF]/', '', $header[0]);
+
+            // Build map of normalized column names to column indexes
+            $colMap = [];
+            foreach ($header as $idx => $name) {
+                $clean = strtolower(trim(preg_replace('/[^a-zA-Z0-9]/', '', (string)$name)));
+                if ($clean !== '') {
+                    $colMap[$clean] = $idx;
+                }
+            }
+
+            $findCol = function(array $aliases) use ($colMap) {
+                foreach ($aliases as $alias) {
+                    $clean = strtolower(trim(preg_replace('/[^a-zA-Z0-9]/', '', $alias)));
+                    if (isset($colMap[$clean])) {
+                        return $colMap[$clean];
+                    }
+                }
+                return null;
+            };
+
+            $idxCatId     = $findCol(['categoryid', 'category_id', 'catid', 'categoryidentifier']);
+            $idxCatName   = $findCol(['categoryname', 'category_name', 'catname']);
+            $idxQuestion  = $findCol(['questions', 'question', 'auditquestion', 'audit_question']);
+            $idxDefault   = $findCol(['auditquestiondefaultvalue', 'defaultvalue', 'default_value', 'default']);
+            $idxFindings  = $findCol(['findingsassertivestatement', 'findings', 'finding']);
+            $idxRisk      = $findCol(['risk']);
+            $idxActions   = $findCol(['actionsrecommendation', 'actions', 'action', 'recommendation']);
+            $idxActionCat = $findCol(['actioncategory', 'action_category']);
+            $idxUaUc      = $findCol(['uauc', 'ua_uc']);
+            $idxSeverity  = $findCol(['riskseverity', 'severity']);
+            $idxProb      = $findCol(['riskprobability', 'probability']);
+            $idxColor     = $findCol(['colorcode', 'color_code']);
+            $idxCost      = $findCol(['costtype', 'cost_type']);
+            $idxCombRisk  = $findCol(['combinedriskrating', 'combined_risk_rating', 'combinedrisk']);
+            $idxNote      = $findCol(['note', 'notes']);
+
+            if ($idxCatName === null) {
+                $idxCatName = $findCol(['category', 'auditcategory']);
+            }
+
+            // Fallback for positional columns if header names were not recognized
+            if ($idxCatId === null || $idxQuestion === null) {
+                if (count($header) <= 15) {
+                    // 15-column format: Category ID is col 0, Question is col 2
+                    $idxCatId     = 0;
+                    $idxCatName   = 1;
+                    $idxQuestion  = 2;
+                    $idxDefault   = 3;
+                    $idxFindings  = 4;
+                    $idxRisk      = 5;
+                    $idxActions   = 6;
+                    $idxActionCat = 7;
+                    $idxUaUc      = 8;
+                    $idxSeverity  = 9;
+                    $idxProb      = 10;
+                    $idxColor     = 11;
+                    $idxCost      = 12;
+                    $idxCombRisk  = 13;
+                    $idxNote      = 14;
+                } else {
+                    // 17-column format: Category ID is col 2, Question is col 4
+                    $idxCatId     = 2;
+                    $idxCatName   = 3;
+                    $idxQuestion  = 4;
+                    $idxDefault   = 5;
+                    $idxFindings  = 6;
+                    $idxRisk      = 7;
+                    $idxActions   = 8;
+                    $idxActionCat = 9;
+                    $idxUaUc      = 10;
+                    $idxSeverity  = 11;
+                    $idxProb      = 12;
+                    $idxColor     = 13;
+                    $idxCost      = 14;
+                    $idxCombRisk  = 15;
+                    $idxNote      = 16;
+                }
+            }
+
+            // Check if questions already exist for this template to prevent duplicate imports
+            $existingCount = $db->table('alert_hse_template_questions')
+                ->where('audit_template_id', $audit_template_id)
+                ->countAllResults();
+
+            if ($existingCount > 0) {
+                return [
+                    'status' => true,
+                    'message' => "Template questions already exist ($existingCount questions). Skipping re-import."
+                ];
+            }
+
+            $seenCats = [];
             $batch = [];
-            $batchSize = 500;
-
+            $order = 1;
             $insert = 0;
             $skip = 0;
 
-            $now = date('Y-m-d H:i:s');
+            $val = function ($v) {
+                return ($v === "" || $v === null) ? null : trim((string) $v);
+            };
 
-            $db->transStart();
-
-            while (($row = fgetcsv($handle, 0, ",", '"', "\\")) !== false) {
-
-                $row = array_map(fn($v) => trim((string) $v), $row);
-
-                // Skip full empty row
+            foreach ($allRows as $row) {
                 if (count(array_filter($row)) == 0) {
                     $skip++;
                     continue;
                 }
 
-                for ($i = 0; $i <= 16; $i++) {
-                    $row[$i] = $row[$i] ?? "";
-                }
+                $getVal = function ($idx) use ($row, $val) {
+                    return ($idx !== null && isset($row[$idx])) ? $val($row[$idx]) : null;
+                };
 
-                $site_category = $row[0];
-                $sub_category = $row[1];
-                $category = $row[3];
-                $question = $row[4];
+                $catId = $idxCatId !== null && isset($row[$idxCatId]) ? trim((string)$row[$idxCatId]) : '';
+                $catName = $idxCatName !== null && isset($row[$idxCatName]) ? trim((string)$row[$idxCatName]) : '';
+                $question = $idxQuestion !== null && isset($row[$idxQuestion]) ? trim((string)$row[$idxQuestion]) : '';
 
-                // 🔥 Handle merged cells
-                static $last_site = null;
-                static $last_sub = null;
-                static $last_cat = null;
-
-                if (!empty($site_category)) {
-                    $last_site = $site_category;
-                } else {
-                    $site_category = $last_site;
-                }
-
-                if (!empty($sub_category)) {
-                    $last_sub = $sub_category;
-                } else {
-                    $sub_category = $last_sub;
-                }
-
-                if (!empty($category)) {
-                    $last_cat = $category;
-                } else {
-                    $category = $last_cat;
-                }
-
-                // ✅ NEW VALIDATION (IMPORTANT)
-                if (empty($site_category) || empty($sub_category) || empty($category)) {
+                if (empty($catId)) {
                     $skip++;
                     continue;
                 }
 
-                $default_val = $row[5] ?: '';
+                // Deduplicate: Each template question is inserted once per template
+                if (isset($seenCats[$catId])) {
+                    $skip++;
+                    continue;
+                }
+                $seenCats[$catId] = true;
 
-                // helper to handle null properly
-                $val = function ($v) {
-                    return ($v === "" || $v === null) ? null : $v;
-                };
+                $default_val = ($idxDefault !== null && isset($row[$idxDefault]) && trim((string)$row[$idxDefault]) !== '')
+                    ? trim((string)$row[$idxDefault])
+                    : '';
+
+                $findings    = $getVal($idxFindings);
+                $risk        = $getVal($idxRisk);
+                $actions     = $getVal($idxActions);
+                $actionCat   = $getVal($idxActionCat);
+                $uaUc        = $getVal($idxUaUc);
+                $severity    = $getVal($idxSeverity);
+                $probability = $getVal($idxProb);
+                $colorCode   = $getVal($idxColor);
+                $costType    = $getVal($idxCost);
+                $combRisk    = $getVal($idxCombRisk);
+                $note        = $getVal($idxNote);
 
                 $capa = [
                     "findings" => [
-                        "text" => "Findings ($site_category - $default_val)",
+                        "text" => "Findings",
                         "yes" => "",
-                        "no" => $val($row[6]),
+                        "no" => $findings ?: "",
                         "na" => ""
                     ],
                     "risk" => [
                         "text" => "Risk",
                         "yes" => "",
-                        "no" => $val($row[7]),
+                        "no" => $risk ?: "",
                         "na" => ""
                     ],
                     "actions" => [
                         "text" => "Actions/Recommendation",
                         "yes" => "",
-                        "no" => $val($row[8]),
+                        "no" => $actions ?: "",
                         "na" => ""
                     ],
                     "action_category" => [
                         "text" => "Action Category",
                         "yes" => "",
-                        "no" => $val($row[9]),
+                        "no" => $actionCat ?: "",
                         "na" => ""
                     ],
                     "ua_uc" => [
-                        "text" => "Action Category",
+                        "text" => "UA-UC",
                         "yes" => "",
-                        "no" => $val($row[10]),
+                        "no" => $uaUc ?: "",
                         "na" => ""
                     ],
                     "risk_severity" => [
-                        "text" => "UA-UC",
+                        "text" => "Risk Severity",
                         "yes" => "",
-                        "no" => $val($row[11]),
+                        "no" => $severity ?: "",
                         "na" => ""
                     ],
                     "risk_probability" => [
-                        "text" => "Risk Severity",
+                        "text" => "Risk Probability",
                         "yes" => "",
-                        "no" => $val($row[12]),
+                        "no" => $probability ?: "",
                         "na" => ""
                     ],
                     "color_code" => [
-                        "text" => "Risk Probability",
+                        "text" => "Color Code",
                         "yes" => "",
-                        "no" => $val($row[13]),
+                        "no" => $colorCode ?: "",
                         "na" => ""
                     ],
                     "cost_type" => [
-                        "text" => "Color Code",
+                        "text" => "Cost Type",
                         "yes" => "",
-                        "no" => $val($row[14]),
+                        "no" => $costType ?: "",
                         "na" => ""
                     ],
                     "combined_risk_rating" => [
-                        "text" => "Cost Type",
+                        "text" => "Combined Risk Rating",
                         "yes" => "",
-                        "no" => $val($row[15]),
+                        "no" => $combRisk ?: "",
                         "na" => ""
                     ]
                 ];
 
                 $batch[] = [
                     'audit_template_id' => $audit_template_id,
-                    'audit_site_category_name' => $row[0],
-                    'audit_sub_category_name' => $row[1],
-                    'audit_category_id' => $row[2],
-                    'audit_category' => $row[3],
-                    'audit_question' => $row[4],
-                    'audit_question_default_value' => $default_val,
-                    'note' => $row[16],
+                    'question_order' => $order++,
+                    'category_id' => $catId,
+                    'category_name' => $catName,
+                    'question_text' => $question,
+                    'default_value' => $default_val,
+                    'findings' => $findings,
+                    'risk' => $risk,
+                    'actions_recommendation' => $actions,
+                    'action_category' => $actionCat,
+                    'ua_uc' => $uaUc,
+                    'risk_severity' => $severity,
+                    'risk_probability' => $probability,
+                    'color_code' => $colorCode,
+                    'cost_type' => $costType,
+                    'combined_risk_rating' => $combRisk,
+                    'note' => $note,
                     'capa_json' => json_encode($capa),
-                    'status' => 1,
-                    'default_date' => $now,
-                    'update_date' => $now,
+                    'status' => 1
                 ];
 
                 $insert++;
 
-                if (count($batch) >= $batchSize) {
-                    $db->table('alert_audit_questions')->insertBatch($batch);
+                if (count($batch) >= 100) {
+                    $db->table('alert_hse_template_questions')->insertBatch($batch);
                     $batch = [];
                 }
             }
 
             if (!empty($batch)) {
-                $db->table('alert_audit_questions')->insertBatch($batch);
+                $db->table('alert_hse_template_questions')->insertBatch($batch);
             }
 
-            fclose($handle);
-            $db->transComplete();
+            if ($insert === 0) {
+                return [
+                    'status' => false,
+                    'message' => "No valid questions were imported ($skip rows skipped). Please verify your Excel/CSV has columns for Category ID and Question."
+                ];
+            }
 
             return [
                 'status' => true,
-                'message' => "Imported: $insert | Skipped: $skip"
+                'message' => "Imported: $insert template questions into alert_hse_template_questions | Skipped duplicates: $skip"
             ];
 
         } catch (\Throwable $e) {
-
             return [
                 'status' => false,
                 'message' => 'Error: ' . $e->getMessage()

@@ -511,6 +511,7 @@ if ($isAuditorLogin && !empty($sessionAuditorName)) {
                                                 <input type="hidden" id="account_manager" name="account_manager"
                                                     value="<?= isset($details['account_manager']) ? $details['account_manager'] : '' ?>">
                                             <?php } ?>
+                                            <div id="gembaSiteValidationFeedback" class="mt-2" style="display: none;"></div>
                                         </td>
                                     </tr>
                                     <tr>
@@ -1320,10 +1321,177 @@ if ($isAuditorLogin && !empty($sessionAuditorName)) {
     let initialized = false;
     let debounceTimer = null;
 
+    /* ========================================================
+       GEMBA SITES VALIDATION FOR HSE AUDIT & RE-AUDIT
+    ======================================================== */
+    let isGembaSiteValid = false;
+    let gembaValidationErrorMsg = '';
+    let isValidatingGembaSite = false;
+    let lastCheckedSiteKey = '';
+    let gembaValidationTimer = null;
+    let activeGembaAjax = null;
+
+    function resetGembaSiteValidation() {
+        if (gembaValidationTimer) {
+            clearTimeout(gembaValidationTimer);
+            gembaValidationTimer = null;
+        }
+        if (activeGembaAjax) {
+            activeGembaAjax.abort();
+            activeGembaAjax = null;
+        }
+        isGembaSiteValid = false;
+        gembaValidationErrorMsg = '';
+        lastCheckedSiteKey = '';
+        const feedback = document.getElementById('gembaSiteValidationFeedback');
+        if (feedback) {
+            feedback.innerHTML = '';
+            feedback.style.display = 'none';
+        }
+        $('#saveAuditBtn').prop('disabled', false);
+    }
+
+    function showGembaToast(message, isError) {
+        if (typeof isError === 'undefined') isError = true;
+        if (typeof toastr !== 'undefined') {
+            toastr.clear(); // Always clear any existing toasts to prevent duplicate stacking
+            toastr.options = Object.assign(toastr.options || {}, {
+                closeButton: true,
+                progressBar: true,
+                preventDuplicates: true,
+                positionClass: "toastr-top-right",
+                timeOut: 5000
+            });
+            if (isError) {
+                toastr.error(message);
+            } else {
+                toastr.success(message);
+            }
+        } else if (typeof Swal !== 'undefined') {
+            if (typeof Swal.close === 'function') Swal.close();
+            Swal.fire({
+                icon: isError ? 'error' : 'success',
+                title: message,
+                toast: true,
+                position: 'top-end',
+                showConfirmButton: false,
+                timer: 4000
+            });
+        } else {
+            alert(message);
+        }
+    }
+
+    function validateSelectedGembaSite(siteName, location, isInitialLoad) {
+        siteName = (siteName || '').trim();
+        location = (location || '').trim();
+
+        if (!siteName && !location) {
+            resetGembaSiteValidation();
+            return;
+        }
+
+        let siteKey = (siteName + '||' + location).toLowerCase();
+
+        // If this exact site has already been evaluated and no change occurred, do not re-run
+        if (siteKey === lastCheckedSiteKey && !isInitialLoad && (isGembaSiteValid || gembaValidationErrorMsg)) {
+            return;
+        }
+
+        // Cancel any pending debounced validation
+        if (gembaValidationTimer) {
+            clearTimeout(gembaValidationTimer);
+        }
+
+        // Abort previous in-flight AJAX request
+        if (activeGembaAjax) {
+            activeGembaAjax.abort();
+            activeGembaAjax = null;
+        }
+
+        // Debounce validation by 250ms so rapid events coalesce into a single execution
+        gembaValidationTimer = setTimeout(function () {
+            isValidatingGembaSite = true;
+            lastCheckedSiteKey = siteKey;
+
+            const feedback = document.getElementById('gembaSiteValidationFeedback');
+            if (feedback) {
+                feedback.style.display = 'block';
+                feedback.innerHTML = '<span class="text-muted fs-7"><i class="fas fa-spinner fa-spin me-1"></i> Checking Gemba site configuration...</span>';
+            }
+
+            let validateUrl = window.location.href.split('/Masters/')[0] + "/Masters/Hse_audit/validate_gemba_site";
+
+            activeGembaAjax = $.ajax({
+                url: validateUrl,
+                type: 'POST',
+                data: {
+                    site_name: siteName,
+                    location: location
+                },
+                dataType: 'json',
+                success: function (res) {
+                    isValidatingGembaSite = false;
+                    activeGembaAjax = null;
+
+                    if (res && res.valid) {
+                        isGembaSiteValid = true;
+                        gembaValidationErrorMsg = '';
+                        $('#saveAuditBtn').prop('disabled', false);
+
+                        if (feedback) {
+                            feedback.style.display = 'block';
+                            feedback.innerHTML = '<span class="badge badge-light-success text-success fw-bold"><i class="fas fa-check-circle text-success me-1"></i> Gemba Site Verified</span>';
+                        }
+                    } else {
+                        isGembaSiteValid = false;
+                        gembaValidationErrorMsg = (res && res.message) ? res.message : 'Please add Gemba Sites details first.';
+                        $('#saveAuditBtn').prop('disabled', true);
+
+                        // Display single Toast Notification
+                        showGembaToast(gembaValidationErrorMsg, true);
+
+                        if (feedback) {
+                            feedback.style.display = 'block';
+                            let escapedMsg = $('<div>').text(gembaValidationErrorMsg).html();
+                            feedback.innerHTML = '<div class="alert alert-danger py-2 px-3 mb-0 fs-7"><i class="fas fa-exclamation-triangle text-danger me-1"></i> ' + escapedMsg + '</div>';
+                        }
+                    }
+                },
+                error: function (xhr, status) {
+                    if (status === 'abort') {
+                        return; // Ignore aborted requests
+                    }
+                    isValidatingGembaSite = false;
+                    activeGembaAjax = null;
+                    isGembaSiteValid = false;
+                    gembaValidationErrorMsg = 'Unable to validate Gemba site details. Please check network connection.';
+                    $('#saveAuditBtn').prop('disabled', true);
+
+                    showGembaToast(gembaValidationErrorMsg, true);
+
+                    if (feedback) {
+                        feedback.style.display = 'block';
+                        feedback.innerHTML = '<div class="alert alert-danger py-2 px-3 mb-0 fs-7"><i class="fas fa-exclamation-triangle text-danger me-1"></i> ' + gembaValidationErrorMsg + '</div>';
+                    }
+                }
+            });
+        }, 250);
+    }
+
     $(document).ready(function () {
         if (typeof jQuery !== "undefined" && typeof jQuery.fn.select2 !== "undefined") {
             $('.js-example-basic-single').select2({ width: '100%' });
         }
+
+        // Auto-validate prefilled Site Name on page load (for Re-Audit or saved drafts)
+        setTimeout(function () {
+            let prefilledSite = $('#client_name').val() || $('#client_name_display').val();
+            let prefilledLocation = $('input[name="location"]').val() || '';
+            if (prefilledSite && prefilledSite.trim() !== '') {
+                validateSelectedGembaSite(prefilledSite.trim(), prefilledLocation.trim(), true);
+            }
+        }, 400);
 
         ['#capa_risk_severity', '#capa_risk_probability', '#capa_color_code', '#capa_cost_type'].forEach(selector => {
             const el = document.querySelector(selector);
@@ -1516,6 +1684,7 @@ if ($isAuditorLogin && !empty($sessionAuditorName)) {
         // Clear client dropdown
         clientDropdown.innerHTML = '<option value="">Select Client</option>';
         if (clientNameHidden) clientNameHidden.value = "";
+        resetGembaSiteValidation();
 
         if (!region || !category || !subCategory) {
             console.log('Missing required values - region:', region, 'category:', category, 'sub_category:', subCategory);
@@ -1718,6 +1887,7 @@ if ($isAuditorLogin && !empty($sessionAuditorName)) {
             if (locationHidden) locationHidden.value = "";
             if (clusterHidden) clusterHidden.value = "";
             if (accountManagerHidden) accountManagerHidden.value = "";
+            resetGembaSiteValidation();
 
             return;
         }
@@ -1768,6 +1938,7 @@ if ($isAuditorLogin && !empty($sessionAuditorName)) {
 
         updateRealTimeSummary();
         loadAuditQuestions();
+        validateSelectedGembaSite(clientName, location, false);
     }
 
     function loadAuditQuestions() {
@@ -1839,6 +2010,11 @@ if ($isAuditorLogin && !empty($sessionAuditorName)) {
 
         if (auditTemplateIdEl && auditTemplateIdEl.value) {
             formData.append('audit_template_id', auditTemplateIdEl.value);
+        }
+
+        let clientEl = document.querySelector('[name="client_name"]');
+        if (clientEl && clientEl.value) {
+            formData.append('site_name', clientEl.value);
         }
 
         /* --------------------------------------------------
@@ -2030,11 +2206,55 @@ if ($isAuditorLogin && !empty($sessionAuditorName)) {
 </td>`;
             });
 
+            /* ---------------- DEFAULT CAPA DETAILS ---------------- */
+            let defaultCapaObj = null;
+            if (q.capa_json) {
+                try {
+                    defaultCapaObj = typeof q.capa_json === 'string' ? JSON.parse(q.capa_json) : q.capa_json;
+                } catch(e) {}
+            }
+            if (!defaultCapaObj || typeof defaultCapaObj !== 'object') {
+                defaultCapaObj = {};
+            }
+            if (q.findings && (!defaultCapaObj.findings || !defaultCapaObj.findings.no)) {
+                defaultCapaObj.findings = { text: "Findings", yes: "", no: q.findings, na: "" };
+            }
+            if (q.risk && (!defaultCapaObj.risk || !defaultCapaObj.risk.no)) {
+                defaultCapaObj.risk = { text: "Risk", yes: "", no: q.risk, na: "" };
+            }
+            let actionVal = q.actions_recommendation || q.actions || "";
+            if (actionVal && (!defaultCapaObj.actions || !defaultCapaObj.actions.no)) {
+                defaultCapaObj.actions = { text: "Actions/Recommendation", yes: "", no: actionVal, na: "" };
+                defaultCapaObj.actions_recommendation = actionVal;
+            }
+            if (q.action_category && (!defaultCapaObj.action_category || !defaultCapaObj.action_category.no)) {
+                defaultCapaObj.action_category = { text: "Action Category", yes: "", no: q.action_category, na: "" };
+            }
+            if (q.ua_uc && (!defaultCapaObj.ua_uc || !defaultCapaObj.ua_uc.no)) {
+                defaultCapaObj.ua_uc = { text: "UA-UC", yes: "", no: q.ua_uc, na: "" };
+            }
+            if (q.risk_severity && (!defaultCapaObj.risk_severity || !defaultCapaObj.risk_severity.no)) {
+                defaultCapaObj.risk_severity = { text: "Risk Severity", yes: "", no: q.risk_severity, na: "" };
+            }
+            if (q.risk_probability && (!defaultCapaObj.risk_probability || !defaultCapaObj.risk_probability.no)) {
+                defaultCapaObj.risk_probability = { text: "Risk Probability", yes: "", no: q.risk_probability, na: "" };
+            }
+            if (q.color_code && (!defaultCapaObj.color_code || !defaultCapaObj.color_code.no)) {
+                defaultCapaObj.color_code = { text: "Color Code", yes: "", no: q.color_code, na: "" };
+            }
+            if (q.cost_type && (!defaultCapaObj.cost_type || !defaultCapaObj.cost_type.no)) {
+                defaultCapaObj.cost_type = { text: "Cost Type", yes: "", no: q.cost_type, na: "" };
+            }
+            if (q.combined_risk_rating && (!defaultCapaObj.combined_risk_rating || !defaultCapaObj.combined_risk_rating.no)) {
+                defaultCapaObj.combined_risk_rating = { text: "Combined Risk Rating", yes: "", no: q.combined_risk_rating, na: "" };
+            }
+
             /* ---------------- QUESTION ROW ---------------- */
 
             let html = `
         <tr class="audit-row ${rowStyle}"
             data-category="${questionNameStr.replace(/"/g, '&quot;')}"
+            data-default-capa='${encodeURIComponent(JSON.stringify(defaultCapaObj || {}))}'
             style="font-weight:bold;">
 
             <td>
@@ -2434,60 +2654,82 @@ if ($isAuditorLogin && !empty($sessionAuditorName)) {
             }
 
             // AJAX fetch CAPA JSON if it doesn't exist locally yet
-            const hseAuditId = document.querySelector('input[name="hse_audit_id"]')?.value;
-            const categoryId = row.querySelector('input[name^="audit_category_id"]')?.value;
-            const questionId = row.querySelector('input[name^="question_audit_id"]')?.value;
+            const hseAuditId = document.querySelector('input[name="hse_audit_id"]')?.value || '';
+            const auditTemplateId = document.querySelector('input[name="audit_template_id"]')?.value || '';
+            const categoryId = row.querySelector('input[name^="audit_category_id"]')?.value || '';
+            const questionId = row.querySelector('input[name^="question_audit_id"]')?.value || '';
             const capaInput = row.querySelector('.capa_json');
 
-            if ((categoryId || questionId) && (!capaInput || !capaInput.value)) {
-                $.ajax({
-                    url: "<?= base_url('Masters/Hse_audit/get_capa_by_question') ?>",
-                    method: "POST",
-                    data: {
-                        audit_id: hseAuditId || '',
-                        category_id: categoryId,
-                        question_id: questionId
-                    },
-                    success: function (res) {
-                        if (res.status && res.data) {
+            // 1. Check if row already has pre-cached default CAPA details from question master
+            let existingCapaVal = capaInput ? capaInput.value : '';
+            if (!existingCapaVal && row.dataset.defaultCapa) {
+                try {
+                    let dObj = JSON.parse(decodeURIComponent(row.dataset.defaultCapa));
+                    if (dObj && typeof dObj === 'object') {
+                        let hasAnyField = false;
+                        for (let k in dObj) {
+                            if (dObj[k] && (dObj[k].no || (typeof dObj[k] === 'string' && dObj[k].trim() !== ''))) {
+                                hasAnyField = true;
+                                break;
+                            }
+                        }
+                        if (hasAnyField) {
                             if (!capaInput) {
-                                // Create input if missing
                                 const rowKeyMatch = row.querySelector('input[name^="question_name"]')?.name.match(/\[(\d+)\]/);
                                 const index = rowKeyMatch ? rowKeyMatch[1] : 0;
                                 const newInput = document.createElement('input');
                                 newInput.type = 'hidden';
                                 newInput.name = `capa_json[${index}]`;
                                 newInput.className = 'capa_json';
-                                newInput.value = JSON.stringify(res.data);
+                                newInput.value = JSON.stringify(dObj);
                                 row.appendChild(newInput);
                             } else {
-                                capaInput.value = JSON.stringify(res.data);
+                                capaInput.value = JSON.stringify(dObj);
                             }
-                            let activeCapaInput = row.querySelector('.capa_json');
-                            if (activeCapaInput) activeCapaInput.dispatchEvent(new Event('change', { bubbles: true }));
-                            openCapaModalForRow(row);
-                        } else {
-                            if (isMisc || isCategoryV) {
-                                openCapaModalForRow(row);
-                            } else {
-                                alert("CAPA JSON is not available in the Question Master. You cannot select NO for this question.");
-                                checkbox.checked = false;
-                                if (hiddenInput) hiddenInput.value = '';
-                                calculateScore();
-                                updateRealTimeSummary();
-                            }
+                            existingCapaVal = capaInput ? capaInput.value : JSON.stringify(dObj);
                         }
+                    }
+                } catch (e) {
+                    console.error("Error reading default CAPA from row dataset:", e);
+                }
+            }
+
+            // 2. If available, open modal immediately; otherwise fetch via AJAX
+            if (existingCapaVal) {
+                let activeCapaInput = row.querySelector('.capa_json');
+                if (activeCapaInput) activeCapaInput.dispatchEvent(new Event('change', { bubbles: true }));
+                openCapaModalForRow(row);
+            } else if (categoryId || questionId) {
+                $.ajax({
+                    url: "<?= base_url('Masters/Hse_audit/get_capa_by_question') ?>",
+                    method: "POST",
+                    data: {
+                        audit_id: hseAuditId,
+                        audit_template_id: auditTemplateId,
+                        category_id: categoryId,
+                        question_id: questionId
+                    },
+                    success: function (res) {
+                        let capaData = (res && res.data) ? res.data : {};
+                        if (!capaInput) {
+                            const rowKeyMatch = row.querySelector('input[name^="question_name"]')?.name.match(/\[(\d+)\]/);
+                            const index = rowKeyMatch ? rowKeyMatch[1] : 0;
+                            const newInput = document.createElement('input');
+                            newInput.type = 'hidden';
+                            newInput.name = `capa_json[${index}]`;
+                            newInput.className = 'capa_json';
+                            newInput.value = JSON.stringify(capaData);
+                            row.appendChild(newInput);
+                        } else {
+                            capaInput.value = JSON.stringify(capaData);
+                        }
+                        let activeCapaInput = row.querySelector('.capa_json');
+                        if (activeCapaInput) activeCapaInput.dispatchEvent(new Event('change', { bubbles: true }));
+                        openCapaModalForRow(row);
                     },
                     error: function () {
-                        if (isMisc || isCategoryV) {
-                            openCapaModalForRow(row);
-                        } else {
-                            alert("Failed to fetch CAPA details. Please try again.");
-                            checkbox.checked = false;
-                            if (hiddenInput) hiddenInput.value = '';
-                            calculateScore();
-                            updateRealTimeSummary();
-                        }
+                        // If available then show, not then show empty
+                        openCapaModalForRow(row);
                     }
                 });
             } else {
@@ -2535,19 +2777,40 @@ if ($isAuditorLogin && !empty($sessionAuditorName)) {
 
         if (existingJson) {
             try {
-                const data = JSON.parse(existingJson);
+                const data = typeof existingJson === 'object' ? existingJson : JSON.parse(existingJson);
 
-                // Prefill with robust check for both new (data.findings.no) and old (data.findings.value) structure
-                const prefillField = (id, fieldData) => {
+                // Robust prefill helper supporting object (.no, .value), direct strings, or numbers
+                const prefillField = (id, ...sources) => {
                     const el = document.getElementById(id);
-                    if (el) {
-                        el.value = fieldData?.no || fieldData?.value || '';
+                    if (!el) return;
+                    for (let src of sources) {
+                        if (src !== undefined && src !== null) {
+                            if (typeof src === 'object') {
+                                let v = (src.no !== undefined && src.no !== null) ? src.no : 
+                                        ((src.value !== undefined && src.value !== null) ? src.value : 
+                                        ((src.val !== undefined && src.val !== null) ? src.val : ''));
+                                if (typeof v === 'string' && v.trim() !== '') {
+                                    el.value = v.trim();
+                                    return;
+                                } else if (typeof v === 'number') {
+                                    el.value = v;
+                                    return;
+                                }
+                            } else if (typeof src === 'string' && src.trim() !== '') {
+                                el.value = src.trim();
+                                return;
+                            } else if (typeof src === 'number') {
+                                el.value = src;
+                                return;
+                            }
+                        }
                     }
+                    el.value = '';
                 };
 
                 prefillField('capa_findings', data.findings);
                 prefillField('capa_risk', data.risk);
-                prefillField('capa_actions', data.actions);
+                prefillField('capa_actions', data.actions, data.actions_recommendation);
                 prefillField('capa_action_category', data.action_category);
                 prefillField('capa_ua_uc', data.ua_uc);
                 prefillField('capa_risk_severity', data.risk_severity);
@@ -2558,8 +2821,8 @@ if ($isAuditorLogin && !empty($sessionAuditorName)) {
 
                 if (recommendationInput) {
                     const existingNcType = row.querySelector('.nc_type_input')?.value || '';
-                    const jsonNcType = data.nc_type?.no || data.nc_type?.value || '';
-                    const findingText = data.findings?.no || data.findings?.value || '';
+                    const jsonNcType = data.nc_type?.no || data.nc_type?.value || (typeof data.nc_type === 'string' ? data.nc_type : '');
+                    const findingText = data.findings?.no || data.findings?.value || (typeof data.findings === 'string' ? data.findings : '');
 
                     const isReauditOrEdit = document.querySelector('input[name="hse_audit_id"]') !== null;
                     const isSavedRecord = isReauditOrEdit || row.classList.contains('capa-saved');
@@ -2588,7 +2851,7 @@ if ($isAuditorLogin && !empty($sessionAuditorName)) {
                 if (recommendationInput) recommendationInput.checked = true;
             }
         } else {
-            // New question, no CAPA JSON yet
+            // New question, no CAPA JSON yet -> show empty
             form.reset();
             if (recommendationInput) recommendationInput.checked = true;
         }
@@ -3065,6 +3328,13 @@ if ($isAuditorLogin && !empty($sessionAuditorName)) {
             return false;
         }
 
+        if (!isGembaSiteValid) {
+            let msg = gembaValidationErrorMsg || "Please add Gemba Sites details first.";
+            showGembaToast(msg, true);
+            e.preventDefault();
+            return false;
+        }
+
         $('.audit-row').each(function () {
 
             let row = $(this);
@@ -3214,6 +3484,16 @@ if ($isAuditorLogin && !empty($sessionAuditorName)) {
                 qs('input[name="report_date"]')?.focus();
                 return false;
             }
+        }
+
+        /* ================= GEMBA SITE VALIDATION ================= */
+        if (!isGembaSiteValid) {
+            let msg = gembaValidationErrorMsg || "Please add Gemba Sites details first.";
+            showGembaToast(msg, true);
+            if (qs('#client_id') && !isReaudit) {
+                qs('#client_id').focus();
+            }
+            return false;
         }
 
         /* ================= ATTENDANCE VALIDATION (OPTIONAL) ================= */

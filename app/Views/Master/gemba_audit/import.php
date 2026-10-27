@@ -153,12 +153,15 @@
                                         `audit_category`, `audit_type`, `site_name`, `audit_report_date`,
                                         `checklist_category`, `nc_recommendation`, `observation_point`, `risks_details`,
                                         `action_recommendation`, `point_status`, `color_code`, `cost_type`.</li>
-                                    <li class="mb-1"><strong>Allowed Values</strong>:
+                                    <li class="mb-1"><strong>Allowed Values (Pre-configured Dropdowns)</strong>:
                                         <br>&bull; <em>NC/Recommendation</em>: <code>NC</code>, <code>RECOMMENDATION</code>, <code>Point Closed</code>
                                         <br>&bull; <em>Point Status</em>: <code>Open</code>, <code>WIP</code>, <code>Closed</code>, <code>Excluded</code>, <code>Hold-review with Client</code>
+                                        <br>&bull; <em>Point Category</em>: <code>Open Category</code>, <code>Closed Category</code>
+                                        <br>&bull; <em>Closure Status</em>: <code>Delayed</code>, <code>Within Target</code>, <code>Closed</code>, <code>On-Time</code>, <code>Open</code>, <code>Excluded</code>
                                         <br>&bull; <em>Risk Severity &amp; Probability</em>: <code>Low</code>, <code>Medium</code>, <code>High</code>
                                         <br>&bull; <em>Color Code</em>: <code>Red</code>, <code>Yellow</code>, <code>Black</code>, <code>Green</code>
                                         <br>&bull; <em>Cost Type</em>: <code>Capex</code>, <code>Opex</code>, <code>Operational Action</code>
+                                        <br>&bull; <em>Sample Excel</em>: Download the sample file above for pre-configured dropdown menus across all columns.
                                     </li>
                                     <li><strong>Data types</strong>: Numeric columns must be numbers, and dates must be
                                         in valid date formats.</li>

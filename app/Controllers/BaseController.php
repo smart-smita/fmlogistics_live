@@ -91,7 +91,6 @@ class BaseController extends Controller
      */
     function validateFileType($file_name = 'attach')
     {
-        // changes on 1/10/25 by darsh: allow CSV uploads used by audit templates
         $allowedExtensions = ['jpg', 'jpeg', 'png', 'gif', 'pdf', 'xls', 'xlsx', 'csv'];
         $allowedMimeTypes = [
             // Images
@@ -103,44 +102,67 @@ class BaseController extends Controller
             'application/pdf',
             // Excel files
             'application/vnd.ms-excel',
+            'application/msexcel',
+            'application/x-msexcel',
+            'application/x-ms-excel',
             'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            // changes on 1/10/25 by darsh: CSV MIME fallbacks
+            'application/wps-office.xlsx',
+            'application/wps-office.xls',
+            'application/zip',
+            'application/x-zip-compressed',
+            // CSV MIME types
             'text/csv',
             'application/csv',
-            'text/plain'
+            'text/x-csv',
+            'application/x-csv',
+            'text/comma-separated-values',
+            'text/x-comma-separated-values',
+            'text/plain',
+            'application/octet-stream'
         ];
 
-        if (!isset($_FILES[$file_name]['name']) || empty($_FILES[$file_name]['name'])) {
-            return ['valid' => false, 'message' => 'No file selected', 'extension' => ''];
+        if (!isset($_FILES[$file_name]) || !isset($_FILES[$file_name]['name']) || empty($_FILES[$file_name]['name'])) {
+            return ['valid' => false, 'message' => 'No file selected. Please choose a file.', 'extension' => ''];
+        }
+
+        if (isset($_FILES[$file_name]['error']) && $_FILES[$file_name]['error'] !== UPLOAD_ERR_OK) {
+            $err = $_FILES[$file_name]['error'];
+            if ($err === UPLOAD_ERR_INI_SIZE || $err === UPLOAD_ERR_FORM_SIZE) {
+                return ['valid' => false, 'message' => 'The uploaded file exceeds the server maximum upload limit.', 'extension' => ''];
+            } elseif ($err === UPLOAD_ERR_NO_FILE) {
+                return ['valid' => false, 'message' => 'No file was uploaded. Please choose a file.', 'extension' => ''];
+            } else {
+                return ['valid' => false, 'message' => 'File upload error (Code: ' . $err . '). Please try again.', 'extension' => ''];
+            }
         }
 
         $extension = strtolower(pathinfo($_FILES[$file_name]['name'], PATHINFO_EXTENSION));
-        $mimeType = $_FILES[$file_name]['type'];
+        $mimeType = strtolower(trim((string)($_FILES[$file_name]['type'] ?? '')));
 
         // Check file extension
         if (!in_array($extension, $allowedExtensions)) {
             return [
                 'valid' => false,
-                'message' => 'Invalid file type. Only images (JPG, PNG, GIF), PDFs, and Excel files (XLS, XLSX) are allowed.',
+                'message' => 'Invalid file extension (.' . htmlspecialchars($extension) . '). Allowed: CSV, XLS, XLSX, PDF, Images.',
                 'extension' => $extension
             ];
         }
 
-        // Check MIME type for additional security
-        if (!in_array($mimeType, $allowedMimeTypes)) {
+        // Check MIME type (allow empty MIME or octet-stream for CSV/Excel)
+        if (!empty($mimeType) && !in_array($mimeType, $allowedMimeTypes) && !in_array($extension, ['csv', 'xls', 'xlsx'])) {
             return [
                 'valid' => false,
-                'message' => 'Invalid file format. Please upload a valid image, PDF, or Excel file.',
+                'message' => 'Invalid file format (' . htmlspecialchars($mimeType) . '). Please upload a valid CSV, Excel, PDF, or image file.',
                 'extension' => $extension
             ];
         }
 
         // Check file size (max 10MB)
         $maxSize = 10 * 1024 * 1024; // 10MB in bytes
-        if ($_FILES[$file_name]['size'] > $maxSize) {
+        if (isset($_FILES[$file_name]['size']) && $_FILES[$file_name]['size'] > $maxSize) {
             return [
                 'valid' => false,
-                'message' => 'File size too large. Maximum allowed size is 10MB.',
+                'message' => 'File size exceeds 10MB limit.',
                 'extension' => $extension
             ];
         }

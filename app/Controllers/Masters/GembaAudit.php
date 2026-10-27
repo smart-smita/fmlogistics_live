@@ -26,6 +26,74 @@ class GembaAudit extends BaseController
         $builderRegion = clone $db->table('alert_gemba_audits');
         $data['regions'] = apply_gemba_role_filters($builderRegion, 'alert_gemba_audits')->select('DISTINCT(region)')->where('status !=', 2)->where('region !=', 'NA')->orderBy('region', 'ASC')->get()->getResultArray();
 
+        // 1. Fetch sites from alert_gemba_sites and alert_gemba_audits
+        $siteNames = [];
+        if ($db->tableExists('alert_gemba_sites')) {
+            $siteBuilder = $db->table('alert_gemba_sites')
+                ->select('DISTINCT(site_name)')
+                ->where('status', 1)
+                ->where('site_name !=', '')
+                ->where('site_name IS NOT NULL');
+            apply_gemba_role_filters($siteBuilder, 'alert_gemba_sites');
+            $gembaSites = array_column($siteBuilder->get()->getResultArray(), 'site_name');
+            $siteNames = array_merge($siteNames, $gembaSites);
+        }
+
+        $auditSiteBuilder = clone $db->table('alert_gemba_audits');
+        $auditSiteBuilder->select('DISTINCT(site_name)')
+            ->where('status !=', 2)
+            ->where('site_name !=', '')
+            ->where('site_name IS NOT NULL');
+        apply_gemba_role_filters($auditSiteBuilder, 'alert_gemba_audits');
+        $auditSites = array_column($auditSiteBuilder->get()->getResultArray(), 'site_name');
+        $siteNames = array_merge($siteNames, $auditSites);
+
+        $siteNames = array_values(array_unique(array_filter(array_map('trim', $siteNames))));
+        natcasesort($siteNames);
+        $data['site_names'] = array_values($siteNames);
+
+        // 2. Fetch NC Recommendations from alert_gemba_audits and standard master options
+        $ncBuilder = clone $db->table('alert_gemba_audits');
+        $ncBuilder->select('DISTINCT(nc_recommendation)')
+            ->where('status !=', 2)
+            ->where('nc_recommendation !=', '')
+            ->where('nc_recommendation IS NOT NULL')
+            ->where('nc_recommendation !=', 'NA');
+        apply_gemba_role_filters($ncBuilder, 'alert_gemba_audits');
+        $dbNcList = array_column($ncBuilder->get()->getResultArray(), 'nc_recommendation');
+
+        $standardNcOptions = ['NC', 'RECOMMENDATION', 'Point Closed'];
+        $ncRecommendations = array_values(array_unique(array_filter(array_map('trim', array_merge($standardNcOptions, $dbNcList)))));
+        natcasesort($ncRecommendations);
+        $data['nc_recommendations'] = array_values($ncRecommendations);
+
+        // 3. Build Region to Sites mapping for instantaneous client-side cascading
+        $regionSiteMap = [];
+        if ($db->tableExists('alert_gemba_sites')) {
+            $b = $db->table('alert_gemba_sites')->select('region, site_name')->where('status', 1)->where('site_name !=', '')->where('region !=', '');
+            apply_gemba_role_filters($b, 'alert_gemba_sites');
+            foreach ($b->get()->getResultArray() as $row) {
+                $r = trim($row['region']);
+                $s = trim($row['site_name']);
+                if (!isset($regionSiteMap[$r])) $regionSiteMap[$r] = [];
+                if (!in_array($s, $regionSiteMap[$r])) $regionSiteMap[$r][] = $s;
+            }
+        }
+        $ba = clone $db->table('alert_gemba_audits');
+        $ba->select('region, site_name')->where('status !=', 2)->where('site_name !=', '')->where('region !=', '');
+        apply_gemba_role_filters($ba, 'alert_gemba_audits');
+        foreach ($ba->get()->getResultArray() as $row) {
+            $r = trim($row['region']);
+            $s = trim($row['site_name']);
+            if (!isset($regionSiteMap[$r])) $regionSiteMap[$r] = [];
+            if (!in_array($s, $regionSiteMap[$r])) $regionSiteMap[$r][] = $s;
+        }
+        foreach ($regionSiteMap as &$sList) {
+            natcasesort($sList);
+            $sList = array_values(array_unique($sList));
+        }
+        $data['site_region_map'] = $regionSiteMap;
+
         $tdata = [
             'title' => 'Gemba Audits',
             'display_contents' => [
@@ -66,28 +134,91 @@ class GembaAudit extends BaseController
 
         // Apply Filters
         if ($val = $req->getGet('region')) {
-            if (is_array($val))
-                $builder->whereIn('region', $val);
-            else
-                $builder->where('region', $val);
+            if (is_array($val)) {
+                $val = array_values(array_filter($val, function ($v) {
+                    $vTrim = strtolower(trim((string) $v));
+                    return $vTrim !== '' && $vTrim !== 'all' && $vTrim !== 'selectall' && $vTrim !== 'all regions';
+                }));
+                if (!empty($val)) $builder->whereIn('region', $val);
+            } else {
+                $vTrim = strtolower(trim((string) $val));
+                if ($vTrim !== '' && $vTrim !== 'all' && $vTrim !== 'selectall' && $vTrim !== 'all regions') {
+                    $builder->where('region', trim((string)$val));
+                }
+            }
+        }
+        if ($val = $req->getGet('site_name')) {
+            if (is_array($val)) {
+                $val = array_values(array_filter($val, function ($v) {
+                    $vTrim = strtolower(trim((string) $v));
+                    return $vTrim !== '' && $vTrim !== 'all' && $vTrim !== 'selectall' && $vTrim !== 'all sites';
+                }));
+                if (!empty($val)) $builder->whereIn('site_name', $val);
+            } else {
+                $vTrim = strtolower(trim((string) $val));
+                if ($vTrim !== '' && $vTrim !== 'all' && $vTrim !== 'selectall' && $vTrim !== 'all sites') {
+                    $builder->where('site_name', trim((string)$val));
+                }
+            }
         }
         if ($val = $req->getGet('audit_category')) {
-            if (is_array($val))
-                $builder->whereIn('audit_category', $val);
-            else
-                $builder->where('audit_category', $val);
+            if (is_array($val)) {
+                $val = array_values(array_filter($val, function ($v) {
+                    $vTrim = strtolower(trim((string) $v));
+                    return $vTrim !== '' && $vTrim !== 'all' && $vTrim !== 'selectall' && $vTrim !== 'all categories';
+                }));
+                if (!empty($val)) $builder->whereIn('audit_category', $val);
+            } else {
+                $vTrim = strtolower(trim((string) $val));
+                if ($vTrim !== '' && $vTrim !== 'all' && $vTrim !== 'selectall' && $vTrim !== 'all categories') {
+                    $builder->where('audit_category', trim((string)$val));
+                }
+            }
+        }
+        if ($val = $req->getGet('nc_recommendation')) {
+            if (is_array($val)) {
+                $val = array_values(array_filter($val, function ($v) {
+                    $vTrim = strtolower(trim((string) $v));
+                    return $vTrim !== '' && $vTrim !== 'all' && $vTrim !== 'selectall' && $vTrim !== 'all nc recommendations';
+                }));
+                if (!empty($val)) $builder->whereIn('nc_recommendation', $val);
+            } else {
+                $vTrim = strtolower(trim((string) $val));
+                if ($vTrim !== '' && $vTrim !== 'all' && $vTrim !== 'selectall' && $vTrim !== 'all nc recommendations') {
+                    $builder->where('nc_recommendation', trim((string)$val));
+                }
+            }
         }
         if ($val = $req->getGet('point_status')) {
-            if (is_array($val))
-                $builder->whereIn('point_status', $val);
-            else
-                $builder->where('point_status', $val);
+            if (is_array($val)) {
+                $val = array_values(array_filter($val, function ($v) {
+                    $vTrim = strtolower(trim((string) $v));
+                    return $vTrim !== '' && $vTrim !== 'all' && $vTrim !== 'selectall' && $vTrim !== 'all statuses';
+                }));
+                if (!empty($val)) $builder->whereIn('point_status', $val);
+            } else {
+                $vTrim = strtolower(trim((string) $val));
+                if ($vTrim !== '' && $vTrim !== 'all' && $vTrim !== 'selectall' && $vTrim !== 'all statuses') {
+                    $builder->where('point_status', trim((string)$val));
+                }
+            }
         }
         if ($val = $req->getGet('color_code')) {
-            if (is_array($val))
-                $builder->whereIn('color_code', $val);
-            else
-                $builder->where('color_code', $val);
+            if (is_array($val)) {
+                $val = array_values(array_filter($val, function ($v) {
+                    $vTrim = strtolower(trim((string) $v));
+                    return $vTrim !== '' && $vTrim !== 'all' && $vTrim !== 'selectall' && $vTrim !== 'all colors';
+                }));
+                if (!empty($val)) {
+                    $val = array_map('strtolower', $val);
+                    $builder->whereIn('LOWER(color_code)', $val);
+                }
+            } else {
+                $vTrim = strtolower(trim((string) $val));
+                if ($vTrim !== '' && $vTrim !== 'all' && $vTrim !== 'selectall' && $vTrim !== 'all colors') {
+                    $builder->where('LOWER(color_code)', $vTrim);
+                }
+            }
         }
 
         // Search
@@ -99,6 +230,7 @@ class GembaAudit extends BaseController
                 ->orLike('risks_details', $searchValue)
                 ->orLike('auditor_name', $searchValue)
                 ->orLike('site_name', $searchValue)
+                ->orLike('nc_recommendation', $searchValue)
                 ->groupEnd();
         }
 
@@ -782,6 +914,61 @@ class GembaAudit extends BaseController
         return $response->setJSON($site ?: []);
     }
 
+    public function get_sites_by_region()
+    {
+        $request = service('request');
+        $db = \Config\Database::connect();
+
+        $regions = $request->getGet('regions') ?? $request->getPost('regions') ?? $request->getVar('regions');
+        if (is_string($regions)) {
+            $regions = array_filter(array_map('trim', explode(',', $regions)));
+        } elseif (!is_array($regions)) {
+            $regions = [];
+        }
+
+        // Clean out 'selectAll', 'all', ''
+        $regions = array_values(array_filter($regions, function ($r) {
+            $trim = strtolower(trim((string) $r));
+            return $trim !== '' && $trim !== 'all' && $trim !== 'selectall';
+        }));
+
+        $siteNames = [];
+
+        // 1. Fetch from alert_gemba_sites
+        if ($db->tableExists('alert_gemba_sites')) {
+            $siteBuilder = $db->table('alert_gemba_sites')
+                ->select('DISTINCT(site_name)')
+                ->where('status', 1)
+                ->where('site_name !=', '')
+                ->where('site_name IS NOT NULL');
+            if (!empty($regions)) {
+                $siteBuilder->whereIn('region', $regions);
+            }
+            apply_gemba_role_filters($siteBuilder, 'alert_gemba_sites');
+            $gembaSites = array_column($siteBuilder->get()->getResultArray(), 'site_name');
+            $siteNames = array_merge($siteNames, $gembaSites);
+        }
+
+        // 2. Fetch from alert_gemba_audits
+        $auditSiteBuilder = clone $db->table('alert_gemba_audits');
+        $auditSiteBuilder->select('DISTINCT(site_name)')
+            ->where('status !=', 2)
+            ->where('site_name !=', '')
+            ->where('site_name IS NOT NULL');
+        if (!empty($regions)) {
+            $auditSiteBuilder->whereIn('region', $regions);
+        }
+        apply_gemba_role_filters($auditSiteBuilder, 'alert_gemba_audits');
+        $auditSites = array_column($auditSiteBuilder->get()->getResultArray(), 'site_name');
+        $siteNames = array_merge($siteNames, $auditSites);
+
+        $siteNames = array_values(array_unique(array_filter(array_map('trim', $siteNames))));
+        natcasesort($siteNames);
+
+        $response = $this->response ?? service('response');
+        return $response->setJSON(array_values($siteNames));
+    }
+
     public function gemba_export()
     {
         $request = \Config\Services::request();
@@ -799,39 +986,95 @@ class GembaAudit extends BaseController
 
         // ---------------- FILTERS ----------------
         if ($val = $request->getGet('region')) {
-            if (is_array($val))
-                $builder->whereIn('region', $val);
-            else
-                $builder->where('region', $val);
-        }
-
-        if ($val = $request->getGet('audit_category')) {
-            if (is_array($val))
-                $builder->whereIn('audit_category', $val);
-            else
-                $builder->where('audit_category', $val);
+            if (is_array($val)) {
+                $val = array_values(array_filter($val, function ($v) {
+                    $vTrim = strtolower(trim((string) $v));
+                    return $vTrim !== '' && $vTrim !== 'all' && $vTrim !== 'selectall' && $vTrim !== 'all regions';
+                }));
+                if (!empty($val)) $builder->whereIn('region', $val);
+            } else {
+                $vTrim = strtolower(trim((string) $val));
+                if ($vTrim !== '' && $vTrim !== 'all' && $vTrim !== 'selectall' && $vTrim !== 'all regions') {
+                    $builder->where('region', trim((string)$val));
+                }
+            }
         }
 
         if ($val = $request->getGet('site_name')) {
-            if (is_array($val))
-                $builder->whereIn('site_name', $val);
-            else
-                $builder->where('site_name', $val);
+            if (is_array($val)) {
+                $val = array_values(array_filter($val, function ($v) {
+                    $vTrim = strtolower(trim((string) $v));
+                    return $vTrim !== '' && $vTrim !== 'all' && $vTrim !== 'selectall' && $vTrim !== 'all sites';
+                }));
+                if (!empty($val)) $builder->whereIn('site_name', $val);
+            } else {
+                $vTrim = strtolower(trim((string) $val));
+                if ($vTrim !== '' && $vTrim !== 'all' && $vTrim !== 'selectall' && $vTrim !== 'all sites') {
+                    $builder->where('site_name', trim((string)$val));
+                }
+            }
+        }
+
+        if ($val = $request->getGet('audit_category')) {
+            if (is_array($val)) {
+                $val = array_values(array_filter($val, function ($v) {
+                    $vTrim = strtolower(trim((string) $v));
+                    return $vTrim !== '' && $vTrim !== 'all' && $vTrim !== 'selectall' && $vTrim !== 'all categories';
+                }));
+                if (!empty($val)) $builder->whereIn('audit_category', $val);
+            } else {
+                $vTrim = strtolower(trim((string) $val));
+                if ($vTrim !== '' && $vTrim !== 'all' && $vTrim !== 'selectall' && $vTrim !== 'all categories') {
+                    $builder->where('audit_category', trim((string)$val));
+                }
+            }
+        }
+
+        if ($val = $request->getGet('nc_recommendation')) {
+            if (is_array($val)) {
+                $val = array_values(array_filter($val, function ($v) {
+                    $vTrim = strtolower(trim((string) $v));
+                    return $vTrim !== '' && $vTrim !== 'all' && $vTrim !== 'selectall' && $vTrim !== 'all nc recommendations';
+                }));
+                if (!empty($val)) $builder->whereIn('nc_recommendation', $val);
+            } else {
+                $vTrim = strtolower(trim((string) $val));
+                if ($vTrim !== '' && $vTrim !== 'all' && $vTrim !== 'selectall' && $vTrim !== 'all nc recommendations') {
+                    $builder->where('nc_recommendation', trim((string)$val));
+                }
+            }
         }
 
         if ($val = $request->getGet('point_status')) {
-            if (is_array($val))
-                $builder->whereIn('point_status', $val);
-            else
-                $builder->where('point_status', $val);
+            if (is_array($val)) {
+                $val = array_values(array_filter($val, function ($v) {
+                    $vTrim = strtolower(trim((string) $v));
+                    return $vTrim !== '' && $vTrim !== 'all' && $vTrim !== 'selectall' && $vTrim !== 'all statuses';
+                }));
+                if (!empty($val)) $builder->whereIn('point_status', $val);
+            } else {
+                $vTrim = strtolower(trim((string) $val));
+                if ($vTrim !== '' && $vTrim !== 'all' && $vTrim !== 'selectall' && $vTrim !== 'all statuses') {
+                    $builder->where('point_status', trim((string)$val));
+                }
+            }
         }
 
         if ($val = $request->getGet('color_code')) {
             if (is_array($val)) {
-                $val = array_map('strtolower', $val);
-                $builder->whereIn('LOWER(color_code)', $val);
+                $val = array_values(array_filter($val, function ($v) {
+                    $vTrim = strtolower(trim((string) $v));
+                    return $vTrim !== '' && $vTrim !== 'all' && $vTrim !== 'selectall' && $vTrim !== 'all colors';
+                }));
+                if (!empty($val)) {
+                    $val = array_map('strtolower', $val);
+                    $builder->whereIn('LOWER(color_code)', $val);
+                }
             } else {
-                $builder->where('LOWER(color_code)', strtolower($val));
+                $vTrim = strtolower(trim((string) $val));
+                if ($vTrim !== '' && $vTrim !== 'all' && $vTrim !== 'selectall' && $vTrim !== 'all colors') {
+                    $builder->where('LOWER(color_code)', $vTrim);
+                }
             }
         }
 
@@ -1610,7 +1853,9 @@ class GembaAudit extends BaseController
         gemba_require_write_access();
         $db = \Config\Database::connect();
 
-        // 1. Query active site names from alert_gemba_sites and alert_hse_client_master
+        // 1. Fetch Dynamic Master Data from Database & Existing Gemba Audits
+
+        // 1.1 Active Site Names
         $sites1 = $db->query("
             SELECT DISTINCT site_name 
             FROM alert_gemba_sites 
@@ -1621,12 +1866,58 @@ class GembaAudit extends BaseController
             FROM alert_hse_client_master 
             WHERE status = 1 AND client_name IS NOT NULL AND client_name != ''
         ")->getResultArray();
-
         $allSites = array_merge(array_column($sites1, 'site_name'), array_column($sites2, 'site_name'));
         $clientNames = array_values(array_unique(array_filter(array_map('trim', $allSites))));
         natcasesort($clientNames);
         $clientNames = array_values($clientNames);
-        $clientCount = count($clientNames);
+
+        // 1.2 Auditor Names (Active users with Auditor/Admin role + existing auditors)
+        $audUsers = $db->query("
+            SELECT DISTINCT user_name 
+            FROM alert_users 
+            WHERE status = 1 AND (user_designation LIKE '%Auditor%' OR user_designation LIKE '%Admin%' OR user_designation LIKE '%Higher authority%')
+        ")->getResultArray();
+        $audAudits = $db->query("
+            SELECT DISTINCT auditor_name 
+            FROM alert_gemba_audits 
+            WHERE status != 2 AND auditor_name IS NOT NULL AND auditor_name != '' AND auditor_name != 'NA'
+        ")->getResultArray();
+        $allAuditors = array_merge(array_column($audUsers, 'user_name'), array_column($audAudits, 'auditor_name'));
+        $allAuditors = array_values(array_unique(array_filter(array_map('trim', $allAuditors))));
+        natcasesort($allAuditors);
+        $allAuditors = array_values($allAuditors);
+
+        // 1.3 Audit Categories
+        $catQuery = $db->query("
+            SELECT DISTINCT audit_category 
+            FROM alert_gemba_audits 
+            WHERE status != 2 AND audit_category IS NOT NULL AND audit_category != '' AND audit_category != 'NA'
+        ")->getResultArray();
+        $standardCats = ['HSE Audit', 'Electric Audit', 'Fire Audit', 'ISO Audit', 'Pre Golive Audit', 'Safety', 'France Corporate Audit', 'GIA Audit', 'Others'];
+        $allCats = array_merge($standardCats, array_column($catQuery, 'audit_category'));
+        $allCats = array_values(array_unique(array_filter(array_map('trim', $allCats))));
+        natcasesort($allCats);
+        $allCats = array_values($allCats);
+
+        // 1.4 Audit Types
+        $typeQuery = $db->query("
+            SELECT DISTINCT audit_type 
+            FROM alert_gemba_audits 
+            WHERE status != 2 AND audit_type IS NOT NULL AND audit_type != '' AND audit_type != 'NA'
+        ")->getResultArray();
+        $allTypes = array_values(array_unique(array_filter(array_map('trim', array_column($typeQuery, 'audit_type')))));
+        natcasesort($allTypes);
+        $allTypes = array_values($allTypes);
+
+        // 1.5 Audit Doc Types
+        $docQuery = $db->query("
+            SELECT DISTINCT audit_doc_type 
+            FROM alert_gemba_audits 
+            WHERE status != 2 AND audit_doc_type IS NOT NULL AND audit_doc_type != '' AND audit_doc_type != 'NA'
+        ")->getResultArray();
+        $allDocs = array_values(array_unique(array_filter(array_map('trim', array_column($docQuery, 'audit_doc_type')))));
+        natcasesort($allDocs);
+        $allDocs = array_values($allDocs);
 
         // 2. Columns list
         $headers = [
@@ -1694,6 +1985,7 @@ class GembaAudit extends BaseController
             ],
             'alignment' => [
                 'horizontal' => \PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER,
+                'vertical' => \PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_CENTER,
             ],
             'borders' => [
                 'allBorders' => [
@@ -1710,24 +2002,142 @@ class GembaAudit extends BaseController
             $colIdx++;
         }
         $sheet->getStyle('A1:' . $sheet->getHighestColumn() . '1')->applyFromArray($headerStyle);
+        $sheet->getRowDimension(1)->setRowHeight(25);
+        $sheet->freezePane('A2');
 
-        // If clients exist, write them to a hidden sheet and link validation
-        if ($clientCount > 0) {
-            // Create hidden sheet
-            $clientsSheet = new \PhpOffice\PhpSpreadsheet\Worksheet\Worksheet($spreadsheet, 'Client List');
-            $spreadsheet->addSheet($clientsSheet);
-            
-            // Populate clients
-            for ($r = 0; $r < $clientCount; $r++) {
-                $clientsSheet->setCellValueByColumnAndRow(1, $r + 1, $clientNames[$r]);
+        // Format Date Columns (F, G, AC, AD)
+        $sheet->getStyle('F2:G500')->getNumberFormat()->setFormatCode('yyyy-mm-dd');
+        $sheet->getStyle('AC2:AD500')->getNumberFormat()->setFormatCode('yyyy-mm-dd');
+
+        // 4. Create Hidden Lookup Worksheet for Dynamic Data
+        $lookupsSheet = new \PhpOffice\PhpSpreadsheet\Worksheet\Worksheet($spreadsheet, 'Master_Lookups');
+        $spreadsheet->addSheet($lookupsSheet);
+
+        $lookupHeaders = [
+            1 => ['title' => 'Site Name', 'data' => $clientNames],
+            2 => ['title' => 'Auditor Name', 'data' => $allAuditors],
+            3 => ['title' => 'Audit Category', 'data' => $allCats],
+            4 => ['title' => 'Audit Type', 'data' => $allTypes],
+            5 => ['title' => 'Audit Doc Type', 'data' => $allDocs],
+        ];
+
+        foreach ($lookupHeaders as $colNum => $colConfig) {
+            $lookupsSheet->setCellValueByColumnAndRow($colNum, 1, $colConfig['title']);
+            $r = 2;
+            foreach ($colConfig['data'] as $val) {
+                $lookupsSheet->setCellValueByColumnAndRow($colNum, $r, $val);
+                $r++;
             }
-            
-            // Hide the sheet
-            $clientsSheet->setSheetState(\PhpOffice\PhpSpreadsheet\Worksheet\Worksheet::SHEETSTATE_HIDDEN);
+        }
+        $lookupsSheet->setSheetState(\PhpOffice\PhpSpreadsheet\Worksheet\Worksheet::SHEETSTATE_HIDDEN);
 
-            // Add dropdown validation to site_name column (E) for rows 2 to 100
-            for ($row = 2; $row <= 100; $row++) {
-                $validation = $sheet->getCell('E' . $row)->getDataValidation();
+        // 5. Define Dropdown Configurations for Important Columns
+        $validations = [
+            'A' => [ // auditor_name
+                'type' => 'dynamic',
+                'range' => '\'Master_Lookups\'!$B$2:$B$' . max(2, count($allAuditors) + 1),
+                'title' => 'Select Auditor',
+                'prompt' => 'Please select an auditor from the dropdown.',
+                'error' => 'Value must be selected from the registered auditor list.'
+            ],
+            'B' => [ // audit_category
+                'type' => 'dynamic',
+                'range' => '\'Master_Lookups\'!$C$2:$C$' . max(2, count($allCats) + 1),
+                'title' => 'Select Audit Category',
+                'prompt' => 'Please select an audit category.',
+                'error' => 'Value must be selected from the allowed categories.'
+            ],
+            'C' => [ // audit_type
+                'type' => 'dynamic',
+                'range' => '\'Master_Lookups\'!$D$2:$D$' . max(2, count($allTypes) + 1),
+                'title' => 'Select Audit Type',
+                'prompt' => 'Please select an audit type.',
+                'error' => 'Value must be selected from the allowed audit types.'
+            ],
+            'D' => [ // audit_doc_type
+                'type' => 'dynamic',
+                'range' => '\'Master_Lookups\'!$E$2:$E$' . max(2, count($allDocs) + 1),
+                'title' => 'Select Doc Type',
+                'prompt' => 'Please select an audit document type.',
+                'error' => 'Value must be selected from the allowed doc types.'
+            ],
+            'E' => [ // site_name
+                'type' => 'dynamic',
+                'range' => '\'Master_Lookups\'!$A$2:$A$' . max(2, count($clientNames) + 1),
+                'title' => 'Select Site Name',
+                'prompt' => 'Please choose a site from the dropdown list.',
+                'error' => 'Value is not in the allowed active site list.'
+            ],
+            'M' => [ // nc_recommendation
+                'type' => 'fixed',
+                'formula' => '"NC,RECOMMENDATION,Point Closed"',
+                'title' => 'Select NC/Recommendation',
+                'prompt' => 'Please choose NC, RECOMMENDATION, or Point Closed.',
+                'error' => 'Allowed values: NC, RECOMMENDATION, Point Closed.'
+            ],
+            'S' => [ // ua_uc_type
+                'type' => 'fixed',
+                'formula' => '"UA-UC,UA,UC,Quality,Others"',
+                'title' => 'Select UA/UC Type',
+                'prompt' => 'Choose UA-UC, UA, UC, Quality, or Others.',
+                'error' => 'Allowed values: UA-UC, UA, UC, Quality, Others.'
+            ],
+            'T' => [ // risk_severity
+                'type' => 'fixed',
+                'formula' => '"Low,Medium,High"',
+                'title' => 'Select Risk Severity',
+                'prompt' => 'Please choose Low, Medium, or High.',
+                'error' => 'Allowed values: Low, Medium, High.'
+            ],
+            'U' => [ // risk_probability
+                'type' => 'fixed',
+                'formula' => '"Low,Medium,High"',
+                'title' => 'Select Risk Probability',
+                'prompt' => 'Please choose Low, Medium, or High.',
+                'error' => 'Allowed values: Low, Medium, High.'
+            ],
+            'V' => [ // color_code
+                'type' => 'fixed',
+                'formula' => '"Red,Yellow,Black,Green"',
+                'title' => 'Select Color Code',
+                'prompt' => 'Please choose Red, Yellow, Black, or Green.',
+                'error' => 'Allowed values: Red, Yellow, Black, Green.'
+            ],
+            'W' => [ // cost_type
+                'type' => 'fixed',
+                'formula' => '"Capex,Opex,Operational Action"',
+                'title' => 'Select Cost Type',
+                'prompt' => 'Please choose Capex, Opex, or Operational Action.',
+                'error' => 'Allowed values: Capex, Opex, Operational Action.'
+            ],
+            'AE' => [ // point_status
+                'type' => 'fixed',
+                'formula' => '"Open,WIP,Closed,Excluded,Hold-review with Client"',
+                'title' => 'Select Point Status',
+                'prompt' => 'Choose Open, WIP, Closed, Excluded, or Hold-review with Client.',
+                'error' => 'Allowed values: Open, WIP, Closed, Excluded, Hold-review with Client.'
+            ],
+            'AF' => [ // point_category
+                'type' => 'fixed',
+                'formula' => '"Open Category,Closed Category"',
+                'title' => 'Select Point Category',
+                'prompt' => 'Choose Open Category or Closed Category.',
+                'error' => 'Allowed values: Open Category, Closed Category.'
+            ],
+            'AG' => [ // closure_status
+                'type' => 'fixed',
+                'formula' => '"Delayed,Within Target,Closed,On-Time,Open,Excluded"',
+                'title' => 'Select Closure Status',
+                'prompt' => 'Choose Delayed, Within Target, Closed, On-Time, Open, or Excluded.',
+                'error' => 'Allowed values: Delayed, Within Target, Closed, On-Time, Open, Excluded.'
+            ],
+        ];
+
+        // 6. Apply Data Validations for Rows 2 to 500
+        $maxRows = 500;
+        for ($row = 2; $row <= $maxRows; $row++) {
+            foreach ($validations as $col => $cfg) {
+                $validation = $sheet->getCell($col . $row)->getDataValidation();
                 $validation->setType(\PhpOffice\PhpSpreadsheet\Cell\DataValidation::TYPE_LIST);
                 $validation->setErrorStyle(\PhpOffice\PhpSpreadsheet\Cell\DataValidation::STYLE_STOP);
                 $validation->setAllowBlank(true);
@@ -1735,29 +2145,15 @@ class GembaAudit extends BaseController
                 $validation->setShowErrorMessage(true);
                 $validation->setShowDropDown(true);
                 $validation->setErrorTitle('Input Error');
-                $validation->setError('Value is not in the allowed client list.');
-                $validation->setPromptTitle('Select Site Name');
-                $validation->setPrompt('Please choose a client from the dropdown list.');
-                // Formula 1 refers to the range of client names in the hidden sheet
-                $validation->setFormula1('\'Client List\'!$A$1:$A$' . $clientCount);
+                $validation->setError($cfg['error']);
+                $validation->setPromptTitle($cfg['title']);
+                $validation->setPrompt($cfg['prompt']);
+                $validation->setFormula1($cfg['type'] === 'dynamic' ? $cfg['range'] : $cfg['formula']);
             }
         }
 
-        // Add dropdown validation to nc_recommendation column (M) for rows 2 to 100
-        for ($row = 2; $row <= 100; $row++) {
-            $validation = $sheet->getCell('M' . $row)->getDataValidation();
-            $validation->setType(\PhpOffice\PhpSpreadsheet\Cell\DataValidation::TYPE_LIST);
-            $validation->setErrorStyle(\PhpOffice\PhpSpreadsheet\Cell\DataValidation::STYLE_STOP);
-            $validation->setAllowBlank(true);
-            $validation->setShowInputMessage(true);
-            $validation->setShowErrorMessage(true);
-            $validation->setShowDropDown(true);
-            $validation->setErrorTitle('Input Error');
-            $validation->setError('Value is not allowed. Allowed values: NC, RECOMMENDATION, Point Closed.');
-            $validation->setPromptTitle('Select NC/Recommendation');
-            $validation->setPrompt('Please choose NC, RECOMMENDATION, or Point Closed.');
-            $validation->setFormula1('"NC,RECOMMENDATION,Point Closed"');
-        }
+        // Set active sheet to 0
+        $spreadsheet->setActiveSheetIndex(0);
 
         // Auto-fit columns
         foreach ($sheet->getColumnIterator() as $column) {

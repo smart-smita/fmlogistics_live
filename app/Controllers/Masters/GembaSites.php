@@ -17,8 +17,20 @@ class GembaSites extends BaseController
 
     public function index()
     {
+        helper('gemba_acl');
+
+        $readOnlyBadge = !gemba_can_write()
+            ? ' <span class="badge bg-warning text-dark ms-2" style="font-size: 0.55em; vertical-align: middle; padding: 6px 10px; border-radius: 6px;">Read Only Access</span>'
+            : '';
+
+        $createButton = '';
+        if (gemba_can_write()) {
+            $createButton = '<a href="' . base_url('gemba-sites/create') . '" class="btn btn-sm btn-primary"><i class="fas fa-plus me-1"></i>Create New Site</a>';
+        }
+
         $tdata = [
-            'title' => 'Gemba Sites Master',
+            'title' => 'Gemba Sites Master' . $readOnlyBadge,
+            'subtitle' => 'Manage your warehouse sites',
             'display_contents' => [
                 'id' => 'ID',
                 'site_name' => 'Site Name',
@@ -31,7 +43,8 @@ class GembaSites extends BaseController
             ],
             'example2' => 'gemba_sites_table',
             'ajax_url_for_data' => base_url('gemba-sites/table_ajax'),
-            'is_server_side' => true
+            'is_server_side' => true,
+            'export_button' => $createButton
         ];
 
         $data['table'] = view('Layout/table-view', $tdata);

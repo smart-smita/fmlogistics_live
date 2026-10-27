@@ -29,13 +29,35 @@ class Reaudit extends BaseController
         $this->BaseModel = new CRUDBaseModel($db);
     }
     // changes on 5/11/25 by darsh: Add type filters (OE, Normal, HSE) for old entries
-    public function index($type = 'OE')
+    public function index($type = null)
     {
         $data = [];
 
-        $type = strtoupper(trim($type));
-        if (!in_array($type, ['OE', 'NORMAL', 'HSE'])) {
-            $type = 'OE';
+        helper('simple_acl');
+        $canOe = function_exists('canAccessOeModule') ? canAccessOeModule() : true;
+        $canHse = function_exists('canAccessHseModule') ? canAccessHseModule() : true;
+
+        if (!empty($type)) {
+            $type = strtoupper(trim($type));
+        }
+
+        // Determine correct type based on user permissions and requested type
+        if (empty($type) || !in_array($type, ['OE', 'NORMAL', 'HSE'])) {
+            if (!$canOe && $canHse) {
+                $type = 'HSE';
+            } elseif (!$canHse && $canOe) {
+                $type = 'OE';
+            } elseif (function_exists('isHseAuditType') && isHseAuditType()) {
+                $type = 'HSE';
+            } else {
+                $type = 'OE';
+            }
+        } else {
+            if ($type === 'OE' && !$canOe && $canHse) {
+                $type = 'HSE';
+            } elseif ($type === 'HSE' && !$canHse && $canOe) {
+                $type = 'OE';
+            }
         }
 
         $tdata['title'] = "";
@@ -107,16 +129,6 @@ class Reaudit extends BaseController
         $data['ajax_url'] = base_url("Masters/Reaudit/save_details");
         $tdata['ajax_url_for_data'] = base_url("Masters/Reaudit/table_ajax/" . $type);
 
-        helper('simple_acl');
-        $canOe = function_exists('canAccessOeModule') ? canAccessOeModule() : true;
-        $canHse = function_exists('canAccessHseModule') ? canAccessHseModule() : true;
-
-        if (!$canOe && $canHse && $type === 'OE') {
-            $type = 'HSE';
-        } elseif (!$canHse && $canOe && $type === 'HSE') {
-            $type = 'OE';
-        }
-
         $filterButtonsHtml = '<div class="d-flex" style="gap:8px;">';
         $topCardsHtml = '<div class="row g-5 g-xl-8" style="margin-bottom:12px;">';
 
@@ -126,7 +138,7 @@ class Reaudit extends BaseController
         }
         if ($canHse) {
             $filterButtonsHtml .= '<a class="btn btn-sm ' . ($type === 'HSE' ? 'btn-primary' : 'btn-light-primary') . '" href="' . base_url('Masters/Reaudit/index/HSE') . '">HSE</a>';
-            $topCardsHtml .= '<div class="col-md-4"><a href="' . base_url('Masters/Reaudit/index/HSE') . '" class="card ' . ($type === 'HSE' ? 'bg-dark' : 'bg-dark') . ' hoverable mb-xl-8"><div class="card-body" style="padding: 1rem 2.25rem;"><div class="fw-semibold text-gray-100">HSE</div></div></a></div>';
+            $topCardsHtml .= '<div class="col-md-4"><a href="' . base_url('Masters/Reaudit/index/HSE') . '" class="card ' . ($type === 'HSE' ? 'bg-primary' : 'bg-dark') . ' hoverable mb-xl-8"><div class="card-body" style="padding: 1rem 2.25rem;"><div class="fw-semibold ' . ($type === 'HSE' ? 'text-white' : 'text-gray-100') . '">HSE</div></div></a></div>';
         }
 
         $filterButtonsHtml .= '</div>';
@@ -136,14 +148,38 @@ class Reaudit extends BaseController
         $buttons = $topCardsHtml;
 
         $data['table'] = $buttons . view("Layout/table-view", $tdata);
-        // $data['table'] ="";
         return view("Layout/table-view-2", $data);
 
     }
 
-    public function table_ajax($type = 'OE')
+    public function table_ajax($type = null)
     {
-        $type = strtoupper(trim($type));
+        helper('simple_acl');
+        $canOe = function_exists('canAccessOeModule') ? canAccessOeModule() : true;
+        $canHse = function_exists('canAccessHseModule') ? canAccessHseModule() : true;
+
+        if (!empty($type)) {
+            $type = strtoupper(trim($type));
+        }
+
+        if (empty($type) || !in_array($type, ['OE', 'NORMAL', 'HSE'])) {
+            if (!$canOe && $canHse) {
+                $type = 'HSE';
+            } elseif (!$canHse && $canOe) {
+                $type = 'OE';
+            } elseif (function_exists('isHseAuditType') && isHseAuditType()) {
+                $type = 'HSE';
+            } else {
+                $type = 'OE';
+            }
+        } else {
+            if ($type === 'OE' && !$canOe && $canHse) {
+                $type = 'HSE';
+            } elseif ($type === 'HSE' && !$canHse && $canOe) {
+                $type = 'OE';
+            }
+        }
+
         $db = db_connect();
 
         if ($type === 'NORMAL') {
