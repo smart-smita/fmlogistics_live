@@ -293,7 +293,10 @@ class Options
     {
         $this->setChroot(realpath(__DIR__ . "/../"));
         $this->setRootDir($this->getChroot());
-        $this->setTempDir(sys_get_temp_dir());
+        $defaultTmp = (defined('WRITEPATH') && is_dir(WRITEPATH . 'cache') && is_writable(WRITEPATH . 'cache')) 
+            ? (WRITEPATH . 'cache') 
+            : (is_writable('/tmp') ? '/tmp' : (is_writable(sys_get_temp_dir()) ? sys_get_temp_dir() : '/tmp'));
+        $this->setTempDir($defaultTmp);
         $this->setFontDir($this->chroot . DIRECTORY_SEPARATOR . "lib" . DIRECTORY_SEPARATOR . "fonts");
         $this->setFontCache($this->getFontDir());
         $this->setLogOutputFile($this->getTempDir() . DIRECTORY_SEPARATOR . "log.htm");

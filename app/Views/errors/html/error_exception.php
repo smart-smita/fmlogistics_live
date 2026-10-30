@@ -93,7 +93,19 @@
                                         foreach ($row['args'] as $key => $value) : ?>
 											<tr>
 												<td><code><?= esc(isset($params[$key]) ? '$' . $params[$key]->name : "#{$key}") ?></code></td>
-												<td><pre><?= esc(print_r($value, true)) ?></pre></td>
+												<td><pre><?php
+                                                    if (is_object($value)) {
+                                                        echo esc('[Object: ' . get_class($value) . ']');
+                                                    } elseif (is_resource($value)) {
+                                                        echo esc('[Resource: ' . get_resource_type($value) . ']');
+                                                    } elseif (is_array($value)) {
+                                                        echo esc('[Array (' . count($value) . ' elements)] ' . substr(print_r(array_slice($value, 0, 5, true), true), 0, 1000));
+                                                    } elseif (is_string($value)) {
+                                                        echo esc(strlen($value) > 1000 ? substr($value, 0, 1000) . '... [truncated ' . strlen($value) . ' bytes]' : $value);
+                                                    } else {
+                                                        echo esc(var_export($value, true));
+                                                    }
+                                                ?></pre></td>
 											</tr>
 										<?php endforeach ?>
 

@@ -23,7 +23,7 @@ class App extends BaseConfig
      *
      * @var string
      */
-    public $baseURL = 'https://eth.unitglo.com/Brand-M/ci';
+    public $baseURL = 'https://fmlogistic.unitglo.com/';
 
     /**
      * --------------------------------------------------------------------------

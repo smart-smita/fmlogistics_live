@@ -74,20 +74,59 @@ if (isset($_GET['debug']) && $_GET['debug'] == '1') {
 
 /* === NEW: Sticky header for Reaudit Audit CheckList table === */
 .audit-table-wrapper {
-    max-height: 980px;        /* adjust as needed */
+    max-height: 850px;
     overflow-y: auto;
     overflow-x: auto;
 }
 
 .audit-table-wrapper table {
-    margin-bottom: 0;         /* no extra gap inside scroll area */
+    margin-bottom: 0;
 }
 
 .audit-table-wrapper thead th {
     position: sticky;
     top: 0;
     z-index: 5;
-    background-color: #f5f8fa;   /* match other tables */
+    background-color: #f5f8fa;
+}
+
+/* === Responsive Sticky Footer Action Bar === */
+.sticky-bottom-footer {
+    position: sticky;
+    bottom: 0;
+    z-index: 100;
+    background: #ffffff !important;
+    border-top: 2px solid #e2e8f0;
+    box-shadow: 0 -6px 20px rgba(0, 0, 0, 0.08);
+}
+@media (max-width: 991.98px) {
+    .sticky-bottom-footer {
+        flex-direction: column !important;
+        align-items: stretch !important;
+        padding: 14px !important;
+    }
+    .sticky-bottom-footer .d-flex {
+        width: 100% !important;
+        justify-content: center !important;
+    }
+    .sticky-bottom-footer .btn {
+        width: 100% !important;
+    }
+}
+
+.attachment-cell {
+    min-width: 180px;
+    max-width: 240px;
+}
+.existing-attachment-card {
+    background-color: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+}
+.attachment-thumb-link:hover img {
+    transform: scale(1.05);
+    transition: transform 0.15s ease-in-out;
+    box-shadow: 0 2px 8px rgba(0, 158, 247, 0.3);
 }
 </style>
 
@@ -191,13 +230,29 @@ if (isset($_GET['debug']) && $_GET['debug'] == '1') {
                                  <tr>
                                     <th class="table-secondary">Auditee Name</th>
                                     <td>
-                                   <!-- changes on 16/11/25: Auditee name read-only in reaudit -->
-                                   <?php if(isset($is_edit_mode) && $is_edit_mode) { ?>
-                                        <input type="text" name="auditee_name" class="form-control" value="<?=$details['auditee_name']?>">
-                                   <?php } else { ?>
-                                        <input type="text" class="form-control" value="<?=$details['auditee_name']?>" readonly class="form-control-disabled">
-                                        <input type="hidden" name="auditee_name" value="<?=$details['auditee_name']?>" />
-                                   <?php } ?>
+                                    <?php 
+                                        $targetAuditee = !empty($details['auditee_name']) ? trim($details['auditee_name']) : (!empty($client_account_manager) ? trim($client_account_manager) : '');
+                                        $amList = isset($account_managers) ? $account_managers : [];
+                                        if (!empty($targetAuditee) && !in_array($targetAuditee, $amList)) {
+                                            $amList[] = $targetAuditee;
+                                            sort($amList, SORT_NATURAL | SORT_FLAG_CASE);
+                                        }
+                                    ?>
+                                        <div class="auditee-wrapper">
+                                            <select id="auditee_name_select" class="form-select js-example-basic-single" style="width: 100%;">
+                                                <option value="">Select Auditee Name</option>
+                                                <?php foreach ($amList as $am) { 
+                                                    $sel = (strcasecmp($targetAuditee, $am) === 0) ? 'selected' : '';
+                                                ?>
+                                                    <option value="<?= htmlspecialchars($am, ENT_QUOTES); ?>" <?= $sel ?>><?= htmlspecialchars($am) ?></option>
+                                                <?php } ?>
+                                                <option value="__other__">Other (Enter Manually)</option>
+                                            </select>
+                                            <div id="auditee_other_container" class="mt-2" style="display: none;">
+                                                <input type="text" id="auditee_name_other" class="form-control" placeholder="Enter Auditee Name manually..." value="" />
+                                            </div>
+                                            <input type="hidden" name="auditee_name" id="auditee_name_input" value="<?= htmlspecialchars($targetAuditee, ENT_QUOTES); ?>" />
+                                        </div>
                                    <input type="hidden" name="cluster_name" value="<?= $details['cluster_name'] ?? '' ?>" />
                                    <input type="hidden" name="client_manager_name" value="<?= $details['client_manager_name'] ?? '' ?>" />
                                     </td>
@@ -448,18 +503,62 @@ if (isset($_GET['debug']) && $_GET['debug'] == '1') {
                         <td>
                             <textarea name="remark[]" class="textarea border-danger" placeholder="Please add your remark" rows="6" value=""><?php echo (isset($existingBySrLoc['audit_remark']) && $existingBySrLoc['audit_remark']!="")?$existingBySrLoc['audit_remark']:""; ?></textarea>
                         </td>
-                        <td>
+                        <td class="attachment-cell">
                             <?php 
-                                $existing = isset($existingBySrLoc['audit_attachment']) ? $existingBySrLoc['audit_attachment'] : '';
-                                if (!empty($existing)) { ?>
-                                <div style="margin-bottom:6px;">
-                                    <a href="<?= base_url($existing) ?>" target="_blank">Existing Attachment</a>
+                                $existing = isset($existingBySrLoc['audit_attachment']) ? trim($existingBySrLoc['audit_attachment']) : '';
+                                if (!empty($existing)) { 
+                                    $normExisting = ltrim(preg_replace('#/+#', '/', $existing), '/');
+                                    $reqHost = $_SERVER['HTTP_HOST'] ?? '';
+                                    $scheme = ((!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (isset($_SERVER['SERVER_PORT']) && $_SERVER['SERVER_PORT'] == 443) || (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https')) ? 'https://' : 'http://';
+                                    if (strpos($existing, 'http://') === 0 || strpos($existing, 'https://') === 0) {
+                                        $fileUrl = $existing;
+                                    } elseif (!empty($reqHost)) {
+                                        $scriptDir = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '')), '/');
+                                        $basePrefix = ($scriptDir !== '' && $scriptDir !== '.' && $scriptDir !== '/') ? $scriptDir : '';
+                                        $fileUrl = $scheme . $reqHost . $basePrefix . '/' . $normExisting;
+                                    } else {
+                                        $fileUrl = base_url($normExisting);
+                                    }
+                                    $ext = strtolower(pathinfo(parse_url($normExisting, PHP_URL_PATH), PATHINFO_EXTENSION));
+                                    $isImage = in_array($ext, ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg']);
+                            ?>
+                                <div class="existing-attachment-card mb-2 p-2 border rounded bg-light">
+                                    <?php if ($isImage): ?>
+                                        <div class="d-flex align-items-center gap-2">
+                                            <a href="<?= $fileUrl ?>" target="_blank" class="d-inline-block position-relative attachment-thumb-link" title="Click to view full image in new tab">
+                                                <img src="<?= $fileUrl ?>" alt="Attachment" style="width: 55px; height: 55px; object-fit: cover; border-radius: 4px; border: 1px solid #3b82f6; display: block;" onerror="this.onerror=null; this.parentElement.innerHTML='<span class=\'badge badge-light-primary py-1 px-2\'><i class=\'bi bi-image\'></i> View Image</span>';" />
+                                            </a>
+                                            <div class="d-flex flex-column">
+                                                <span class="text-muted" style="font-size: 10px; font-weight: 600;">Image Proof</span>
+                                                <a href="<?= $fileUrl ?>" target="_blank" class="text-primary fw-bold" style="font-size: 11px; text-decoration: underline;">
+                                                    <i class="bi bi-box-arrow-up-right"></i> Open Full View
+                                                </a>
+                                            </div>
+                                        </div>
+                                    <?php else: ?>
+                                        <div class="d-flex align-items-center gap-2">
+                                            <span style="font-size: 20px;">
+                                                <?= ($ext === 'pdf') ? '📄' : (in_array($ext, ['xls', 'xlsx', 'csv']) ? '📊' : '📎') ?>
+                                            </span>
+                                            <div class="d-flex flex-column">
+                                                <span class="text-muted" style="font-size: 10px; font-weight: 600;"><?= strtoupper($ext ?: 'FILE') ?> Document</span>
+                                                <a href="<?= $fileUrl ?>" target="_blank" class="btn btn-xs btn-outline btn-outline-primary py-1 px-2 fw-bold" style="font-size: 11px;">
+                                                    <i class="bi bi-box-arrow-up-right"></i> View in New Tab
+                                                </a>
+                                            </div>
+                                        </div>
+                                    <?php endif; ?>
                                 </div>
                                 <input type="hidden" name="existing_attachment[]" value="<?= esc($existing) ?>">
                             <?php } else { ?>
                                 <input type="hidden" name="existing_attachment[]" value="">
                             <?php } ?>
-                            <input type="file" name="audit_attachment[]" accept=".jpg,.jpeg,.png,.gif,.pdf,.xls,.xlsx" onchange="validateFileType(this)">
+
+                            <div class="upload-wrapper">
+                                <label class="form-label text-muted mb-1" style="font-size: 10px;"><?= !empty($existing) ? 'Replace / Upload New Proof:' : 'Upload Proof:' ?></label>
+                                <input type="file" name="audit_attachment[]" class="form-control form-control-sm audit-file-input" accept=".jpg,.jpeg,.png,.gif,.pdf,.xls,.xlsx,.csv" onchange="handleAuditFileUpload(this)">
+                                <div class="file-live-preview mt-2" style="display:none;"></div>
+                            </div>
                         </td>
                         </tr>
                     
@@ -468,12 +567,37 @@ if (isset($_GET['debug']) && $_GET['debug'] == '1') {
                  </div>
                  </div> 
             </div>
+
+            <!-- Responsive Sticky Footer Action Bar -->
+            <div class="card-footer bg-white py-4 px-6 border-top shadow-sm d-flex flex-wrap align-items-center justify-content-between gap-3 sticky-bottom-footer">
+                <div class="d-flex align-items-center flex-wrap gap-3">
+                    <button type="submit" class="btn btn-success btn-lg fw-bold d-inline-flex align-items-center gap-2 px-6 shadow-sm">
+                        <i class="bi bi-check-circle-fill fs-4"></i> Save & Submit Details
+                    </button>
+                    <?php if (!empty($details['structured_audit_id'])): ?>
+                        <a href="<?= base_url('Masters/Audit_final_structure/auditViewDetailsPdf/' . $details['structured_audit_id']) ?>" target="_blank" class="btn btn-primary btn-lg fw-bold d-inline-flex align-items-center gap-2 px-5 shadow-sm" title="Download or View PDF Report">
+                            <i class="bi bi-file-earmark-pdf fs-4"></i> Download PDF
+                        </a>
+                    <?php endif; ?>
+                    <a href="<?= base_url('Masters/Audit_final_structure') ?>" class="btn btn-light-secondary btn-lg fw-semibold px-4">
+                        <i class="bi bi-arrow-left"></i> Back to Audits
+                    </a>
+                </div>
+                <div class="d-flex align-items-center gap-4 bg-light rounded-3 px-4 py-2 border">
+                    <div class="d-flex flex-column text-end">
+                        <span class="text-muted fw-semibold" style="font-size: 11px;">Audit Live Score</span>
+                        <span class="text-primary fw-bolder fs-3"><span id="scoreDisplayFooter"><?= $details['audit_score'] ?? 0 ?></span>%</span>
+                    </div>
+                    <div class="vr h-30px opacity-25"></div>
+                    <div class="d-flex flex-column text-start">
+                        <span class="text-muted fw-semibold" style="font-size: 11px;">Audit Type</span>
+                        <span class="badge badge-light-primary fs-7 fw-bold"><?= htmlspecialchars($details['audit_name'] ?? 'OE Audit') ?></span>
+                    </div>
+                </div>
+            </div>
+
         </div>
     </div>
-                         <input type="submit" class="btn btn-success" value="Save Details">
-
-</div>
-</div>
  </form>
                          
                          
@@ -507,6 +631,7 @@ function calculateScore() {
     final_score = parseFloat(final_score.toFixed(2));
 
     $('#scoreDisplay').text(final_score);
+    $('#scoreDisplayFooter').text(final_score);
     $('#scoreValue').val(final_score);
 }
 
@@ -533,39 +658,74 @@ document.addEventListener('click', function(evt){
     scheduleRecompute();
 });
 
-function handleFileSelect(event) {
-    const file = event.files[0];
-    if((file.size / 1024).toFixed(2)>100){
-        $(event).val(null)
-        alert("File not allowd more that 100KB");
-        return false;
-    }else{
-        return true;
-    }
-}
-
-// File type validation
-function validateFileType(input) {
-    const allowedTypes = ['jpg', 'jpeg', 'png', 'gif', 'pdf', 'xls', 'xlsx'];
-    const maxSize = 10 * 1024 * 1024; // 10MB
+// File upload validation & live preview
+function handleAuditFileUpload(input) {
+    const allowedTypes = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'pdf', 'xls', 'xlsx', 'csv'];
+    const maxSize = 25 * 1024 * 1024; // 25MB
+    const cell = $(input).closest('td');
+    const previewContainer = cell.find('.file-live-preview');
     
     if (input.files && input.files[0]) {
         const file = input.files[0];
         const extension = file.name.split('.').pop().toLowerCase();
         
         if (!allowedTypes.includes(extension)) {
-            alert('Invalid file type. Only images (JPG, PNG, GIF), PDFs, and Excel files (XLS, XLSX) are allowed.');
+            alert('Invalid file type. Allowed files: Images (JPG, PNG, GIF, WEBP), PDFs, and Excel files (XLS, XLSX, CSV).');
             input.value = '';
+            previewContainer.hide().empty();
             return false;
         }
         
         if (file.size > maxSize) {
-            alert('File size too large. Maximum allowed size is 10MB.');
+            alert('File size too large. Maximum allowed size is 25MB.');
             input.value = '';
+            previewContainer.hide().empty();
             return false;
         }
+
+        const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(extension);
+        const fileUrl = URL.createObjectURL(file);
+        const fileSizeKb = (file.size / 1024).toFixed(1);
+
+        let previewHtml = '';
+        if (isImage) {
+            previewHtml = `
+                <div class="new-attachment-preview p-2 border border-primary border-dashed rounded bg-light-primary d-flex align-items-center gap-2">
+                    <a href="${fileUrl}" target="_blank" class="d-inline-block" title="Click to view full image in new tab">
+                        <img src="${fileUrl}" alt="Selected" style="width: 50px; height: 50px; object-fit: cover; border-radius: 4px; border: 1px solid #009ef7;" />
+                    </a>
+                    <div class="d-flex flex-column overflow-hidden">
+                        <span class="badge badge-success px-1 py-0 fs-9 mb-1" style="width: fit-content;">New Image Selected</span>
+                        <a href="${fileUrl}" target="_blank" class="text-primary fw-bold fs-8 text-truncate" title="Open in new tab">
+                            <i class="bi bi-box-arrow-up-right"></i> View Full Image (${fileSizeKb} KB)
+                        </a>
+                    </div>
+                </div>
+            `;
+        } else {
+            const icon = extension === 'pdf' ? '📄' : (['xls', 'xlsx', 'csv'].includes(extension) ? '📊' : '📎');
+            previewHtml = `
+                <div class="new-attachment-preview p-2 border border-info border-dashed rounded bg-light-info d-flex align-items-center gap-2">
+                    <span style="font-size: 22px;">${icon}</span>
+                    <div class="d-flex flex-column overflow-hidden">
+                        <span class="badge badge-info px-1 py-0 fs-9 mb-1" style="width: fit-content;">New ${extension.toUpperCase()} Selected</span>
+                        <a href="${fileUrl}" target="_blank" class="text-info fw-bold fs-8 text-truncate" title="Open in new tab">
+                            <i class="bi bi-box-arrow-up-right"></i> View (${file.name})
+                        </a>
+                    </div>
+                </div>
+            `;
+        }
+
+        previewContainer.html(previewHtml).show();
+    } else {
+        previewContainer.hide().empty();
     }
     return true;
+}
+
+function validateFileType(input) {
+    return handleAuditFileUpload(input);
 }
 
 // init
@@ -595,7 +755,50 @@ $(document).ready(function() {
     });
 
     if (typeof $.fn.select2 !== 'undefined') {
-        $('.js-example-basic-single').select2({ width: '100%', placeholder: 'Select an option', allowClear: true });
+        $('.js-example-basic-single').each(function() {
+            if (this.id !== 'auditee_name_select') {
+                $(this).select2({ width: '100%', placeholder: 'Select an option', allowClear: true });
+            }
+        });
+
+        if ($('#auditee_name_select').length) {
+            $('#auditee_name_select').select2({
+                width: '100%',
+                placeholder: 'Select Auditee Name',
+                allowClear: true,
+                tags: true
+            });
+
+            $('#auditee_name_select').on('change', function() {
+                var val = $(this).val();
+                if (val === '__other__') {
+                    $('#auditee_other_container').slideDown(150);
+                    var otherVal = $('#auditee_name_other').val().trim();
+                    $('#auditee_name_input').val(otherVal);
+                    $('#auditee_name_other').focus();
+                } else {
+                    $('#auditee_other_container').slideUp(150);
+                    $('#auditee_name_input').val(val || '');
+                }
+            });
+
+            $('#auditee_name_other').on('input', function() {
+                if ($('#auditee_name_select').val() === '__other__') {
+                    $('#auditee_name_input').val($(this).val().trim());
+                }
+            });
+
+            $('form').on('submit', function() {
+                if ($('#auditee_name_select').val() === '__other__') {
+                    $('#auditee_name_input').val($('#auditee_name_other').val().trim());
+                } else {
+                    var sVal = $('#auditee_name_select').val();
+                    if (sVal) {
+                        $('#auditee_name_input').val(sVal);
+                    }
+                }
+            });
+        }
     }
     
     var initialLoc = $('#location_reaudit').val();

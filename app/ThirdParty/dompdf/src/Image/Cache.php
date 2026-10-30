@@ -88,7 +88,20 @@ class Cache
                     } // From remote
                     else {
                         $tmp_dir = $dompdf->getOptions()->getTempDir();
-                        $resolved_url = @tempnam($tmp_dir, "ca_dompdf_img_");
+                        $resolved_url = !empty($tmp_dir) && is_dir($tmp_dir) && is_writable($tmp_dir) ? @tempnam($tmp_dir, "ca_dompdf_img_") : false;
+                        if (!$resolved_url) {
+                            $fallbacks = [
+                                defined('WRITEPATH') ? (WRITEPATH . 'cache') : null,
+                                '/tmp',
+                                sys_get_temp_dir()
+                            ];
+                            foreach ($fallbacks as $fb) {
+                                if ($fb && is_dir($fb) && is_writable($fb)) {
+                                    $resolved_url = @tempnam($fb, "ca_dompdf_img_");
+                                    if ($resolved_url) break;
+                                }
+                            }
+                        }
                         $image = "";
 
                         if ($data_uri) {
@@ -105,12 +118,11 @@ class Cache
                             throw new ImageException($msg, E_WARNING);
                         } // Image found, put in cache and process
                         else {
-                            //e.g. fetch.php?media=url.jpg&cache=1
-                            //- Image file name might be one of the dynamic parts of the url, don't strip off!
-                            //- a remote url does not need to have a file extension at all
-                            //- local cached file does not have a matching file extension
-                            //Therefore get image type from the content
-                            file_put_contents($resolved_url, $image);
+                            if (!empty($resolved_url) && is_string($resolved_url)) {
+                                file_put_contents($resolved_url, $image);
+                            } else {
+                                throw new ImageException("Unable to create temporary image file", E_WARNING);
+                            }
                         }
                     }
                 } // Not remote, local image

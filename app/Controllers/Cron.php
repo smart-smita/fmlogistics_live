@@ -606,9 +606,9 @@ class Cron extends BaseController
         $startDateStr = $start->format('d-M-Y');
         $endDateStr   = $end->format('d-M-Y');
 
-// echo "Today : " . $today->format('l d-m-Y') . "<br>";
-// echo "Start : " . $startDate . "<br>";
-// echo "End : " . $endDate . "<br>";
+        // echo "Today : " . $today->format('l d-m-Y') . "<br>";
+        // echo "Start : " . $startDate . "<br>";
+        // echo "End : " . $endDate . "<br>";
 
         // Fetch all open points (nc_status != 3, status != 2) matching target_date
         $builder = $db->table('alert_gemba_audits');

@@ -1242,16 +1242,16 @@
 					</div>
 					<!--end::Content-->
 					<!--begin::Footer-->
-					<div class="footer py-4 d-flex flex-lg-column" id="kt_footer">
-						<div class="container-fluid d-flex flex-column flex-md-row align-items-center justify-content-between">
-							<div class="text-dark order-2 order-md-1">
+					<div class="footer py-4 d-flex flex-lg-column border-top bg-white" id="kt_footer" style="position: relative; z-index: 10; width: 100%;">
+						<div class="container-fluid d-flex flex-column flex-md-row align-items-center justify-content-between gap-2 px-6">
+							<div class="text-dark order-2 order-md-1 fs-7">
 								<span class="text-muted fw-bold me-1">&copy; <?= date('Y'); ?></span>
-								<a href="#" class="text-gray-800 text-hover-primary">Unitglo Solutions</a>.
+								<a href="#" class="text-gray-800 text-hover-primary fw-semibold">Unitglo Solutions</a>.
 								All Rights Reserved.
 							</div>
 
-							<div class="menu menu-gray-600 menu-hover-primary fw-bold order-1">
-								Version 1.0
+							<div class="menu menu-gray-600 menu-hover-primary fw-bold order-1 fs-7">
+								<span class="badge badge-light-secondary px-3 py-1">Version 1.0</span>
 							</div>
 						</div>
 					</div>

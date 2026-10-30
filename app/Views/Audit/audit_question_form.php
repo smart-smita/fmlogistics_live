@@ -376,8 +376,50 @@ if ($isAuditorLogin && !empty($sessionAuditorName)) {
                                     <tr>
                                         <th class="table-secondary">Auditee Name</th>
                                         <td>
-                                            <input type="text" class="form-control" name="auditee_name"
-                                                value="<?= isset($details['auditee_name']) ? htmlspecialchars($details['auditee_name']) : '' ?>" />
+                                            <?php 
+                                            $currAuditee = trim($details['auditee_name'] ?? '');
+                                            $amList = isset($account_managers) ? $account_managers : [];
+                                            if (empty($amList)) {
+                                                try {
+                                                    $dbCon = \Config\Database::connect();
+                                                    $amClients = $dbCon->table("alert_client")
+                                                                    ->select("DISTINCT(account_manager) as account_manager")
+                                                                    ->where("status", 1)
+                                                                    ->where("account_manager !=", "")
+                                                                    ->where("account_manager IS NOT NULL")
+                                                                    ->get()->getResultArray();
+                                                    $amUsers = $dbCon->table("alert_users")
+                                                                  ->select("user_name")
+                                                                  ->like("user_designation", "Account Manager")
+                                                                  ->where("status", 1)
+                                                                  ->get()->getResultArray();
+                                                    $accMap = [];
+                                                    foreach ($amUsers as $u) { if (!empty($u['user_name'])) $accMap[trim($u['user_name'])] = trim($u['user_name']); }
+                                                    foreach ($amClients as $c) { if (!empty($c['account_manager'])) $accMap[trim($c['account_manager'])] = trim($c['account_manager']); }
+                                                    ksort($accMap, SORT_NATURAL | SORT_FLAG_CASE);
+                                                    $amList = array_values($accMap);
+                                                } catch (\Throwable $e) {}
+                                            }
+                                            if (!empty($currAuditee) && !in_array($currAuditee, $amList)) {
+                                                $amList[] = $currAuditee;
+                                                sort($amList, SORT_NATURAL | SORT_FLAG_CASE);
+                                            }
+                                            ?>
+                                            <div class="auditee-wrapper">
+                                                <select id="hse_auditee_select" class="form-select js-example-basic-single" style="width: 100%;">
+                                                    <option value="">Select Auditee Name</option>
+                                                    <?php foreach ($amList as $am): 
+                                                        $sel = (strcasecmp($currAuditee, $am) === 0) ? 'selected' : '';
+                                                    ?>
+                                                        <option value="<?= htmlspecialchars($am, ENT_QUOTES); ?>" <?= $sel ?>><?= htmlspecialchars($am) ?></option>
+                                                    <?php endforeach; ?>
+                                                    <option value="__other__">Other (Enter Manually)</option>
+                                                </select>
+                                                <div id="hse_auditee_other_container" class="mt-2" style="display: none;">
+                                                    <input type="text" id="hse_auditee_other" class="form-control" placeholder="Enter Auditee Name manually..." value="" />
+                                                </div>
+                                                <input type="hidden" name="auditee_name" id="hse_auditee_input" value="<?= htmlspecialchars($currAuditee, ENT_QUOTES); ?>" />
+                                            </div>
                                         </td>
                                     </tr>
                                     <tr>
@@ -3290,11 +3332,49 @@ if ($isAuditorLogin && !empty($sessionAuditorName)) {
         // Select2 load safely
         setTimeout(() => {
             if (typeof jQuery !== "undefined" && typeof jQuery.fn.select2 !== "undefined") {
-                jQuery('.js-example-basic-single').select2({
-                    width: "100%",
-                    placeholder: "Select option",
-                    allowClear: true
+                jQuery('.js-example-basic-single').each(function() {
+                    if (this.id !== 'hse_auditee_select') {
+                        jQuery(this).select2({ width: "100%", placeholder: "Select option", allowClear: true });
+                    }
                 });
+
+                if (jQuery('#hse_auditee_select').length) {
+                    jQuery('#hse_auditee_select').select2({
+                        width: "100%",
+                        placeholder: "Select Auditee Name",
+                        allowClear: true,
+                        tags: true
+                    });
+
+                    jQuery('#hse_auditee_select').on('change', function() {
+                        var val = jQuery(this).val();
+                        if (val === '__other__') {
+                            jQuery('#hse_auditee_other_container').slideDown(150);
+                            jQuery('#hse_auditee_input').val(jQuery('#hse_auditee_other').val().trim());
+                            jQuery('#hse_auditee_other').focus();
+                        } else {
+                            jQuery('#hse_auditee_other_container').slideUp(150);
+                            jQuery('#hse_auditee_input').val(val || '');
+                        }
+                    });
+
+                    jQuery('#hse_auditee_other').on('input', function() {
+                        if (jQuery('#hse_auditee_select').val() === '__other__') {
+                            jQuery('#hse_auditee_input').val(jQuery(this).val().trim());
+                        }
+                    });
+
+                    jQuery('form').on('submit', function() {
+                        if (jQuery('#hse_auditee_select').val() === '__other__') {
+                            jQuery('#hse_auditee_input').val(jQuery('#hse_auditee_other').val().trim());
+                        } else {
+                            var sVal = jQuery('#hse_auditee_select').val();
+                            if (sVal) {
+                                jQuery('#hse_auditee_input').val(sVal);
+                            }
+                        }
+                    });
+                }
             }
             toggleAuditTable();
             calculateScore();

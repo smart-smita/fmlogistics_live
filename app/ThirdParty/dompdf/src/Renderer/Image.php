@@ -131,6 +131,19 @@ class Image extends Block
             }
         }
 
+        // Handle enclosing anchor for clickable image in PDF
+        $parent = $frame->get_parent();
+        while ($parent) {
+            if ($parent->get_node() && $parent->get_node()->nodeName === "a") {
+                if ($href = $parent->get_node()->getAttribute("href")) {
+                    $href = \Dompdf\Helpers::build_url($this->_dompdf->getProtocol(), $this->_dompdf->getBaseHost(), $this->_dompdf->getBasePath(), $href);
+                    $this->_canvas->add_link($href, $x, $y, (float)$w, (float)$h);
+                }
+                break;
+            }
+            $parent = $parent->get_parent();
+        }
+
         $id = $frame->get_node()->getAttribute("id");
         if (strlen($id) > 0)  {
             $this->_canvas->add_named_dest($id);

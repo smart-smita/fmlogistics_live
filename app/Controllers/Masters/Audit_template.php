@@ -1252,9 +1252,23 @@ class Audit_template extends BaseController
             $performedSet[strtolower(trim($pl['location']))] = true;
         }
 
+        $clientAmMap = [];
+        foreach ($allLocations as $cRow) {
+            $am = trim($cRow['account_manager'] ?? '');
+            if (!empty($am)) {
+                $clientAmMap[strtolower(trim($cRow['client_name'] ?? ''))] = $am;
+            }
+        }
+
         $data['location'] = [];
         foreach ($allLocations as $loc) {
             if (!isset($performedSet[strtolower(trim($loc['client_name']))])) {
+                if (empty(trim($loc['account_manager'] ?? ''))) {
+                    $cKey = strtolower(trim($loc['client_name'] ?? ''));
+                    if (isset($clientAmMap[$cKey])) {
+                        $loc['account_manager'] = $clientAmMap[$cKey];
+                    }
+                }
                 $data['location'][] = $loc;
             }
         }
@@ -1264,6 +1278,36 @@ class Audit_template extends BaseController
         } else {
             $data['auditors'] = $db->table("alert_users")->where("user_designation", "Auditor")->where("status", 1)->get()->getResultArray();
         }
+
+        // Fetch Account Managers for Auditee Name searchable dropdown
+        $amUsers = $db->table("alert_users")
+                      ->select("user_name")
+                      ->like("user_designation", "Account Manager")
+                      ->where("status", 1)
+                      ->get()->getResultArray();
+
+        $amClients = $db->table("alert_client")
+                        ->select("DISTINCT(account_manager) as account_manager")
+                        ->where("status", 1)
+                        ->where("account_manager !=", "")
+                        ->where("account_manager IS NOT NULL")
+                        ->get()->getResultArray();
+
+        $accountManagers = [];
+        foreach ($amUsers as $u) {
+            $nm = trim($u['user_name'] ?? '');
+            if (!empty($nm)) {
+                $accountManagers[$nm] = $nm;
+            }
+        }
+        foreach ($amClients as $c) {
+            $nm = trim($c['account_manager'] ?? '');
+            if (!empty($nm)) {
+                $accountManagers[$nm] = $nm;
+            }
+        }
+        ksort($accountManagers, SORT_NATURAL | SORT_FLAG_CASE);
+        $data['account_managers'] = array_values($accountManagers);
 
         $excel_details = $db->table("alert_audit_excel_import")->where("audit_template_id", $id)->get()->getResultArray();
         // Format weightage for display (append %)
@@ -1335,6 +1379,29 @@ class Audit_template extends BaseController
         if (!isset($data['region']) || empty($data['region'])) {
             $data['region'] = $db->table("alert_region")->get()->getResultArray();
         }
+
+        // Fetch client's account manager for default preselection
+        $clientName = trim($data['details']['client_name'] ?? ($data['details']['location'] ?? ''));
+        $auditRegion = trim($data['details']['region'] ?? '');
+        $clientRow = null;
+        if (!empty($clientName)) {
+            if (!empty($auditRegion)) {
+                $clientRow = $db->table("alert_client")
+                                ->select("account_manager")
+                                ->where("client_name", $clientName)
+                                ->where("region", $auditRegion)
+                                ->where("account_manager !=", "")
+                                ->get()->getRowArray();
+            }
+            if (!$clientRow) {
+                $clientRow = $db->table("alert_client")
+                                ->select("account_manager")
+                                ->where("client_name", $clientName)
+                                ->where("account_manager !=", "")
+                                ->get()->getRowArray();
+            }
+        }
+        $data['client_account_manager'] = trim($clientRow['account_manager'] ?? '');
 
         $data['action'] = base_url("Masters/Audit_template/save_perform_audit/" . $id);
         return view("Audit/perform_audit_view", $data);
@@ -1780,6 +1847,58 @@ class Audit_template extends BaseController
         $data['details']['region'] = $data['details']['region'] ?? '';
         $data['details']['location'] = $data['details']['location'] ?? '';
         $data['details']['client_name'] = $data['details']['client_name'] ?? '';
+
+        // Fetch Account Managers for Auditee Name searchable dropdown
+        $amUsers = $db->table("alert_users")
+                      ->select("user_name")
+                      ->like("user_designation", "Account Manager")
+                      ->where("status", 1)
+                      ->get()->getResultArray();
+
+        $amClients = $db->table("alert_client")
+                        ->select("DISTINCT(account_manager) as account_manager")
+                        ->where("status", 1)
+                        ->where("account_manager !=", "")
+                        ->where("account_manager IS NOT NULL")
+                        ->get()->getResultArray();
+
+        $accountManagers = [];
+        foreach ($amUsers as $u) {
+            $nm = trim($u['user_name'] ?? '');
+            if (!empty($nm)) {
+                $accountManagers[$nm] = $nm;
+            }
+        }
+        foreach ($amClients as $c) {
+            $nm = trim($c['account_manager'] ?? '');
+            if (!empty($nm)) {
+                $accountManagers[$nm] = $nm;
+            }
+        }
+        ksort($accountManagers, SORT_NATURAL | SORT_FLAG_CASE);
+        $data['account_managers'] = array_values($accountManagers);
+
+        $clientName = trim($data['details']['client_name'] ?? ($data['details']['location'] ?? ''));
+        $auditRegion = trim($data['details']['region'] ?? '');
+        $clientRow = null;
+        if (!empty($clientName)) {
+            if (!empty($auditRegion)) {
+                $clientRow = $db->table("alert_client")
+                                ->select("account_manager")
+                                ->where("client_name", $clientName)
+                                ->where("region", $auditRegion)
+                                ->where("account_manager !=", "")
+                                ->get()->getRowArray();
+            }
+            if (!$clientRow) {
+                $clientRow = $db->table("alert_client")
+                                ->select("account_manager")
+                                ->where("client_name", $clientName)
+                                ->where("account_manager !=", "")
+                                ->get()->getRowArray();
+            }
+        }
+        $data['client_account_manager'] = trim($clientRow['account_manager'] ?? '');
 
         $data['action'] = base_url("Masters/Audit_template/normal_save_perform_audit/" . $id);
         return view("Audit/perform_audit_view", $data);

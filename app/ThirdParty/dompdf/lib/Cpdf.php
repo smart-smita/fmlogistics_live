@@ -2220,6 +2220,16 @@ EOT;
      */
     function addLink($url, $x0, $y0, $x1, $y1)
     {
+        if (abs($y1 - $y0) < 10) {
+            $minY = min($y0, $y1);
+            $y0 = $minY;
+            $y1 = $minY + 14;
+        }
+        if (abs($x1 - $x0) < 15) {
+            $minX = min($x0, $x1);
+            $x0 = $minX;
+            $x1 = $minX + 45;
+        }
         $this->numObj++;
         $info = array('type' => 'link', 'url' => $url, 'rect' => array($x0, $y0, $x1, $y1));
         $this->o_annotation($this->numObj, 'new', $info);

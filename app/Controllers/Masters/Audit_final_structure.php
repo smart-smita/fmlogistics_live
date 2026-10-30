@@ -652,6 +652,58 @@ class Audit_final_structure extends BaseController
         $data['auditors']  = $db->table('alert_users')->select('user_name')->where('status', 1)->orderBy('user_name', 'ASC')->get()->getResultArray();
         $data['region']    = $db->table('alert_region')->orderBy('region_name', 'ASC')->get()->getResultArray();
 
+        // Fetch Account Managers for Auditee Name searchable dropdown
+        $amUsers = $db->table("alert_users")
+                      ->select("user_name")
+                      ->like("user_designation", "Account Manager")
+                      ->where("status", 1)
+                      ->get()->getResultArray();
+
+        $amClients = $db->table("alert_client")
+                        ->select("DISTINCT(account_manager) as account_manager")
+                        ->where("status", 1)
+                        ->where("account_manager !=", "")
+                        ->where("account_manager IS NOT NULL")
+                        ->get()->getResultArray();
+
+        $accountManagers = [];
+        foreach ($amUsers as $u) {
+            $nm = trim($u['user_name'] ?? '');
+            if (!empty($nm)) {
+                $accountManagers[$nm] = $nm;
+            }
+        }
+        foreach ($amClients as $c) {
+            $nm = trim($c['account_manager'] ?? '');
+            if (!empty($nm)) {
+                $accountManagers[$nm] = $nm;
+            }
+        }
+        ksort($accountManagers, SORT_NATURAL | SORT_FLAG_CASE);
+        $data['account_managers'] = array_values($accountManagers);
+
+        $clientName = trim($data['details']['client_name'] ?? ($data['details']['location'] ?? ''));
+        $auditRegion = trim($data['details']['region'] ?? '');
+        $clientRow = null;
+        if (!empty($clientName)) {
+            if (!empty($auditRegion)) {
+                $clientRow = $db->table("alert_client")
+                                ->select("account_manager")
+                                ->where("client_name", $clientName)
+                                ->where("region", $auditRegion)
+                                ->where("account_manager !=", "")
+                                ->get()->getRowArray();
+            }
+            if (!$clientRow) {
+                $clientRow = $db->table("alert_client")
+                                ->select("account_manager")
+                                ->where("client_name", $clientName)
+                                ->where("account_manager !=", "")
+                                ->get()->getRowArray();
+            }
+        }
+        $data['client_account_manager'] = trim($clientRow['account_manager'] ?? '');
+
         $data['action']             = base_url("Masters/Audit_final_structure/normal_save_reaudit/" . $auditTemplateId . "/" . $normalAuditId);
         $data['audit_template_type'] = 'Normal';
 
@@ -662,21 +714,24 @@ class Audit_final_structure extends BaseController
 
     public function auditViewDetailsPdf($auditId, $flag = null, $type = null)
     {
+        ini_set('memory_limit', '1024M');
+        set_time_limit(180);
+
         $options = new Options();
-        $options->set('defaultFont', 'Courier');
+        $options->set('defaultFont', 'Helvetica');
         $options->set('isRemoteEnabled', true);
+        $options->set('isHtml5ParserEnabled', true);
+        $options->set('isPhpEnabled', true);
+        $options->set('chroot', [ROOTPATH, FCPATH]);
+        $tempDir = (defined('WRITEPATH') && is_dir(WRITEPATH . 'cache') && is_writable(WRITEPATH . 'cache')) 
+            ? (WRITEPATH . 'cache') 
+            : (is_writable('/tmp') ? '/tmp' : sys_get_temp_dir());
+        $options->set('tempDir', $tempDir);
 
         $dompdf = new Dompdf($options);
 
         $db = db_connect();
 
-        // $data['details'] = $db->table("alert_final_structured_audit")
-        //                       ->join("alert_audit_template", "alert_final_structured_audit.audit_template_id=alert_audit_template.audit_template_id", "left")
-        //                       ->where("alert_final_structured_audit.structured_audit_id", $auditId)
-        //                       ->select("alert_final_structured_audit.*,alert_audit_template.audit_name,alert_audit_template.auditor_name,alert_audit_template.date,alert_audit_template.score,
-        //                         (select cluster_name from alert_location_master where alert_location_master.location_name=alert_final_structured_audit.location limit 1) as cluster
-        //                       ")
-        //                       ->get()->getResultArray();
         $data['details'] = $db->table("alert_final_structured_audit")
     ->select("structured_audit_id,audit_no,audit_name,reaudit,auditor_name,auditee_name,region,cluster_name,client_manager_name,audit_date,completion_date,next_date,report_date,client_name,audit_note,location,zone,audit_score,audit_revision_no,final_remark,audit_template_id,audit_by_user_id,action_by_user_id,status,default_date,update_date")
     ->where("structured_audit_id", $auditId)
@@ -686,6 +741,11 @@ class Audit_final_structure extends BaseController
         $data['audit_details'] = $db->table("alert_final_structured_audit_details")
                                     ->where("structured_audit_id", $auditId)
                                     ->get()->getResultArray();
+
+        $data['attendance'] = $db->table("alert_hse_audit_attendance")
+                                 ->where("hse_audit_id", $auditId)
+                                 ->orderBy("row_no", "ASC")
+                                 ->get()->getResultArray();
 
         $data['report_title'] = "OE Audit Report";
 
@@ -716,20 +776,28 @@ class Audit_final_structure extends BaseController
         if (isset($flag) == 1) {
             return $html;
         } else {
+            $disposition = (isset($_GET['view']) || isset($_GET['inline'])) ? 'inline' : 'attachment';
             header('Content-Type: application/pdf');
-            header('Content-Disposition: attachment; filename="Audit-' . $auditId . '.pdf"');
+            header('Content-Disposition: ' . $disposition . '; filename="Audit-' . $auditId . '.pdf"');
             echo $dompdf->output();
         }
     }
 
     public function normalAuditViewDetailsPdf($auditId)
     {
+        ini_set('memory_limit', '1024M');
+        set_time_limit(180);
+
         $options = new Options();
-        $options->set('defaultFont', 'Courier');
+        $options->set('defaultFont', 'Helvetica');
         $options->set('isRemoteEnabled', true);
         $options->set('isHtml5ParserEnabled', true);
         $options->set('isPhpEnabled', true);
-        $options->set('DOMPDF_ENABLE_CSS_FLOAT', true);
+        $options->set('chroot', [ROOTPATH, FCPATH]);
+        $tempDir = (defined('WRITEPATH') && is_dir(WRITEPATH . 'cache') && is_writable(WRITEPATH . 'cache')) 
+            ? (WRITEPATH . 'cache') 
+            : (is_writable('/tmp') ? '/tmp' : sys_get_temp_dir());
+        $options->set('tempDir', $tempDir);
 
         $dompdf = new Dompdf($options);
 
@@ -875,6 +943,57 @@ class Audit_final_structure extends BaseController
         }
 
         $data['region'] = $db->table("alert_region")->get()->getResultArray();
+
+        // Fetch Account Managers for Auditee Name searchable dropdown
+        $amUsers = $db->table("alert_users")
+                      ->select("user_name")
+                      ->like("user_designation", "Account Manager")
+                      ->where("status", 1)
+                      ->get()->getResultArray();
+
+        $amClients = $db->table("alert_client")
+                        ->select("DISTINCT(account_manager) as account_manager")
+                        ->where("status", 1)
+                        ->where("account_manager !=", "")
+                        ->where("account_manager IS NOT NULL")
+                        ->get()->getResultArray();
+
+        $accountManagers = [];
+        foreach ($amUsers as $u) {
+            $nm = trim($u['user_name'] ?? '');
+            if (!empty($nm)) {
+                $accountManagers[$nm] = $nm;
+            }
+        }
+        foreach ($amClients as $c) {
+            $nm = trim($c['account_manager'] ?? '');
+            if (!empty($nm)) {
+                $accountManagers[$nm] = $nm;
+            }
+        }
+        ksort($accountManagers, SORT_NATURAL | SORT_FLAG_CASE);
+        $data['account_managers'] = array_values($accountManagers);
+
+        // Fetch client's account manager (prefer matching region and non-empty account manager)
+        $clientName = trim($currentAudit['client_name'] ?? ($currentAudit['location'] ?? ''));
+        $auditRegion = trim($currentAudit['region'] ?? '');
+        $clientRow = null;
+        if (!empty($auditRegion)) {
+            $clientRow = $db->table("alert_client")
+                            ->select("account_manager")
+                            ->where("client_name", $clientName)
+                            ->where("region", $auditRegion)
+                            ->where("account_manager !=", "")
+                            ->get()->getRowArray();
+        }
+        if (!$clientRow) {
+            $clientRow = $db->table("alert_client")
+                            ->select("account_manager")
+                            ->where("client_name", $clientName)
+                            ->where("account_manager !=", "")
+                            ->get()->getRowArray();
+        }
+        $data['client_account_manager'] = trim($clientRow['account_manager'] ?? '');
 
         $data['action'] = base_url("Masters/Audit_final_structure/save_reaudit/" . $auditTemplateId . "/" . $structuredAuditId);
         $data['audit_template_type'] = 'OE'; // Set audit type for OE reaudit
@@ -1345,6 +1464,57 @@ public function save_reaudit($audit_template_id = null, $structuredAuditId = nul
         }
 
         $data['region'] = $db->table("alert_region")->get()->getResultArray();
+
+        // Fetch Account Managers for Auditee Name searchable dropdown
+        $amUsers = $db->table("alert_users")
+                      ->select("user_name")
+                      ->like("user_designation", "Account Manager")
+                      ->where("status", 1)
+                      ->get()->getResultArray();
+
+        $amClients = $db->table("alert_client")
+                        ->select("DISTINCT(account_manager) as account_manager")
+                        ->where("status", 1)
+                        ->where("account_manager !=", "")
+                        ->where("account_manager IS NOT NULL")
+                        ->get()->getResultArray();
+
+        $accountManagers = [];
+        foreach ($amUsers as $u) {
+            $nm = trim($u['user_name'] ?? '');
+            if (!empty($nm)) {
+                $accountManagers[$nm] = $nm;
+            }
+        }
+        foreach ($amClients as $c) {
+            $nm = trim($c['account_manager'] ?? '');
+            if (!empty($nm)) {
+                $accountManagers[$nm] = $nm;
+            }
+        }
+        ksort($accountManagers, SORT_NATURAL | SORT_FLAG_CASE);
+        $data['account_managers'] = array_values($accountManagers);
+
+        // Fetch client's account manager (prefer matching region and non-empty account manager)
+        $clientName = trim($currentAudit['client_name'] ?? ($currentAudit['location'] ?? ''));
+        $auditRegion = trim($currentAudit['region'] ?? '');
+        $clientRow = null;
+        if (!empty($auditRegion)) {
+            $clientRow = $db->table("alert_client")
+                            ->select("account_manager")
+                            ->where("client_name", $clientName)
+                            ->where("region", $auditRegion)
+                            ->where("account_manager !=", "")
+                            ->get()->getRowArray();
+        }
+        if (!$clientRow) {
+            $clientRow = $db->table("alert_client")
+                            ->select("account_manager")
+                            ->where("client_name", $clientName)
+                            ->where("account_manager !=", "")
+                            ->get()->getRowArray();
+        }
+        $data['client_account_manager'] = trim($clientRow['account_manager'] ?? '');
 
         $data['action'] = base_url("Masters/Audit_final_structure/save_edit_audit/" . $auditTemplateId . "/" . $structuredAuditId);
         $data['audit_template_type'] = 'OE';

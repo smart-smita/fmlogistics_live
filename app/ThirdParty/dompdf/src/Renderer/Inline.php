@@ -55,6 +55,8 @@ class Inline extends AbstractRenderer
 
         foreach ($frame->get_children() as $child) {
             list($child_x, $child_y, $child_w, $child_h) = $child->get_padding_box();
+            $child_w = is_numeric($child_w) ? (float)$child_w : 0.0;
+            $child_h = is_numeric($child_h) ? (float)$child_h : 0.0;
 
             if (!is_null($w) && $child_x < $x + $w) {
                 //This branch seems to be supposed to being called on the first part
@@ -149,8 +151,8 @@ class Inline extends AbstractRenderer
         }
 
         // Add the border widths
-        $w += (float)$widths[1] + (float)$widths[3];
-        $h += (float)$widths[0] + (float)$widths[2];
+        $w = (float)$w + (float)$widths[1] + (float)$widths[3];
+        $h = (float)$h + (float)$widths[0] + (float)$widths[2];
 
         // make sure the border and background start inside the left margin
         $left_margin = (float)$style->length_in_pt($style->margin_left);
@@ -204,6 +206,13 @@ class Inline extends AbstractRenderer
         if ($link_node) {
             if ($href = $link_node->getAttribute("href")) {
                 $href = Helpers::build_url($this->_dompdf->getProtocol(), $this->_dompdf->getBaseHost(), $this->_dompdf->getBasePath(), $href);
+                if ($h <= 0) {
+                    $fontSize = (float)$style->length_in_pt($style->font_size);
+                    $h = $fontSize > 0 ? $fontSize * 1.3 : 12.0;
+                }
+                if ($w <= 0) {
+                    $w = 50.0;
+                }
                 $this->_canvas->add_link($href, $x, $y, $w, $h);
             }
         }

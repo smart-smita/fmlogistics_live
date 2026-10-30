@@ -960,6 +960,12 @@ class CPDF implements Canvas
      */
     public function add_link($url, $x, $y, $width, $height)
     {
+        if ($height <= 0) {
+            $height = 12.0;
+        }
+        if ($width <= 0) {
+            $width = 50.0;
+        }
         $y = $this->y($y) - $height;
 
         if (strpos($url, '#') === 0) {

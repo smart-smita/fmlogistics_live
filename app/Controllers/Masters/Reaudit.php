@@ -311,25 +311,30 @@ class Reaudit extends BaseController
 
     public function auditViewDetailsPdf($auditId)
     {
-        $options = new Options();
-        $options->set('defaultFont', 'Courier');
-        $options->set('isRemoteEnabled', true);
+        ini_set('memory_limit', '1024M');
+        set_time_limit(180);
 
-        // Instantiate Dompdf
+        $options = new Options();
+        $options->set('defaultFont', 'Helvetica');
+        $options->set('isRemoteEnabled', true);
+        $options->set('isHtml5ParserEnabled', true);
+        $options->set('isPhpEnabled', true);
+        $options->set('chroot', [ROOTPATH, FCPATH]);
+        $tempDir = (defined('WRITEPATH') && is_dir(WRITEPATH . 'cache') && is_writable(WRITEPATH . 'cache')) 
+            ? (WRITEPATH . 'cache') 
+            : (is_writable('/tmp') ? '/tmp' : sys_get_temp_dir());
+        $options->set('tempDir', $tempDir);
+
+        // Instantiate Dompdf with options
         $dompdf = new Dompdf($options);
 
         $db = db_connect();
 
-        // Fetch LMRA details
-        // 	$where['audit_details_id']=$auditId;
-
         $data['details'] = $db->table("alert_final_structured_audit")->join("alert_audit_template", "alert_final_structured_audit.audit_template_id=alert_audit_template.audit_template_id", "left")->where("alert_final_structured_audit.structured_audit_id", $auditId)->select("alert_final_structured_audit.*,alert_audit_template.audit_name,alert_audit_template.auditor_name,alert_audit_template.date,alert_audit_template.auditee_name,alert_audit_template.region,alert_audit_template.score")->get()->getResultArray();
         $data['audit_details'] = $db->table("alert_final_structured_audit_details")->where("structured_audit_id", $auditId)->get()->getResultArray();
         $data['attendance'] = $db->table("alert_hse_audit_attendance")->where("hse_audit_id", $auditId)->orderBy("row_no", "ASC")->get()->getResultArray();
+        $data['report_title'] = "OE Audit Report";
 
-        $dompdf = new Dompdf();
-
-        // return view("Audit/perform_audit_view_pdf", $data);
         $html = view("Audit/perform_audit_view_pdf", $data);
 
         // Load HTML into Dompdf
@@ -345,11 +350,10 @@ class Reaudit extends BaseController
         if (ob_get_length()) {
             ob_end_clean();
         }
-        // Output the generated PDF (force download)
-        header('Content-Type: application/pdf');
-        header('Content-Disposition: attachment; filename="Audit-' . $auditId . '.pdf"');
 
-        // Stream the PDF to the browser
+        $disposition = (isset($_GET['view']) || isset($_GET['inline'])) ? 'inline' : 'attachment';
+        header('Content-Type: application/pdf');
+        header('Content-Disposition: ' . $disposition . '; filename="Audit-' . $auditId . '.pdf"');
 
         echo $dompdf->output();
 
