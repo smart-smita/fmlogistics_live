@@ -74,6 +74,9 @@
                     <div class="col-md-6 form-group">
                         <label class="form-label">SMTP Password</label>
                         <input type="password" name="smtp_password" class="form-control" placeholder="Leave blank to keep existing password">
+                        <?php if (!empty($settings['has_password'])): ?>
+                            <small class="text-muted d-block mt-1">Current status: Password is saved in database</small>
+                        <?php endif; ?>
                     </div>
                 </div>
 

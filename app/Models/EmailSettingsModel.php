@@ -38,6 +38,6 @@ class EmailSettingsModel extends Model
 
     public function getSettings()
     {
-        return $this->first();
+        return $this->where('status', 1)->first() ?? $this->first();
     }
 }

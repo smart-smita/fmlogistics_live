@@ -19,14 +19,24 @@ use CodeIgniter\Config\BaseService;
  */
 class Services extends BaseService
 {
-    /*
-     * public static function example($getShared = true)
-     * {
-     *     if ($getShared) {
-     *         return static::getSharedInstance('example');
-     *     }
+    /**
+     * The Email service override providing robust SSL/TLS connectivity for Gmail and modern SMTP servers.
      *
-     *     return new \CodeIgniter\Example();
-     * }
+     * @param array|\Config\Email|null $config
+     * @param bool                     $getShared
+     *
+     * @return \App\Libraries\Email
      */
+    public static function email($config = null, bool $getShared = true)
+    {
+        if ($getShared) {
+            return static::getSharedInstance('email', $config);
+        }
+
+        if (empty($config) || ! (is_array($config) || $config instanceof \Config\Email)) {
+            $config = config('Email');
+        }
+
+        return new \App\Libraries\Email($config);
+    }
 }
