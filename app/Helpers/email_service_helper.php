@@ -33,7 +33,7 @@ if (!function_exists('sendSystemEmail')) {
             'protocol'   => 'smtp',
             'SMTPHost'   => $settings['smtp_host'] ?? '',
             'SMTPUser'   => $settings['smtp_username'] ?? '',
-            'SMTPPort'   => $settings['smtp_port'] ?? '',
+            'SMTPPort'   => !empty($settings['smtp_port']) ? (int)$settings['smtp_port'] : 25,
             'SMTPCrypto' => strtolower($settings['smtp_encryption'] ?? ''),
             'mailType'   => 'html',
             'charset'    => 'utf-8',
