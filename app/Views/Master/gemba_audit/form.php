@@ -401,30 +401,46 @@ action="<?= isset($audit['gemba_sr_no'])
                 </div>
 
                 <?php 
+                $canEditClosed = $canEditClosed ?? (
+                    ((int)(session()->get('admin_flag') ?? 0) === 1) || 
+                    (function_exists('isSuperAdmin') && isSuperAdmin()) || 
+                    in_array(strtolower(trim((string)(session()->get('role') ?? ''))), ['super admin', 'super_admin', 'admin'])
+                );
                 $isPointClosed = (!empty($audit['gemba_sr_no']) && ($audit['point_status'] ?? '') === 'Closed'); 
+                $isLocked = ($isPointClosed && !$canEditClosed);
                 ?>
                 <h5 class="mb-3 text-primary border-bottom pb-2 d-flex align-items-center justify-content-between">
                     <span>Closure Details</span>
                     <?php if ($isPointClosed): ?>
-                        <span class="badge bg-success"><i class="fas fa-lock me-1"></i> Closed (Locked)</span>
+                        <?php if ($canEditClosed): ?>
+                            <span class="badge bg-primary"><i class="fas fa-unlock me-1"></i> Closed (Admin Editable)</span>
+                        <?php else: ?>
+                            <span class="badge bg-success"><i class="fas fa-lock me-1"></i> Closed (Locked)</span>
+                        <?php endif; ?>
                     <?php endif; ?>
                 </h5>
                 <?php if ($isPointClosed): ?>
-                    <div class="alert alert-warning py-2 mb-3">
-                        <i class="fas fa-lock me-1"></i> <strong>Audit point is Closed:</strong> Status cannot be changed back to Open, and Closure details, Cluster Manager, and Account Manager are locked.
-                    </div>
+                    <?php if ($canEditClosed): ?>
+                        <div class="alert alert-info py-2 mb-3">
+                            <i class="fas fa-info-circle me-1"></i> <strong>Audit point is Closed:</strong> As Super Admin / Admin, you have access to modify Closure Details and change status. If Closed Date is empty, Point Status, Category, and Closure Status will not be Closed.
+                        </div>
+                    <?php else: ?>
+                        <div class="alert alert-warning py-2 mb-3">
+                            <i class="fas fa-lock me-1"></i> <strong>Audit point is Closed:</strong> Status cannot be changed back to Open, and Closure details, Cluster Manager, and Account Manager are locked.
+                        </div>
+                    <?php endif; ?>
                 <?php endif; ?>
                 <div class="row mb-3">
                     <div class="col-md-3">
                         <label class="form-label">Target Date</label>
-                        <input type="date" name="target_date" class="form-control"
+                        <input type="date" name="target_date" id="target_date" class="form-control"
                             value="<?= old('target_date', $audit['target_date'] ?? '') ?>">
                     </div>
                     <div class="col-md-3">
                         <label class="form-label">Closed Date</label>
                         <input type="date" name="closed_date" id="closed_date" class="form-control"
-                            value="<?= old('closed_date', $audit['closed_date'] ?? '') ?>" <?= $isPointClosed ? 'disabled' : '' ?>>
-                        <?php if ($isPointClosed): ?>
+                            value="<?= old('closed_date', $audit['closed_date'] ?? '') ?>" <?= $isLocked ? 'disabled' : '' ?>>
+                        <?php if ($isLocked): ?>
                             <input type="hidden" name="closed_date" value="<?= htmlspecialchars($audit['closed_date'] ?? '') ?>">
                         <?php endif; ?>
                     </div>
@@ -433,8 +449,8 @@ action="<?= isset($audit['gemba_sr_no'])
                             Point Status <span class="text-danger">*</span>
                         </label>
 
-                        <select name="point_status" id="point_status" class="form-select" required <?= $isPointClosed ? 'disabled' : '' ?>>
-                            <?php if (!$isPointClosed): ?>
+                        <select name="point_status" id="point_status" class="form-select" required <?= $isLocked ? 'disabled' : '' ?>>
+                            <?php if (!$isLocked): ?>
                                 <option value="">Select Status</option>
                                 <option value="Open"
                                     <?= old('point_status', $audit['point_status'] ?? '') == 'Open' ? 'selected' : '' ?>>
@@ -451,7 +467,7 @@ action="<?= isset($audit['gemba_sr_no'])
                                 Closed
                             </option>
 
-                            <?php if (!$isPointClosed): ?>
+                            <?php if (!$isLocked): ?>
                                 <option value="Excluded"
                                     <?= old('point_status', $audit['point_status'] ?? '') == 'Excluded' ? 'selected' : '' ?>>
                                     Excluded
@@ -463,17 +479,17 @@ action="<?= isset($audit['gemba_sr_no'])
                                 </option>
                             <?php endif; ?>
                         </select>
-                        <?php if ($isPointClosed): ?>
+                        <?php if ($isLocked): ?>
                             <input type="hidden" name="point_status" value="Closed">
                         <?php endif; ?>
                     </div>
                     <div class="col-md-3">
                         <label class="form-label">Point Category</label>
-                        <select name="point_category" class="form-select" <?= $isPointClosed ? 'disabled' : '' ?>>
+                        <select name="point_category" id="point_category" class="form-select" <?= $isLocked ? 'disabled' : '' ?>>
                             <option value="Open Category" <?= old('point_category', $audit['point_category'] ?? '') == 'Open Category' ? 'selected' : '' ?>>Open Category</option>
                             <option value="Closed Category" <?= old('point_category', $audit['point_category'] ?? '') == 'Closed Category' ? 'selected' : '' ?>>Closed Category</option>
                         </select>
-                        <?php if ($isPointClosed): ?>
+                        <?php if ($isLocked): ?>
                             <input type="hidden" name="point_category" value="<?= htmlspecialchars($audit['point_category'] ?? 'Closed Category') ?>">
                         <?php endif; ?>
                     </div>
@@ -482,12 +498,12 @@ action="<?= isset($audit['gemba_sr_no'])
                 <div class="row mb-4">
                     <div class="col-md-3">
                         <label class="form-label">Closure Status</label>
-                        <select name="closure_status" class="form-select" <?= $isPointClosed ? 'disabled' : '' ?>>
+                        <select name="closure_status" id="closure_status" class="form-select" <?= $isLocked ? 'disabled' : '' ?>>
                             <option value="Delayed" <?= old('closure_status', $audit['closure_status'] ?? '') == 'Delayed' ? 'selected' : '' ?>>Delayed</option>
                             <option value="On-Time" <?= old('closure_status', $audit['closure_status'] ?? '') == 'On-Time' ? 'selected' : '' ?>>On-Time</option>
-                            <option value="Closed" <?= old('closure_status', $audit['closure_status'] ?? '') == 'Closed' ? 'selected' : '' ?>>Closed</option>
+                            <option value="Closed" id="closure_status_closed_opt" <?= old('closure_status', $audit['closure_status'] ?? '') == 'Closed' ? 'selected' : '' ?>>Closed</option>
                         </select>
-                        <?php if ($isPointClosed): ?>
+                        <?php if ($isLocked): ?>
                             <input type="hidden" name="closure_status" value="<?= htmlspecialchars($audit['closure_status'] ?? 'Closed') ?>">
                         <?php endif; ?>
                     </div>
@@ -509,7 +525,7 @@ action="<?= isset($audit['gemba_sr_no'])
                     </div>
                     <div class="col-md-3">
                         <label class="form-label">Cluster Manager/SPOC <span class="text-danger">*</span></label>
-                        <select name="cluster_manager_spoc" id="cluster_manager_spoc" class="form-select" required <?= $isPointClosed ? 'disabled' : '' ?>>
+                        <select name="cluster_manager_spoc" id="cluster_manager_spoc" class="form-select" required <?= $isLocked ? 'disabled' : '' ?>>
                             <option value="">Select Manager</option>
                             <?php if (!empty($db_cluster_managers)): ?>
                                 <?php foreach ($db_cluster_managers as $m): ?>
@@ -521,13 +537,13 @@ action="<?= isset($audit['gemba_sr_no'])
                                 <option value="Manager A" <?= old('cluster_manager_spoc', $audit['cluster_manager_spoc'] ?? '') == 'Manager A' ? 'selected' : '' ?>>Manager A</option>
                             <?php endif; ?>
                         </select>
-                        <?php if ($isPointClosed): ?>
+                        <?php if ($isLocked): ?>
                             <input type="hidden" name="cluster_manager_spoc" value="<?= htmlspecialchars($audit['cluster_manager_spoc'] ?? '') ?>">
                         <?php endif; ?>
                     </div>
                     <div class="col-md-3">
                         <label class="form-label">Account Manager</label>
-                        <select name="account_manager" id="account_manager" class="form-select" <?= $isPointClosed ? 'disabled' : '' ?>>
+                        <select name="account_manager" id="account_manager" class="form-select" <?= $isLocked ? 'disabled' : '' ?>>
                             <option value="">Select Account Manager</option>
                             <?php if (!empty($db_account_managers)): ?>
                                 <?php foreach ($db_account_managers as $am): ?>
@@ -539,7 +555,7 @@ action="<?= isset($audit['gemba_sr_no'])
                                 <option value="Manager B" <?= old('account_manager', $audit['account_manager'] ?? '') == 'Manager B' ? 'selected' : '' ?>>Manager B</option>
                             <?php endif; ?>
                         </select>
-                        <?php if ($isPointClosed): ?>
+                        <?php if ($isLocked): ?>
                             <input type="hidden" name="account_manager" value="<?= htmlspecialchars($audit['account_manager'] ?? '') ?>">
                         <?php endif; ?>
                     </div>
@@ -732,35 +748,185 @@ action="<?= isset($audit['gemba_sr_no'])
             fetchTypes(categorySelect.value, oldType, oldDocType);
         }
 
-        // Closed Date required validation
+        // Closed Date & Status synchronization and validation
         const statusSelect = document.getElementById('point_status');
         const closedDateInput = document.getElementById('closed_date');
+        const pointCategorySelect = document.getElementById('point_category') || document.getElementsByName('point_category')[0];
+        const closureStatusSelect = document.getElementById('closure_status') || document.getElementsByName('closure_status')[0];
+        const targetDateInput = document.getElementById('target_date') || document.querySelector('input[name="target_date"]');
 
-        function toggleClosedDate() {
-            if (statusSelect.value === 'Closed') {
+        function calculateNonClosedClosureStatus() {
+            if (targetDateInput && targetDateInput.value) {
+                const target = new Date(targetDateInput.value);
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+                return (today > target) ? 'Delayed' : 'On-Time';
+            }
+            return 'Delayed';
+        }
+
+        function syncClosureFields() {
+            if (!statusSelect || !closedDateInput) return;
+
+            const isClosed = (statusSelect.value === 'Closed');
+            const hasClosedDate = Boolean(closedDateInput.value && closedDateInput.value.trim() !== '');
+
+            if (isClosed) {
                 closedDateInput.required = true;
+                if (pointCategorySelect && !pointCategorySelect.disabled) {
+                    pointCategorySelect.value = 'Closed Category';
+                }
+                if (closureStatusSelect && !closureStatusSelect.disabled) {
+                    const closedOpt = closureStatusSelect.querySelector('option[value="Closed"]');
+                    if (closedOpt) closedOpt.disabled = false;
+                    if (!closureStatusSelect.value || closureStatusSelect.value === 'Delayed' || closureStatusSelect.value === 'On-Time') {
+                        // Keep or default to Closed
+                    }
+                }
             } else {
                 closedDateInput.required = false;
+                closedDateInput.value = '';
+
+                if (pointCategorySelect && !pointCategorySelect.disabled) {
+                    pointCategorySelect.value = 'Open Category';
+                }
+
+                if (closureStatusSelect && !closureStatusSelect.disabled) {
+                    if (closureStatusSelect.value === 'Closed') {
+                        closureStatusSelect.value = calculateNonClosedClosureStatus();
+                    }
+                    const closedOpt = closureStatusSelect.querySelector('option[value="Closed"]');
+                    if (closedOpt) closedOpt.disabled = true;
+                }
+            }
+
+            // If Closed Date is empty, ensure point_status, category, closure_status are NOT closed
+            if (!hasClosedDate) {
+                if (pointCategorySelect && !pointCategorySelect.disabled && pointCategorySelect.value === 'Closed Category' && !isClosed) {
+                    pointCategorySelect.value = 'Open Category';
+                }
+                if (closureStatusSelect && !closureStatusSelect.disabled && closureStatusSelect.value === 'Closed' && !isClosed) {
+                    closureStatusSelect.value = calculateNonClosedClosureStatus();
+                }
             }
         }
 
-        statusSelect.addEventListener('change', toggleClosedDate);
-        toggleClosedDate(); // run on load
+        if (statusSelect) {
+            statusSelect.addEventListener('change', function () {
+                if (this.value === 'Closed') {
+                    closedDateInput.required = true;
+                    if (pointCategorySelect && !pointCategorySelect.disabled) {
+                        pointCategorySelect.value = 'Closed Category';
+                    }
+                    if (closureStatusSelect && !closureStatusSelect.disabled) {
+                        const closedOpt = closureStatusSelect.querySelector('option[value="Closed"]');
+                        if (closedOpt) closedOpt.disabled = false;
+                        closureStatusSelect.value = 'Closed';
+                    }
+                    if (!closedDateInput.value) {
+                        closedDateInput.focus();
+                    }
+                } else {
+                    // Non-closed status selected: clear closed_date, ensure category and closure_status are NOT closed
+                    closedDateInput.required = false;
+                    closedDateInput.value = '';
+                    if (pointCategorySelect && !pointCategorySelect.disabled) {
+                        pointCategorySelect.value = 'Open Category';
+                    }
+                    if (closureStatusSelect && !closureStatusSelect.disabled) {
+                        closureStatusSelect.value = calculateNonClosedClosureStatus();
+                        const closedOpt = closureStatusSelect.querySelector('option[value="Closed"]');
+                        if (closedOpt) closedOpt.disabled = true;
+                    }
+                }
+            });
+        }
 
-        // Auto-set Status when Closed Date is selected
-        closedDateInput.addEventListener('change', function() {
-            if (this.value) {
-                statusSelect.value = 'Closed';
-                
-                // Point Category dropdown
-                const pointCategory = document.getElementsByName('point_category')[0];
-                if (pointCategory) pointCategory.value = 'Closed Category';
-                
-                // Closure Status dropdown
-                const closureStatus = document.getElementsByName('closure_status')[0];
-                if (closureStatus) closureStatus.value = 'Closed';
+        if (closedDateInput) {
+            closedDateInput.addEventListener('change', function () {
+                if (this.value && this.value.trim() !== '') {
+                    // Closed Date entered -> set Point Status, Category, and Closure Status to Closed
+                    if (statusSelect && !statusSelect.disabled) {
+                        statusSelect.value = 'Closed';
+                    }
+                    if (pointCategorySelect && !pointCategorySelect.disabled) {
+                        pointCategorySelect.value = 'Closed Category';
+                    }
+                    if (closureStatusSelect && !closureStatusSelect.disabled) {
+                        const closedOpt = closureStatusSelect.querySelector('option[value="Closed"]');
+                        if (closedOpt) closedOpt.disabled = false;
+                        closureStatusSelect.value = 'Closed';
+                    }
+                } else {
+                    // Closed Date cleared/empty -> Point status, category, closure status must NOT be closed!
+                    if (statusSelect && !statusSelect.disabled && statusSelect.value === 'Closed') {
+                        statusSelect.value = 'Open';
+                        closedDateInput.required = false;
+                    }
+                    if (pointCategorySelect && !pointCategorySelect.disabled) {
+                        pointCategorySelect.value = 'Open Category';
+                    }
+                    if (closureStatusSelect && !closureStatusSelect.disabled) {
+                        closureStatusSelect.value = calculateNonClosedClosureStatus();
+                        const closedOpt = closureStatusSelect.querySelector('option[value="Closed"]');
+                        if (closedOpt) closedOpt.disabled = true;
+                    }
+                }
+            });
+        }
+
+        if (pointCategorySelect) {
+            pointCategorySelect.addEventListener('change', function () {
+                if (this.value === 'Closed Category' && (!closedDateInput.value || (statusSelect && statusSelect.value !== 'Closed'))) {
+                    alert('Point Category cannot be "Closed Category" when Closed Date is empty or Point Status is not Closed.');
+                    this.value = 'Open Category';
+                }
+            });
+        }
+
+        if (closureStatusSelect) {
+            closureStatusSelect.addEventListener('change', function () {
+                if (this.value === 'Closed' && (!closedDateInput.value || (statusSelect && statusSelect.value !== 'Closed'))) {
+                    alert('Closure Status cannot be "Closed" when Closed Date is empty or Point Status is not Closed.');
+                    this.value = calculateNonClosedClosureStatus();
+                }
+            });
+        }
+
+        // Initialize state on page load
+        if (statusSelect && statusSelect.value !== 'Closed') {
+            if (closureStatusSelect) {
+                const closedOpt = closureStatusSelect.querySelector('option[value="Closed"]');
+                if (closedOpt) closedOpt.disabled = true;
             }
-        });
+        }
+        syncClosureFields();
+
+        // Form submit validation safeguard
+        const formEl = document.querySelector('form');
+        if (formEl) {
+            formEl.addEventListener('submit', function (e) {
+                if (statusSelect && statusSelect.value === 'Closed') {
+                    if (!closedDateInput || !closedDateInput.value || closedDateInput.value.trim() === '') {
+                        e.preventDefault();
+                        alert('Closed Date is required when Point Status is Closed.');
+                        if (closedDateInput) closedDateInput.focus();
+                        return false;
+                    }
+                } else {
+                    // If Point Status is not Closed, ensure closed date is empty and other fields are not closed
+                    if (closedDateInput && !closedDateInput.disabled) {
+                        closedDateInput.value = '';
+                    }
+                    if (pointCategorySelect && !pointCategorySelect.disabled && pointCategorySelect.value === 'Closed Category') {
+                        pointCategorySelect.value = 'Open Category';
+                    }
+                    if (closureStatusSelect && !closureStatusSelect.disabled && closureStatusSelect.value === 'Closed') {
+                        closureStatusSelect.value = calculateNonClosedClosureStatus();
+                    }
+                }
+            });
+        }
     });
 </script>
 <?= $this->endSection() ?>

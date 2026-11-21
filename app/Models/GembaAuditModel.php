@@ -233,6 +233,18 @@ class GembaAuditModel extends Model
             $row['year_month_closed'] = null;
             $row['weeknum_yearmonth_closed'] = null;
             $row['closed_date'] = null; // Clear closed date if not closed
+
+            // If closed_date is empty or point_status is not closed, ensure point_category and closure_status are not closed
+            if (isset($row['point_category']) && $row['point_category'] === 'Closed Category') {
+                $row['point_category'] = 'Open Category';
+            }
+            if (isset($row['closure_status']) && $row['closure_status'] === 'Closed') {
+                if (!empty($row['target_date']) && strtotime($row['target_date']) < strtotime(date('Y-m-d'))) {
+                    $row['closure_status'] = 'Delayed';
+                } else {
+                    $row['closure_status'] = 'On-Time';
+                }
+            }
             
             // Ageing days for non-closed points
             if (isset($row['audit_report_date']) && !empty($row['audit_report_date'])) {

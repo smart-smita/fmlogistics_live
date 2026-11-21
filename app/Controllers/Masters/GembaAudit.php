@@ -601,29 +601,58 @@ class GembaAudit extends BaseController
                 'point_status' => 'required'
             ];
 
+            $customMessages = [
+                'closed_date' => [
+                    'required' => 'Closed Date is required when Point Status is Closed.',
+                    'valid_date' => 'Closed Date must be a valid date.'
+                ],
+                'point_status' => [
+                    'required' => 'Point Status is required.'
+                ]
+            ];
+
             if ($postData['point_status'] === 'Closed' || !empty($postData['closed_date'])) {
                 $rules['closed_date'] = 'required|valid_date';
 
                 if (!empty($postData['closed_date'])) {
                     $postData['point_status'] = 'Closed';
                     $postData['point_category'] = 'Closed Category';
-                    $postData['closure_status'] = 'Closed';
+                    if (empty($postData['closure_status']) || $postData['closure_status'] === 'NA') {
+                        $postData['closure_status'] = 'Closed';
+                    }
+                }
+            } else {
+                // If closed_date is empty, ensure point_status, category, closure_status are not closed
+                $postData['closed_date'] = null;
+                $postData['point_category'] = 'Open Category';
+                if (empty($postData['closure_status']) || $postData['closure_status'] === 'Closed') {
+                    if (!empty($postData['target_date']) && strtotime($postData['target_date']) < strtotime(date('Y-m-d'))) {
+                        $postData['closure_status'] = 'Delayed';
+                    } else {
+                        $postData['closure_status'] = 'On-Time';
+                    }
                 }
             }
 
-            if ($this->validate($rules)) {
+            if ($this->validate($rules, $customMessages)) {
                 $postData['account_manager'] = $postData['account_manager'] ?? null;
                 $postData['source_module'] = 'manual';
                 $postData['created_by'] = session()->get('user_name') ?? 'System';
                 $postData['action_category'] = (!empty($postData['action_category'])) ? $postData['action_category'] : 'Not Categorized';
                 $postData['default_date'] = date('Y-m-d H:i:s');
 
-                if ($postData['point_status'] === 'Closed' || !empty($postData['closed_date'])) {
+                if ($postData['point_status'] === 'Closed' && !empty($postData['closed_date'])) {
                     $postData['nc_status'] = 3;
                     $postData['nc_closed_by'] = session()->get('user_name') ?? 'System';
                     $postData['nc_closed_date'] = date('Y-m-d H:i:s');
+                } elseif ($postData['point_status'] === 'WIP') {
+                    $postData['nc_status'] = 1;
+                    $postData['closed_date'] = null;
+                    $postData['point_category'] = 'Open Category';
                 } else {
                     $postData['nc_status'] = 0;
+                    $postData['closed_date'] = null;
+                    $postData['point_category'] = 'Open Category';
                 }
 
                 // Handle optional attachment upload with error handling
@@ -645,7 +674,11 @@ class GembaAudit extends BaseController
 
         $dropdownData = $this->getFormDropdownData();
         $generatedUniqueNo = $this->model->generateUniqueNo();
-        $data = array_merge(['audit' => ['unique_no' => $generatedUniqueNo]], $dropdownData);
+        $adminFlag = (int)(session()->get('admin_flag') ?? 0);
+        $userRole = strtolower(trim((string)(session()->get('role') ?? '')));
+        $isSuperAdminRole = (function_exists('isSuperAdmin') && isSuperAdmin()) || in_array($userRole, ['super admin', 'super_admin', 'admin']);
+        $canEditClosed = ($adminFlag === 1 || $isSuperAdminRole);
+        $data = array_merge(['audit' => ['unique_no' => $generatedUniqueNo], 'canEditClosed' => $canEditClosed], $dropdownData);
         return view('Master/gemba_audit/form', $data);
     }
 
@@ -663,6 +696,11 @@ class GembaAudit extends BaseController
         if ($isHseMapped) {
             return redirect()->to(site_url('gemba-audit'))->with('error', 'This audit record is managed in the HSE module and cannot be modified directly in Gemba Audit.');
         }
+
+        $adminFlag = (int)(session()->get('admin_flag') ?? 0);
+        $userRole = strtolower(trim((string)(session()->get('role') ?? '')));
+        $isSuperAdminRole = (function_exists('isSuperAdmin') && isSuperAdmin()) || in_array($userRole, ['super admin', 'super_admin', 'admin']);
+        $canEditClosed = ($adminFlag === 1 || $isSuperAdminRole);
 
         if ($this->request->getMethod() === 'post') {
             $postData = $this->request->getVar();
@@ -686,9 +724,19 @@ class GembaAudit extends BaseController
                 'point_status' => 'required'
             ];
 
+            $customMessages = [
+                'closed_date' => [
+                    'required' => 'Closed Date is required when Point Status is Closed.',
+                    'valid_date' => 'Closed Date must be a valid date.'
+                ],
+                'point_status' => [
+                    'required' => 'Point Status is required.'
+                ]
+            ];
+
             $wasClosed = (($data['audit']['point_status'] ?? '') === 'Closed');
-            if ($wasClosed) {
-                // Dependency check: If already closed, it cannot be changed back to Open; managers are preserved and locked
+            if ($wasClosed && !$canEditClosed) {
+                // Dependency check: If already closed, it cannot be changed back to Open; managers are preserved and locked for non-admins
                 $postData['point_status'] = 'Closed';
                 $postData['closed_date'] = !empty($data['audit']['closed_date']) ? $data['audit']['closed_date'] : ($postData['closed_date'] ?? date('Y-m-d'));
                 $postData['point_category'] = !empty($data['audit']['point_category']) ? $data['audit']['point_category'] : 'Closed Category';
@@ -696,14 +744,38 @@ class GembaAudit extends BaseController
                 $postData['cluster_manager_spoc'] = !empty($data['audit']['cluster_manager_spoc']) ? $data['audit']['cluster_manager_spoc'] : ($postData['cluster_manager_spoc'] ?? '');
                 $postData['account_manager'] = !empty($data['audit']['account_manager']) ? $data['audit']['account_manager'] : ($postData['account_manager'] ?? '');
             } else {
-                if (($postData['point_status'] ?? '') === 'Closed' || !empty($postData['closed_date'])) {
+                // Admin flag 1 / Superadmin OR point was not previously closed
+                if (($postData['point_status'] ?? '') === 'Closed') {
                     $rules['closed_date'] = 'required|valid_date';
-
-                    if (!empty($postData['closed_date'])) {
-                        $postData['point_status'] = 'Closed';
-                        $postData['point_category'] = !empty($postData['point_category']) ? $postData['point_category'] : 'Closed Category';
-                        $postData['closure_status'] = !empty($postData['closure_status']) ? $postData['closure_status'] : 'Closed';
+                    $postData['point_category'] = 'Closed Category';
+                    if (empty($postData['closure_status']) || $postData['closure_status'] === 'NA') {
+                        $postData['closure_status'] = 'Closed';
                     }
+                } else {
+                    // Closed Date is empty / status is non-closed: point status, category, closure status are NOT closed
+                    $postData['closed_date'] = null;
+                    $postData['point_category'] = 'Open Category';
+                    if (empty($postData['closure_status']) || $postData['closure_status'] === 'Closed') {
+                        if (!empty($postData['target_date']) && strtotime($postData['target_date']) < strtotime(date('Y-m-d'))) {
+                            $postData['closure_status'] = 'Delayed';
+                        } else {
+                            $postData['closure_status'] = 'On-Time';
+                        }
+                    }
+                }
+
+                // If closed_date was entered and not empty, auto-set point_status to Closed if not already
+                if (!empty($postData['closed_date'])) {
+                    $postData['point_status'] = 'Closed';
+                    $postData['point_category'] = 'Closed Category';
+                    if (empty($postData['closure_status']) || $postData['closure_status'] === 'NA') {
+                        $postData['closure_status'] = 'Closed';
+                    }
+                }
+
+                // If point_status is Closed, ensure closed_date is strictly required
+                if (($postData['point_status'] ?? '') === 'Closed' && empty($postData['closed_date'])) {
+                    $rules['closed_date'] = 'required|valid_date';
                 }
             }
 
@@ -715,7 +787,7 @@ class GembaAudit extends BaseController
                 $postData['account_manager'] = $data['audit']['account_manager'];
             }
 
-            if ($this->validate($rules)) {
+            if ($this->validate($rules, $customMessages)) {
                 // Protect immutable system and workflow fields from payload tampering
                 unset(
                     $postData['unique_no'],
@@ -729,13 +801,59 @@ class GembaAudit extends BaseController
                 $postData['updated_by'] = session()->get('user_name') ?? 'System';
                 $postData['update_date'] = date('Y-m-d H:i:s');
 
-                if ($postData['point_status'] === 'Closed' || !empty($postData['closed_date'])) {
+                $oldNcStatus = isset($data['audit']['nc_status']) ? (int)$data['audit']['nc_status'] : 0;
+                $newNcStatus = $oldNcStatus;
+
+                if ($postData['point_status'] === 'Closed' && !empty($postData['closed_date'])) {
+                    $newNcStatus = 3;
                     $postData['nc_status'] = 3;
                     if (empty($data['audit']['nc_closed_by'])) {
                         $postData['nc_closed_by'] = session()->get('user_name') ?? 'System';
                         $postData['nc_closed_date'] = date('Y-m-d H:i:s');
                     }
+                } else {
+                    // Status is changed back to non-closed
+                    if ($postData['point_status'] === 'WIP') {
+                        $newNcStatus = 1;
+                        $postData['nc_status'] = 1;
+                    } else {
+                        // Open, Excluded, Hold-review with Client
+                        $newNcStatus = 0;
+                        $postData['nc_status'] = 0;
+                    }
+
+                    $postData['closed_date'] = null;
+                    $postData['point_category'] = 'Open Category';
+                    if ($postData['closure_status'] === 'Closed') {
+                        $postData['closure_status'] = (!empty($postData['target_date']) && strtotime($postData['target_date']) < strtotime(date('Y-m-d'))) ? 'Delayed' : 'On-Time';
+                    }
+                    $postData['nc_closed_by'] = null;
+                    $postData['nc_closed_date'] = null;
+                    $postData['weeknum_closed'] = null;
+                    $postData['month_closed'] = null;
+                    $postData['year_month_closed'] = null;
+                    $postData['weeknum_yearmonth_closed'] = null;
                 }
+
+                // Properly record transition & audit trail if NC status changed
+                if ($newNcStatus !== $oldNcStatus) {
+                    try {
+                        helper('nc_transition');
+                        recordNcStatusTransition('GEMBA', (int)$id, (int)$newNcStatus);
+                    } catch (\Throwable $e) {}
+
+                    try {
+                        $db->table('alert_gemba_nc_audit_trail')->insert([
+                            'gemba_audit_id' => (int)$id,
+                            'action_by' => session()->get('user_name') ?? 'System',
+                            'action_date' => date('Y-m-d H:i:s'),
+                            'status_from' => $oldNcStatus,
+                            'status_to' => $newNcStatus,
+                            'remarks' => 'Status changed via Gemba Audit form to ' . $postData['point_status'] . ' (NC Status: ' . $newNcStatus . ')'
+                        ]);
+                    } catch (\Throwable $e) {}
+                }
+
                 // Handle optional attachment upload on edit with exception handling
                 try {
                     $attachmentFile = $this->request->getFile('attachment');
@@ -757,6 +875,7 @@ class GembaAudit extends BaseController
         }
 
         $dropdownData = $this->getFormDropdownData();
+        $data['canEditClosed'] = $canEditClosed;
         $data = array_merge($data, $dropdownData);
 
         return view('Master/gemba_audit/form', $data);
