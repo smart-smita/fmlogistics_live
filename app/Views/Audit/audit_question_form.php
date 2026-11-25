@@ -909,8 +909,6 @@ if ($isAuditorLogin && !empty($sessionAuditorName)) {
                                             $activeSiteCategoryRaw = $details['main_category'] ?? $details['perform_audit_by'] ?? '';
                                             $activeSiteCategory = strtolower(str_replace(' ', '_', $activeSiteCategoryRaw));
                                             $rowFinding = strtoupper(trim($prefill['finding'] ?? ''));
-                                            if ($isClosedNcNo)
-                                                $rowFinding = 'YES';
                                             if (empty($rowFinding)) {
                                                 $rowFinding = strtoupper(trim($audit_head['default_value'] ?? ''));
                                             }
@@ -2208,11 +2206,6 @@ if ($isAuditorLogin && !empty($sessionAuditorName)) {
                     finalValue = defaultValue;
                 } else if (defaultValue === "NA") {
                     finalValue = "NA";
-                }
-
-                // For closed NC with NO finding, auto-steer to YES for active site column
-                if (forceYesNCclosed && hseType === activeType) {
-                    finalValue = 'YES';
                 }
 
                 if (hseType === activeType) {
