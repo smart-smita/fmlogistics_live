@@ -334,6 +334,13 @@ class Hse_audit extends BaseController
             <i class="fa fa-file-excel me-1"></i> Audit CAPA Excel
         </button>';
 
+            $edit_btn = '';
+            if (canPerformAudit('HSE')) {
+                $edit_btn = '<button title="Edit Audit" onclick=\'window.location.href="' . base_url("Masters/Hse_audit/edit_hse_audit/" . $row['hse_audit_id']) . '"\' class="btn btn-sm btn-secondary text-nowrap">
+                <i class="fas fa-edit me-1"></i> Edit
+            </button>';
+            }
+
             $reaudit = '';
             if (canPerformAudit('HSE')) {
                 $reaudit = '<button title="Reaudit" onclick=\'window.location.href="' . base_url("Masters/Hse_audit/hse_reaudit/" . $row['hse_audit_id']) . '"\' class="btn btn-sm btn-warning text-nowrap">
@@ -346,7 +353,7 @@ class Hse_audit extends BaseController
             </button>';
 
             $row1 = '<div class="d-flex align-items-center gap-1 text-nowrap">' . $capa_pdf . $capa_excel . $pdf . '</div>';
-            $row2 = '<div class="d-flex align-items-center gap-1 text-nowrap">' . $excel . $view_attendance . $reaudit . '</div>';
+            $row2 = '<div class="d-flex align-items-center gap-1 text-nowrap">' . $excel . $view_attendance . $edit_btn . $reaudit . '</div>';
 
             $tdata['table_data'][$key]['action'] = '<div class="d-flex flex-column gap-1 text-nowrap" style="white-space: nowrap; min-width: max-content;">' . $row1 . $row2 . '</div>';
 
@@ -873,10 +880,12 @@ class Hse_audit extends BaseController
             // Also check alert_hse_template_questions for template questions not overridden
             $missingIds = array_diff(array_unique($questionIds), array_keys($questionById));
             if (!empty($missingIds)) {
-                $tRows = $db->table("alert_hse_template_questions")
-                    ->whereIn("template_question_id", $missingIds)
-                    ->get()
-                    ->getResultArray();
+                $tBuilder = $db->table("alert_hse_template_questions")
+                    ->whereIn("template_question_id", $missingIds);
+                if ((int)$id > 0) {
+                    $tBuilder->where("audit_template_id", (int)$id);
+                }
+                $tRows = $tBuilder->get()->getResultArray();
                 foreach ($tRows as $t) {
                     $questionById[$t['template_question_id']] = [
                         'question_id' => $t['template_question_id'],
@@ -1484,9 +1493,52 @@ class Hse_audit extends BaseController
     // changes on 4/10/25 by darsh: Add HSE reaudit functionality similar to OE/Normal audit logic
     public function hse_reaudit($hseAuditId)
     {
+        if (!canPerformAudit('HSE')) {
+            return redirect()->back()->with('error', 'Access Denied: You do not have permission to perform re-audits.');
+        }
+
         $db = db_connect();
 
-        // Get current HSE audit details
+        // Get requested HSE audit record
+        $requestedAudit = $db->table("alert_hse_audit_master")
+            ->where("hse_audit_id", $hseAuditId)
+            ->get()
+            ->getRowArray();
+
+        if (!$requestedAudit) {
+            return redirect()->back()->with('error', 'HSE Audit record not found.');
+        }
+
+        // Always fetch the LAST performed / updated audit for this audit_no
+        $currentHSEAudit = $requestedAudit;
+        if (!empty($requestedAudit['audit_no'])) {
+            $latestForAuditNo = $db->table("alert_hse_audit_master")
+                ->where("audit_no", $requestedAudit['audit_no'])
+                ->where("status !=", 2)
+                ->orderBy("hse_audit_id", "DESC")
+                ->get()
+                ->getRowArray();
+            if ($latestForAuditNo) {
+                $currentHSEAudit = $latestForAuditNo;
+            }
+        }
+
+        $sourceHseAuditId = (int)$currentHSEAudit['hse_audit_id'];
+        $data = $this->prepareExistingHseAuditFormData($db, $currentHSEAudit);
+        $data['is_edit'] = false;
+        $data['title'] = "HSE Reaudit";
+        $data['action'] = base_url("Masters/Hse_audit/save_hse_reaudit/" . $sourceHseAuditId);
+
+        return view("Audit/audit_question_form", $data);
+    }
+
+    public function edit_hse_audit($hseAuditId)
+    {
+        if (!canPerformAudit('HSE')) {
+            return redirect()->back()->with('error', 'Access Denied: You do not have permission to edit audits.');
+        }
+
+        $db = db_connect();
         $currentHSEAudit = $db->table("alert_hse_audit_master")
             ->where("hse_audit_id", $hseAuditId)
             ->get()
@@ -1496,85 +1548,140 @@ class Hse_audit extends BaseController
             return redirect()->back()->with('error', 'HSE Audit record not found.');
         }
 
-        // changes on 4/10/25 by darsh: Since reaudit column doesn't exist in HSE table, 
-        // we'll reuse original audit number
-        $currentAuditNo = $currentHSEAudit['audit_no'];
+        $data = $this->prepareExistingHseAuditFormData($db, $currentHSEAudit);
+        $data['is_edit'] = true;
+        $data['title'] = "Edit HSE Audit";
+        $data['action'] = base_url("Masters/Hse_audit/update_hse_audit/" . (int)$hseAuditId);
 
+        return view("Audit/audit_question_form", $data);
+    }
 
-        // Prepare data for reaudit view
+    private function prepareExistingHseAuditFormData($db, array $currentHSEAudit): array
+    {
+        $sourceHseAuditId = (int)$currentHSEAudit['hse_audit_id'];
+
         $data['details'] = $currentHSEAudit;
-        // changes on 15/10/25 by darsh: keep audit no as normal number without R suffix
-        $data['details']['audit_no'] = $currentHSEAudit['audit_no'];
-        // changes on 15/10/25 by darsh: ensure Next Date and Client/Location names are prefilled like perform audit
+        $data['details']['audit_no'] = $currentHSEAudit['audit_no'] ?? '';
         if (!isset($data['details']['template_date']) || $data['details']['template_date'] === '') {
             $data['details']['template_date'] = $currentHSEAudit['template_date'] ?? ($currentHSEAudit['next_date'] ?? '');
         }
-        // Normalize client and location text fields used by the view for preselect
         $data['details']['client_name'] = $currentHSEAudit['client_name'] ?? ($data['details']['client_name'] ?? '');
         $data['details']['location'] = $currentHSEAudit['location'] ?? ($data['details']['location'] ?? '');
-        
-        // Fetch Attendance for Reaudit
+
         $data['attendance'] = $db->table('alert_hse_audit_attendance')
-            ->where('hse_audit_id', $hseAuditId)
+            ->where('hse_audit_id', $sourceHseAuditId)
             ->orderBy('row_no', 'ASC')
             ->get()
             ->getResultArray();
 
-        // Get HSE audit details for prefilling with audit_category_id (site + sub-category wise)
-        // Fetch old answers (details) WITH group_id from master questions
-        $oldDetails = $db->table("alert_hse_audit_details as d")
-            ->select("d.*, q.audit_category_id, q.group_id") // Fetch category info
+        // Fetch saved audit details from alert_hse_audit_details for this audit
+        $oldDetailsBuilder = $db->table("alert_hse_audit_details as d")
+            ->select("d.*, q.audit_category_id as q_audit_category_id, q.group_id")
             ->join(
                 "alert_audit_questions as q",
-                "q.question_id = d.question_id",
+                "q.question_id = d.question_id AND (q.audit_template_id = d.audit_template_id OR d.audit_template_id IS NULL)",
                 "left"
             )
-            ->where("d.hse_audit_id", $hseAuditId)
-            ->where("d.site_category", $currentHSEAudit['main_category'] ?? '')
-            ->where("d.sub_category", $currentHSEAudit['sub_category'] ?? '')
-            ->get()
-            ->getResultArray();
+            ->where("d.hse_audit_id", $sourceHseAuditId);
+        if (!empty($currentHSEAudit['main_category'])) {
+            $oldDetailsBuilder->where("d.site_category", $currentHSEAudit['main_category']);
+        }
+        if (!empty($currentHSEAudit['sub_category'])) {
+            $oldDetailsBuilder->where("d.sub_category", $currentHSEAudit['sub_category']);
+        }
+        $oldDetails = $oldDetailsBuilder->orderBy("d.id", "ASC")->get()->getResultArray();
 
-        // Create a lookup for old answers by group_id
+        if (empty($oldDetails)) {
+            $oldDetails = $db->table("alert_hse_audit_details as d")
+                ->select("d.*, q.audit_category_id as q_audit_category_id, q.group_id")
+                ->join(
+                    "alert_audit_questions as q",
+                    "q.question_id = d.question_id AND (q.audit_template_id = d.audit_template_id OR d.audit_template_id IS NULL)",
+                    "left"
+                )
+                ->where("d.hse_audit_id", $sourceHseAuditId)
+                ->orderBy("d.id", "ASC")
+                ->get()
+                ->getResultArray();
+        }
+
+        // Resolve the actual template used by this audit
+        $originalTemplateId = (int)($currentHSEAudit['audit_template_id'] ?? 0);
+        if ($originalTemplateId <= 0) {
+            $detailTplRow = $db->table('alert_hse_audit_details')
+                ->select('audit_template_id')
+                ->where('hse_audit_id', $sourceHseAuditId)
+                ->where('audit_template_id >', 0)
+                ->get()
+                ->getRowArray();
+            if ($detailTplRow && !empty($detailTplRow['audit_template_id'])) {
+                $originalTemplateId = (int)$detailTplRow['audit_template_id'];
+            }
+        }
+        if ($originalTemplateId <= 0 && !empty($currentHSEAudit['audit_name'])) {
+            $namedTemplate = $db->table('alert_audit_template')
+                ->where('audit_template_type', 'HSE')
+                ->where('audit_name', $currentHSEAudit['audit_name'])
+                ->orderBy('audit_template_id', 'DESC')
+                ->get()
+                ->getRowArray();
+            if ($namedTemplate && !empty($namedTemplate['audit_template_id'])) {
+                $originalTemplateId = (int)$namedTemplate['audit_template_id'];
+            }
+        }
+
+        $targetTemplate = null;
+        if ($originalTemplateId > 0) {
+            $targetTemplate = $db->table('alert_audit_template')
+                ->where('audit_template_id', $originalTemplateId)
+                ->get()
+                ->getRowArray();
+        }
+        if (!$targetTemplate) {
+            $targetTemplate = $db->table('alert_audit_template')
+                ->where('audit_template_type', 'HSE')
+                ->where('status', 1)
+                ->orderBy('audit_template_id', 'DESC')
+                ->get()
+                ->getRowArray();
+        }
+
+        $targetTemplateId = $targetTemplate ? (int)$targetTemplate['audit_template_id'] : $originalTemplateId;
+        $data['template'] = $targetTemplate;
+        if ($targetTemplate && empty($data['details']['audit_name'])) {
+            $data['details']['audit_name'] = $targetTemplate['audit_name'] ?? '';
+        }
+        $data['audit_template_id'] = $targetTemplateId;
+
+        // Build lookups for saved details
+        $oldAnswersByQuestionId = [];
         $oldAnswersByGroup = [];
-        foreach($oldDetails as $d) {
+        $oldAnswersByCatId = [];
+        $usedOldDetailIds = [];
+        foreach ($oldDetails as $d) {
+            if (!empty($d['question_id'])) {
+                $oldAnswersByQuestionId[(int)$d['question_id']] = $d;
+            }
             $grp = !empty($d['group_id']) ? $d['group_id'] : $d['question_id'];
-            $oldAnswersByGroup[$grp] = $d;
+            if (!empty($grp)) {
+                $oldAnswersByGroup[$grp] = $d;
+            }
+            $catKey = strtoupper(trim((string)($d['audit_category_id'] ?? $d['q_audit_category_id'] ?? '')));
+            if ($catKey !== '') {
+                $oldAnswersByCatId[$catKey] = $d;
+            }
         }
 
-        // Get LATEST HSE Template
-        $latestTemplate = $db->table('alert_audit_template')
-            ->where('audit_template_type', 'HSE')
-            ->where('status', 1)
-            ->orderBy('audit_template_id', 'DESC')
-            ->get()
-            ->getRowArray();
-
-        $originalTemplateId = $currentHSEAudit['audit_template_id'] ?? 0;
-        $latestTemplateId = $latestTemplate ? $latestTemplate['audit_template_id'] : $originalTemplateId;
-        $data['template'] = $latestTemplate;
-
-        if ($latestTemplate && !isset($data['details']['audit_name'])) {
-            $data['details']['audit_name'] = $latestTemplate['audit_name'] ?? '';
-        }
-        
-        $data['audit_template_id'] = $latestTemplateId;
-
-        // Pass a flag to view if template version changed
-        if ($originalTemplateId != $latestTemplateId) {
-            $data['template_version_changed'] = true;
-        }
-
-        // Reaudit question loading using unified template questions + site/category overrides
+        // Load questions for THIS audit's template + site/category overrides
         $baseQuestions = $db->table('alert_hse_template_questions')
-            ->where('audit_template_id', $latestTemplateId)
+            ->where('audit_template_id', $targetTemplateId)
             ->where('status', 1)
             ->orderBy('question_order', 'ASC')
             ->get()
             ->getResultArray();
 
         $ovBuilder = $db->table('alert_audit_questions')
-            ->where('audit_template_id', $latestTemplateId)
+            ->where('audit_template_id', $targetTemplateId)
             ->where('status !=', 2);
         if (!empty($currentHSEAudit['main_category'])) {
             $ovBuilder->where('audit_site_category_name', $currentHSEAudit['main_category']);
@@ -1618,11 +1725,11 @@ class Hse_audit extends BaseController
                     'group_id' => $bq['template_question_id']
                 ];
             }
-        } else {
+        } elseif (!empty($rawOverrides)) {
             $latestQuestions = $rawOverrides;
         }
 
-        usort($latestQuestions, function($a, $b) {
+        usort($latestQuestions, function ($a, $b) {
             return strnatcmp($a['audit_category_id'] ?? '', $b['audit_category_id'] ?? '');
         });
 
@@ -1630,21 +1737,26 @@ class Hse_audit extends BaseController
         $data['audit_data'] = [];
 
         foreach ($latestQuestions as $newQ) {
+            $qIdInt = (int)($newQ['question_id'] ?? 0);
             $grp = !empty($newQ['group_id']) ? $newQ['group_id'] : $newQ['question_id'];
-            $oldD = $oldAnswersByGroup[$grp] ?? null;
+            $catKey = strtoupper(trim((string)($newQ['audit_category_id'] ?? '')));
+            $oldD = ($qIdInt > 0 && isset($oldAnswersByQuestionId[$qIdInt]))
+                ? $oldAnswersByQuestionId[$qIdInt]
+                : ($oldAnswersByGroup[$grp] ?? ($catKey !== '' ? ($oldAnswersByCatId[$catKey] ?? null) : null));
 
-            // Map old findings over the new question
+            if ($oldD && !empty($oldD['id'])) {
+                $usedOldDetailIds[(int)$oldD['id']] = true;
+            }
+
             $mappedDetail = $oldD ? $oldD : [];
-            // Override with NEW question's text and IDs
             $mappedDetail['question_id'] = $newQ['question_id'];
             $mappedDetail['question_name'] = $newQ['audit_category'] ?? '';
             $mappedDetail['audit_question'] = $newQ['audit_question'] ?? '';
             $mappedDetail['audit_category_id'] = $newQ['audit_category_id'] ?? '';
             $mappedDetail['note'] = $newQ['note'] ?? '';
             $mappedDetail['capa_json'] = $oldD ? ($oldD['capa_json'] ?? $newQ['capa_json'] ?? '') : ($newQ['capa_json'] ?? '');
-            
-            $data['audit_details'][] = $mappedDetail;
 
+            $data['audit_details'][] = $mappedDetail;
             $data['audit_data'][] = [
                 'question_id' => $newQ['question_id'],
                 'question_name' => $newQ['audit_category'] ?? '',
@@ -1656,8 +1768,25 @@ class Hse_audit extends BaseController
             ];
         }
 
-        // changes on 15/10/25 by darsh: Add missing client, region and location data for dropdowns
-        // changes on 21/02/26: Use location as client_id for dropdown compatibility (no id column in table)
+        // Preserve any extra saved detail rows (e.g., Miscellaneous or template fallback rows)
+        foreach ($oldDetails as $d) {
+            if (!empty($d['id']) && isset($usedOldDetailIds[(int)$d['id']])) {
+                continue;
+            }
+            $mappedDetail = $d;
+            $mappedDetail['question_name'] = $d['audit_category'] ?? '';
+            $data['audit_details'][] = $mappedDetail;
+            $data['audit_data'][] = [
+                'question_id' => $d['question_id'] ?? '',
+                'question_name' => $d['audit_category'] ?? '',
+                'audit_question' => $d['audit_question'] ?? '',
+                'audit_category_id' => $d['audit_category_id'] ?? '',
+                'capa_json' => $d['capa_json'] ?? '',
+                'nc_type' => $d['nc_type'] ?? 'NC',
+                'note' => $d['note'] ?? ''
+            ];
+        }
+
         $data['client'] = $db->table("alert_hse_client_master")
             ->select("location as client_id, client_name, location, region, cluster, status")
             ->where("status != ", 2)
@@ -1669,14 +1798,7 @@ class Hse_audit extends BaseController
             ->orderBy("region", "ASC")
             ->get()
             ->getResultArray();
-        // changes on 15/10/25 by darsh: also pass locations so Site Location works same as perform audit
         $data['location'] = $db->table("alert_hse_client_master")->where("status != ", 2)->get()->getResultArray();
-
-        // changes on 4/10/25 by darsh: Add audit category master data for questions display
-        // changes on 20/02/26: New flow with Main Category and Sub Category
-        /* -------------------------------------------------------
-        SITE CATEGORY LIST (Dynamic)
-        -------------------------------------------------------*/
 
         $site_categories = $db->table("alert_hse_site_category")
             ->select("site_category_id, site_category_name")
@@ -1686,37 +1808,19 @@ class Hse_audit extends BaseController
             ->getResultArray();
 
         $name_list = [];
-
         foreach ($site_categories as $row) {
-
             $displayName = trim($row['site_category_name']);
-
-            // Create slug for JS / HTML column names
-            $hseType = strtolower($displayName);
-            $hseType = preg_replace('/[^a-z0-9]+/i', '_', $hseType);
-            $hseType = trim($hseType, '_');
-
+            $hseType = trim(preg_replace('/[^a-z0-9]+/i', '_', strtolower($displayName)), '_');
             $name_list[] = [
                 'hse_type' => $hseType,
                 'display' => $displayName
             ];
         }
-
         $data['name_list'] = $name_list;
-        /* -------------------------------------------------------
-        ACTIVE SITE CATEGORY (for Reaudit column display)
-        -------------------------------------------------------*/
-        
+
         $activeSiteCategoryRaw = $currentHSEAudit['main_category'] ?? $currentHSEAudit['perform_audit_by'] ?? '';
-        $activeSiteCategory = strtolower($activeSiteCategoryRaw);
-        $activeSiteCategory = preg_replace('/[^a-z0-9]+/i', '_', $activeSiteCategory);
-        $activeSiteCategory = trim($activeSiteCategory, '_');
-
+        $activeSiteCategory = trim(preg_replace('/[^a-z0-9]+/i', '_', strtolower($activeSiteCategoryRaw)), '_');
         $data['active_site_category'] = $activeSiteCategory;
-
-        /* -------------------------------------------------------
-        SUB CATEGORY MAP (Dynamic)
-        -------------------------------------------------------*/
 
         $subCategories = $db->table("alert_hse_sub_category sc")
             ->select("sc.sub_category_name, c.site_category_name")
@@ -1728,25 +1832,18 @@ class Hse_audit extends BaseController
             ->getResultArray();
 
         $category_map = [];
-
         foreach ($subCategories as $row) {
-
             $category_map[$row['site_category_name']][] = $row['sub_category_name'];
-
         }
-
         $data['category_map'] = $category_map;
-        // changes on 8/11/25 by darsh: Filter auditors list to show only users with Auditor designation (same as OE audit)
+
         if (isset($_SESSION['role']) && $_SESSION['role'] == "Auditor") {
             $data['auditors'] = $db->table("alert_users")->where("user_id", $_SESSION['login_id'])->where("status", 1)->get()->getResultArray();
         } else {
             $data['auditors'] = $db->table("alert_users")->where("user_designation", "Auditor")->where("status", 1)->get()->getResultArray();
         }
 
-        $data['title'] = "HSE Reaudit";
-        $data['action'] = base_url("Masters/Hse_audit/save_hse_reaudit/" . $hseAuditId);
-
-        return view("Audit/audit_question_form", $data);
+        return $data;
     }
 
     public function save_hse_reaudit($originalHseId)
@@ -1798,10 +1895,14 @@ class Hse_audit extends BaseController
         
         $scoreValue = isset($postData['score']) ? (float) $postData['score'] : 0;
 
+        $resolvedTemplateId = !empty($orig['audit_template_id'])
+            ? (int)$orig['audit_template_id']
+            : (!empty($postData['audit_template_id']) ? (int)$postData['audit_template_id'] : 0);
+
         $masterData = [
             'audit_no' => $auditNo,
             'audit_name' => $postData['audit_name'] ?? '',
-            'audit_template_id' => !empty($postData['audit_template_id']) ? $postData['audit_template_id'] : $orig['audit_template_id'],
+            'audit_template_id' => $resolvedTemplateId,
             'auditor_name' => $postData['auditor_name'] ?? '',
             'auditee_name' => $postData['auditee_name'] ?? '',
             'client_name' => $postData['client_name'] ?? '',
@@ -1858,10 +1959,12 @@ class Hse_audit extends BaseController
             // Also check alert_hse_template_questions for template questions not overridden
             $missingIds = array_diff(array_unique($questionIds), array_keys($questionById));
             if (!empty($missingIds)) {
-                $tRows = $db->table("alert_hse_template_questions")
-                    ->whereIn("template_question_id", $missingIds)
-                    ->get()
-                    ->getResultArray();
+                $tBuilder = $db->table("alert_hse_template_questions")
+                    ->whereIn("template_question_id", $missingIds);
+                if ($resolvedTemplateId > 0) {
+                    $tBuilder->where("audit_template_id", $resolvedTemplateId);
+                }
+                $tRows = $tBuilder->get()->getResultArray();
                 foreach ($tRows as $t) {
                     $questionById[$t['template_question_id']] = [
                         'question_id' => $t['template_question_id'],
@@ -2018,7 +2121,7 @@ class Hse_audit extends BaseController
                 $detail = [
                     'hse_audit_id' => $newAuditId,
                     'question_id' => $question_id ?: null,
-                    'audit_template_id' => $orig['audit_template_id'],
+                    'audit_template_id' => $resolvedTemplateId,
                     'site_category' => $postData['main_category'] ?? '',
                     'sub_category' => $postData['sub_category'] ?? '',
                     'audit_category_id' => $audit_category_id,
@@ -2082,6 +2185,315 @@ class Hse_audit extends BaseController
 
         return redirect()->to(base_url("/Masters/Hse_audit"))
             ->with('success', 'HSE Reaudit saved successfully.');
+    }
+
+    public function update_hse_audit($hseAuditId)
+    {
+        if (!canPerformAudit('HSE')) {
+            return redirect()->back()->with('error', 'Access Denied: You do not have permission to update audits.');
+        }
+
+        $request = service('request');
+        $postData = $request->getVar();
+        $files = $request->getFiles();
+        $db = db_connect();
+
+        $masterTbl = $db->table("alert_hse_audit_master");
+        $detailsTbl = $db->table("alert_hse_audit_details");
+
+        $orig = $masterTbl->where("hse_audit_id", $hseAuditId)->get()->getRowArray();
+        if (!$orig) {
+            return redirect()->back()->with('error', 'Audit not found');
+        }
+
+        $siteNameToCheck = !empty($postData['client_name']) ? $postData['client_name'] : ($orig['client_name'] ?? '');
+        $locationToCheck = !empty($postData['location']) ? $postData['location'] : ($orig['location'] ?? '');
+        $gembaValidation = $this->checkGembaSiteConfiguration($siteNameToCheck, $locationToCheck);
+        if (!$gembaValidation['valid']) {
+            if ($request->isAJAX()) {
+                return $this->response->setJSON(['status' => 0, 'message' => $gembaValidation['message']]);
+            }
+            return redirect()->back()->withInput()->with('error', $gembaValidation['message']);
+        }
+
+        $db->transStart();
+
+        if (empty($postData['report_date']) && !empty($postData['audit_date'])) {
+            $postData['report_date'] = date('Y-m-d', strtotime('+3 months', strtotime($postData['audit_date'])));
+        }
+
+        $auditNo = $orig['audit_no'];
+        $scoreValue = isset($postData['score']) ? (float) $postData['score'] : 0;
+        $resolvedTemplateId = !empty($orig['audit_template_id'])
+            ? (int)$orig['audit_template_id']
+            : (!empty($postData['audit_template_id']) ? (int)$postData['audit_template_id'] : 0);
+
+        $masterUpdate = [
+            'audit_name' => !empty($postData['audit_name']) ? $postData['audit_name'] : ($orig['audit_name'] ?? ''),
+            'audit_template_id' => $resolvedTemplateId,
+            'auditor_name' => $postData['auditor_name'] ?? ($orig['auditor_name'] ?? ''),
+            'auditee_name' => $postData['auditee_name'] ?? ($orig['auditee_name'] ?? ''),
+            'client_name' => $postData['client_name'] ?? ($orig['client_name'] ?? ''),
+            'audit_date' => $postData['audit_date'] ?? ($orig['audit_date'] ?? ''),
+            'report_date' => $postData['report_date'] ?? ($orig['report_date'] ?? ''),
+            'region' => $postData['region'] ?? ($orig['region'] ?? ''),
+            'location' => !empty($postData['location']) ? $postData['location'] : ($postData['client_name'] ?? ($orig['location'] ?? '')),
+            'cluster_name' => $postData['cluster_name'] ?? ($orig['cluster_name'] ?? ''),
+            'account_manager' => $postData['account_manager'] ?? ($orig['account_manager'] ?? ''),
+            'perform_audit_by' => $postData['perform_audit_by'] ?? ($orig['perform_audit_by'] ?? ''),
+            'main_category' => $postData['main_category'] ?? ($orig['main_category'] ?? ''),
+            'sub_category' => $postData['sub_category'] ?? ($orig['sub_category'] ?? ''),
+            'update_date' => date("Y-m-d H:i:s")
+        ];
+
+        $masterTbl->where('hse_audit_id', (int)$hseAuditId)
+            ->set($masterUpdate)
+            ->set('score', 'CAST(' . $db->escape($scoreValue) . ' AS DECIMAL(10,2))', false)
+            ->update();
+
+        // Preload question master for fallback metadata
+        $questionIds = [];
+        if (!empty($postData['question_audit_id']) && is_array($postData['question_audit_id'])) {
+            foreach ($postData['question_audit_id'] as $qid) {
+                if ((int) $qid > 0) {
+                    $questionIds[] = (int) $qid;
+                }
+            }
+        }
+
+        $questionById = [];
+        if (!empty($questionIds)) {
+            $qRows = $db->table('alert_audit_questions')
+                ->whereIn('question_id', array_unique($questionIds))
+                ->get()
+                ->getResultArray();
+            foreach ($qRows as $q) {
+                $questionById[$q['question_id']] = $q;
+            }
+
+            $missingIds = array_diff(array_unique($questionIds), array_keys($questionById));
+            if (!empty($missingIds)) {
+                $tBuilder = $db->table("alert_hse_template_questions")
+                    ->whereIn("template_question_id", $missingIds);
+                if ($resolvedTemplateId > 0) {
+                    $tBuilder->where("audit_template_id", $resolvedTemplateId);
+                }
+                $tRows = $tBuilder->get()->getResultArray();
+                foreach ($tRows as $t) {
+                    $questionById[$t['template_question_id']] = [
+                        'question_id' => $t['template_question_id'],
+                        'audit_template_id' => $t['audit_template_id'],
+                        'audit_category_id' => $t['category_id'],
+                        'audit_category' => $t['category_name'],
+                        'audit_question' => $t['question_text'],
+                        'audit_question_default_value' => $t['default_value'],
+                        'note' => $t['note'],
+                        'capa_json' => $t['capa_json']
+                    ];
+                }
+            }
+        }
+
+        // Load existing detail rows for THIS hse_audit_id so we update the same entries
+        $existingDetails = $detailsTbl->where('hse_audit_id', (int)$hseAuditId)
+            ->orderBy('id', 'ASC')
+            ->get()
+            ->getResultArray();
+
+        $existingByQid = [];
+        $existingByCatId = [];
+        $existingMiscRows = [];
+        foreach ($existingDetails as $ed) {
+            $isMiscExisting = (strcasecmp(trim($ed['audit_category'] ?? ''), 'miscellaneous') === 0);
+            if ($isMiscExisting) {
+                $existingMiscRows[] = $ed;
+            } else {
+                if (!empty($ed['question_id'])) {
+                    $existingByQid[(int)$ed['question_id']] = $ed;
+                }
+                $ecKey = strtoupper(trim($ed['audit_category_id'] ?? ''));
+                if ($ecKey !== '') {
+                    $existingByCatId[$ecKey] = $ed;
+                }
+            }
+        }
+
+        $usedExistingIds = [];
+        $miscIndex = 0;
+
+        if (isset($postData['audit_category_id']) && is_array($postData['audit_category_id'])) {
+            foreach ($postData['audit_category_id'] as $key => $catIdRaw) {
+                $question_id = isset($postData['question_audit_id'][$key]) ? (int) $postData['question_audit_id'][$key] : 0;
+
+                $audit_category_id = strtoupper(trim($catIdRaw ?? ''));
+                $audit_category_id = rtrim($audit_category_id, '.');
+
+                $audit_category = trim($postData['question_name'][$key] ?? '');
+                $audit_question = trim($postData['audit_question'][$key] ?? '');
+                $remark = trim($postData['remark'][$key] ?? '');
+                $note = trim($postData['note'][$key] ?? '');
+
+                $is_header = preg_match('/^[A-Z]$/', $audit_category_id);
+                $is_misc = (isset($postData['is_misc'][$key]) && $postData['is_misc'][$key] == '1') || (strcasecmp($audit_category, 'miscellaneous') === 0);
+
+                $qMeta = $questionById[$question_id] ?? null;
+
+                if (($audit_category === '' || strtolower($audit_category) === 'null') && $qMeta) {
+                    $audit_category = trim($qMeta['audit_category'] ?? '');
+                }
+                if (($audit_question === '' || strtolower($audit_question) === 'null') && $qMeta) {
+                    $audit_question = trim($qMeta['audit_question'] ?? '');
+                }
+                if ($is_header && $audit_question === '') {
+                    $audit_question = $audit_category;
+                }
+
+                if ($audit_category_id === '' && $audit_category === '' && $audit_question === '') {
+                    continue;
+                }
+
+                $finding = '';
+                if (!$is_header && isset($postData['finding'][$key])) {
+                    $finding = strtoupper(trim($postData['finding'][$key]));
+                }
+                if (!in_array($finding, ['YES', 'NO', 'NA'])) {
+                    $finding = '';
+                }
+
+                $attachment = (!$is_header) ? ($postData['existing_attachment'][$key] ?? '') : '';
+                if (
+                    !$is_header &&
+                    isset($files['attachment'][$key]) &&
+                    $files['attachment'][$key] instanceof \CodeIgniter\HTTP\Files\UploadedFile &&
+                    $files['attachment'][$key]->isValid() &&
+                    !$files['attachment'][$key]->hasMoved()
+                ) {
+                    $file = $files['attachment'][$key];
+                    $folder = FCPATH . "uploads/audit_files/" . $auditNo . "/";
+                    if (!is_dir($folder)) {
+                        mkdir($folder, 0777, true);
+                    }
+                    $name = $auditNo . "-" . $file->getRandomName();
+                    $file->move($folder, $name);
+                    $attachment = "uploads/audit_files/" . $auditNo . "/" . $name;
+                }
+
+                $rawCapaJson = $postData['capa_json'][$key] ?? '';
+                $validCapaJson = $this->normalizeCapaJson($rawCapaJson);
+
+                if ($finding === 'NO') {
+                    if (empty($validCapaJson) && !empty($qMeta['capa_json'])) {
+                        $validCapaJson = $this->normalizeCapaJson($qMeta['capa_json']);
+                    }
+                    if (empty($validCapaJson)) {
+                        $db->transRollback();
+                        return redirect()->back()->with('error', 'CAPA details are mandatory for all NO responses.');
+                    }
+                    $capa_json = $validCapaJson;
+                } else {
+                    $capa_json = '';
+                }
+
+                $ncType = $postData['nc_type'][$key] ?? 'NC';
+
+                // Match existing detail row
+                $existingRow = null;
+                if ($is_misc) {
+                    if (isset($existingMiscRows[$miscIndex])) {
+                        $existingRow = $existingMiscRows[$miscIndex];
+                    }
+                    $miscIndex++;
+                } else {
+                    if ($question_id > 0 && isset($existingByQid[$question_id]) && !isset($usedExistingIds[(int)$existingByQid[$question_id]['id']])) {
+                        $existingRow = $existingByQid[$question_id];
+                    } elseif ($audit_category_id !== '' && isset($existingByCatId[$audit_category_id]) && !isset($usedExistingIds[(int)$existingByCatId[$audit_category_id]['id']])) {
+                        $existingRow = $existingByCatId[$audit_category_id];
+                    }
+                }
+
+                if ($existingRow) {
+                    $usedExistingIds[(int)$existingRow['id']] = true;
+                    $updateDetail = [
+                        'question_id' => $question_id ?: $existingRow['question_id'],
+                        'audit_template_id' => $resolvedTemplateId,
+                        'site_category' => $postData['main_category'] ?? ($existingRow['site_category'] ?? ''),
+                        'sub_category' => $postData['sub_category'] ?? ($existingRow['sub_category'] ?? ''),
+                        'audit_category_id' => $audit_category_id,
+                        'audit_category' => $audit_category,
+                        'audit_question' => $audit_question,
+                        'finding' => $is_header ? '' : $finding,
+                        'note' => $note,
+                        'nc_type' => $is_header ? '' : $ncType,
+                        'capa_json' => $capa_json,
+                        'remark' => $is_header ? '' : $remark,
+                        'attachment' => $attachment,
+                        'update_date' => date("Y-m-d H:i:s")
+                    ];
+                    $detailsTbl->where('id', (int)$existingRow['id'])->update($updateDetail);
+                } else {
+                    $insertDetail = [
+                        'hse_audit_id' => (int)$hseAuditId,
+                        'question_id' => $question_id ?: null,
+                        'audit_template_id' => $resolvedTemplateId,
+                        'site_category' => $postData['main_category'] ?? '',
+                        'sub_category' => $postData['sub_category'] ?? '',
+                        'audit_category_id' => $audit_category_id,
+                        'audit_category' => $audit_category,
+                        'audit_question' => $audit_question,
+                        'finding' => $is_header ? '' : $finding,
+                        'note' => $note,
+                        'nc_type' => $is_header ? '' : $ncType,
+                        'capa_json' => $capa_json,
+                        'remark' => $is_header ? '' : $remark,
+                        'attachment' => $attachment,
+                        'nc_status' => 0,
+                        'status' => $is_header ? 4 : 1,
+                        'default_date' => date("Y-m-d H:i:s")
+                    ];
+                    $detailsTbl->insert($insertDetail);
+                }
+            }
+        }
+
+        $this->processAttendanceSave((int)$hseAuditId);
+
+        $db->transComplete();
+
+        if ($db->transStatus() === false) {
+            return redirect()->back()->with('error', 'HSE Audit update failed. Please try again.');
+        }
+
+        $syncService = new HseGembaSyncService();
+        $syncService->syncAudit((int)$hseAuditId);
+
+        $masterIds = $db->table('alert_hse_audit_master')->select('hse_audit_id')->where('audit_no', $auditNo)->get()->getResultArray();
+        $masterIdList = array_column($masterIds, 'hse_audit_id');
+
+        if (!empty($masterIdList) && (!empty($postData['audit_date']) || !empty($postData['report_date']))) {
+            $gembaUpdateData = [];
+            if (!empty($postData['audit_date'])) {
+                $gembaUpdateData['audit_mail_received_date'] = date('Y-m-d', strtotime($postData['audit_date']));
+                $gembaUpdateData['audit_report_date'] = date('Y-m-d', strtotime($postData['audit_date']));
+            }
+            if (!empty($postData['report_date'])) {
+                $gembaUpdateData['target_date'] = date('Y-m-d', strtotime($postData['report_date']));
+            }
+            if (!empty($gembaUpdateData)) {
+                $db->table('alert_gemba_audits')
+                    ->whereIn('hse_audit_id', $masterIdList)
+                    ->where('status !=', 2)
+                    ->where('nc_status !=', 3)
+                    ->update($gembaUpdateData);
+            }
+        }
+
+        $this->delete_draft([
+            'draft_type' => 'edit',
+            'original_hse_audit_id' => $hseAuditId
+        ]);
+
+        return redirect()->to(base_url("/Masters/Hse_audit"))
+            ->with('success', 'HSE Audit updated successfully.');
     }
 
     // public function exportExcel($auditId)

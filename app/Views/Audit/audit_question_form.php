@@ -304,7 +304,7 @@ if ($isAuditorLogin && !empty($sessionAuditorName)) {
                                         <input type="hidden" name="hse_audit_id"
                                             value="<?= (int) $details['hse_audit_id'] ?>">
                                     <?php } ?>
-                                    <input type="hidden" id="draft_type" value="<?= $isReaudit ? 'reaudit' : 'perform' ?>">
+                                    <input type="hidden" id="draft_type" value="<?= !empty($is_edit) ? 'edit' : ($isReaudit ? 'reaudit' : 'perform') ?>">
                                     <tr>
                                         <th class="table-secondary">Audit No.</th>
                                         <td>
@@ -804,7 +804,7 @@ if ($isAuditorLogin && !empty($sessionAuditorName)) {
                                 $rowKey = $qId;
                                 $textKey = (string) ($audit_head['question_name'] ?? '') . '|' . (string) ($audit_head['audit_question'] ?? '');
 
-                                $prefill = $prefillMap[$rowKey] ?? [
+                                $prefill = $prefillMap[$rowKey] ?? $prefillMap[$textKey] ?? [
                                     'finding' => '',
                                     'remark' => '',
                                     'attachment' => '',
@@ -1054,7 +1054,7 @@ if ($isAuditorLogin && !empty($sessionAuditorName)) {
             </div>
 
             <button type="submit" id="saveAuditBtn" class="btn btn-success float-end">
-                <span id="saveBtnText">Save Details</span>
+                <span id="saveBtnText"><?= !empty($is_edit) ? 'Update Details' : 'Save Details' ?></span>
                 <span id="saveBtnLoader" style="display:none; margin-left:8px;">
                     <i class="fa fa-spinner fa-spin"></i>
                 </span>

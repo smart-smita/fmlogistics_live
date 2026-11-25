@@ -187,3 +187,52 @@
   Normalized values - Region: 'north', Category: 'fm leased', Sub Category: 'mcf'
   Query executed successfully. Found 7 clients
   Returning clients list
+2026-11-25 14:26:56 - get_clients_by_region_category_subcategory called
+  Region: North
+  Category: Client Leased
+  Sub Category: External Warehouse
+  Normalized values - Region: 'north', Category: 'client leased', Sub Category: 'external warehouse'
+  Query executed successfully. Found 0 clients
+  No clients found. Total clients with region and category: 8
+2026-11-25 14:27:01 - get_clients_by_region_category_subcategory called
+  Region: North
+  Category: Client Leased
+  Sub Category: Inplant
+  Normalized values - Region: 'north', Category: 'client leased', Sub Category: 'inplant'
+  Query executed successfully. Found 0 clients
+  No clients found. Total clients with region and category: 8
+2026-11-25 14:27:05 - get_clients_by_region_category_subcategory called
+  Region: North
+  Category: Client Leased
+  Sub Category: Open Plot
+  Normalized values - Region: 'north', Category: 'client leased', Sub Category: 'open plot'
+  Query executed successfully. Found 0 clients
+  No clients found. Total clients with region and category: 8
+2026-11-25 14:27:12 - get_clients_by_region_category_subcategory called
+  Region: North
+  Category: FM Leased
+  Sub Category: Dedicated Warehouse
+  Normalized values - Region: 'north', Category: 'fm leased', Sub Category: 'dedicated warehouse'
+  Query executed successfully. Found 0 clients
+  No clients found. Total clients with region and category: 11
+2026-11-25 14:27:16 - get_clients_by_region_category_subcategory called
+  Region: North
+  Category: FM Leased
+  Sub Category: MCF
+  Normalized values - Region: 'north', Category: 'fm leased', Sub Category: 'mcf'
+  Query executed successfully. Found 7 clients
+  Returning clients list
+2026-11-25 14:27:21 - get_clients_by_region_category_subcategory called
+  Region: North
+  Category: FM Leased
+  Sub Category: Partial
+  Normalized values - Region: 'north', Category: 'fm leased', Sub Category: 'partial'
+  Query executed successfully. Found 2 clients
+  Returning clients list
+2026-11-25 15:06:53 - get_clients_by_region_category_subcategory called
+  Region: North
+  Category: FM Leased
+  Sub Category: Partial
+  Normalized values - Region: 'north', Category: 'fm leased', Sub Category: 'partial'
+  Query executed successfully. Found 2 clients
+  Returning clients list

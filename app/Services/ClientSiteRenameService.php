@@ -224,6 +224,7 @@ class ClientSiteRenameService
                 `nc_recommendation` varchar(20) NOT NULL,
                 `qhse_remarks` text DEFAULT NULL,
                 `observation_point` text NOT NULL,
+                `attachment` varchar(255) DEFAULT NULL,
                 `risks_details` text DEFAULT NULL,
                 `action_recommendation` text DEFAULT NULL,
                 `specifications` text DEFAULT NULL,
@@ -804,11 +805,13 @@ class ClientSiteRenameService
 
             if (!empty($gembaAuditRows) && $this->db->tableExists('alert_gemba_audit_backup')) {
                 $now = date('Y-m-d H:i:s');
+                $backupFields = array_flip($this->db->getFieldNames('alert_gemba_audit_backup'));
                 foreach ($gembaAuditRows as $gRow) {
                     $backupRow = $gRow;
                     $backupRow['history_id'] = $renameHistoryId;
                     $backupRow['backed_up_at'] = $now;
                     unset($backupRow['backup_id']);
+                    $backupRow = array_intersect_key($backupRow, $backupFields);
                     $this->db->table('alert_gemba_audit_backup')->insert($backupRow);
                 }
             }
@@ -970,11 +973,13 @@ class ClientSiteRenameService
         // 5. Dump full Gemba audit records as-is into Gemba_audit_backup for direct export/restore
         if (!empty($gembaAudits) && $this->db->tableExists('alert_gemba_audit_backup')) {
             $now = date('Y-m-d H:i:s');
+            $backupFields = array_flip($this->db->getFieldNames('alert_gemba_audit_backup'));
             foreach ($gembaAudits as $gRow) {
                 $backupRow = $gRow;
                 $backupRow['history_id'] = $gembaHistoryId;
                 $backupRow['backed_up_at'] = $now;
                 unset($backupRow['backup_id']);
+                $backupRow = array_intersect_key($backupRow, $backupFields);
                 $this->db->table('alert_gemba_audit_backup')->insert($backupRow);
             }
         }
